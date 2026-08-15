@@ -21,10 +21,16 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         bookAdapter = BookAdapter(downloads) { book ->
-            findViewById<TextView>(R.id.textStatus).text = "Selected: ${book.title}"
+            setStatus("Selected: ${book.title}")
         }
         findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).layoutManager = LinearLayoutManager(this)
         findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
+
+        findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fabPickFolder).setOnClickListener {
+            showDownloadDialog()
+        }
+
+        updateEmptyState()
 
         findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar).setOnMenuItemClickListener { item ->
             when (item.itemId) {
@@ -43,6 +49,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun setStatus(text: String) {
         findViewById<TextView>(R.id.textStatus).text = text
+    }
+
+    private fun updateEmptyState() {
+        val empty = findViewById<TextView>(R.id.textEmpty)
+        empty?.visibility = if (downloads.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun showDownloadDialog() {

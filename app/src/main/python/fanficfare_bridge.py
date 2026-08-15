@@ -93,7 +93,8 @@ def _extract_epub_metadata(epubPath):
     cover = None
 
     with zipfile.ZipFile(epubPath, "r") as z:
-        for name in z.namelist():
+        names = z.namelist()
+        for name in names:
             if name.endswith(".opf"):
                 try:
                     opf = z.read(name).decode("utf-8", errors="ignore")
@@ -105,37 +106,61 @@ def _extract_epub_metadata(epubPath):
                     author_node = root.find(".//dc:creator", ns)
                     if author_node is not None and author_node.text:
                         author = author_node.text.strip()
+                    for meta in root.findall(".//{http://purl.org/dc/elements/1.1/}meta") + root.findall(".//meta"):
+                        name_attr = meta.get("name", "") or meta.get("{http://purl.org/dc/elements/1.1/}name", "")
+                        content = meta.get("content", "") or ""
+                        if "chaptercount" in name_attr.lower() and content.isdigit():
+                            chapters = content.toInt()
+                        elif name_attr.lower() in {"calibredit", "calibreurl", "calibrecontributor"}:
+                            pass
+                        elif "url" in name_attr.lower() or "source" in name_attr.lower():
+                            if content.startswith("http://") or content.startswith("https://"):
+                                url = content.strip()
                 except Exception:
                     pass
                 break
 
-        for name in z.namelist():
-            if "calibre" in name.lower() or name.endswith(".txt"):
+        for name in names:
+            if name.endswith(".txt") or name.endswith(".ncx") or name.lower().startswith("content/"):
                 try:
                     content = z.read(name).decode("utf-8", errors="ignore")
                     for line in content.splitlines():
-                        if line.startswith("http://") or line.startswith("https://"):
-                            url = line.strip()
+                        stripped = line.strip()
+                        if stripped.startswith("http://") or stripped.startswith("https://"):
+                            url = stripped
                             break
+                    if url:
+                        break
                 except Exception:
                     pass
 
-        try:
-            source, chaptercount = _get_dcsource_chaptercount(epubPath)
-            if source:
-                url = source
-            if chaptercount:
-                chapters = chaptercount
-        except Exception:
-            pass
+        for name in names:
+            if name.lower().endswith(".ncx"):
+                try:
+                    content = z.read(name).decode("utf-8", errors="ignore")
+                    chaptercount = content.lower().split("totalpagecount")[1].split("\"")[1]
+                    chapters = int(chaptercount) if chaptercount.isdigit() else chapters
+                except Exception:
+                    pass
 
-        try:
-            cover_type, cover_data = _get_cover_img(epubPath)
-            if cover_data:
-                mime = cover_type or "image/jpeg"
-                cover = "data:%s;base64,%s" % (mime, __import__("base64").b64encode(cover_data).decode("ascii"))
-        except Exception:
-            cover = None
+        for name in names:
+            lower = name.lower()
+            if lower.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")):
+                base = lower.split("/")[-1].replace(".jpg", "").replace(".jpeg", "").replace(".png", "").replace(".gif", "").replace(".webp", "")
+                if base in {"cover", "coverimage"} or lower.count("/") == 1 and "cover" in base:
+                    try:
+                        data = z.read(name)
+                        mime = "image/jpeg"
+                        if lower.endswith(".png"):
+                            mime = "image/png"
+                        elif lower.endswith(".gif"):
+                            mime = "image/gif"
+                        elif lower.endswith(".webp"):
+                            mime = "image/webp"
+                        cover = "data:%s;base64,%s" % (mime, __import__("base64").b64encode(data).decode("ascii"))
+                        break
+                    except Exception:
+                        pass
 
     return {
         "title": title,

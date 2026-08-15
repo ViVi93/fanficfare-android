@@ -45,6 +45,8 @@ chaquopy {
         buildPython "/usr/bin/python3.12"
         pip {
             install "beautifulsoup4"
+            install "requests-file"
+            install "requests"
         }
     }
 }

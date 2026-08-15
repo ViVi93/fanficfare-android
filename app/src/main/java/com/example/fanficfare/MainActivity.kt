@@ -333,6 +333,42 @@ class MainActivity : AppCompatActivity() {
             .setView(view)
             .setNegativeButton("Close", null)
             .show()
+        view.findViewById<android.widget.Button>(R.id.buttonDiagnose).setOnClickListener {
+            setStatus("Diagnosing...")
+            Thread {
+                val resultJson = pythonBridge?.diagnoseFanFicFareImports()
+                    ?: """{"ok":false,"error":"bridge missing"}"""
+                val result = json(resultJson)
+                runOnUiThread {
+                    val sb = StringBuilder()
+                    sb.append("Diagnostics:\n")
+                    val arr = result?.optJSONArray("results")
+                    if (arr != null) {
+                        for (i in 0 until arr.length()) {
+                            val r = arr.getJSONObject(i)
+                            val test = r.optString("test")
+                            sb.append(if (r.optBoolean("ok")) "[OK] " else "[FAIL] ")
+                            sb.append(test)
+                            if (!r.optBoolean("ok")) {
+                                sb.append("\n  ")
+                                sb.append(r.optString("error_type", "Error"))
+                                sb.append(": ")
+                                sb.append(r.optString("error", ""))
+                                val tb = r.optString("traceback")
+                                if (!tb.isNullOrBlank()) {
+                                    sb.append("\n")
+                                    sb.append(tb)
+                                }
+                            }
+                            sb.append("\n")
+                        }
+                    }
+                    val diag = sb.toString().trim()
+                    setStatus(diag)
+                    showError(diag)
+                }
+            }.start()
+        }
     }
 
     private fun showLoadLibraryDialog() {

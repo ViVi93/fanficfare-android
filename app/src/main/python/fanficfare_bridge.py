@@ -38,6 +38,9 @@ def diagnose_fanficfare_imports():
     global _FANFICFARE_ERROR, _FANFICFARE_TRACEBACK
     results = []
     tests = [
+        ("import requests", "import requests"),
+        ("import requests_file", "import requests_file"),
+        ("import bs4", "import bs4"),
         ("import fanficfare", "import fanficfare"),
         ("from fanficfare import adapters", "from fanficfare import adapters"),
         ("from fanficfare.configurable import Configurable", "from fanficfare.configurable import Configurable"),
@@ -90,7 +93,7 @@ def get_metadata(url):
             "chapters": adapter.story.getChapterCount(),
         })
     except Exception as e:
-        return json.dumps({"ok": False, "error": str(e)})
+        return json.dumps({"ok": False, "error": "{}: {}".format(type(e).__name__, e), "exception_type": type(e).__name__, "detail": traceback.format_exc()})
 
 
 def download_story(url, outDir):

@@ -13,9 +13,6 @@ class PythonBridge(private val context: Context) {
     init {
         try {
             val python = Python.getInstance()
-            val sys = python.getModule("sys")
-            val path = context.filesDir.absolutePath + "/python"
-            sys.callAttr("path", "append", path)
             module = python.getModule("fanficfare_bridge")
         } catch (e: Exception) {
             initError = e.message ?: "unknown"

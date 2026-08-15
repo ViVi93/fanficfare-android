@@ -49,6 +49,7 @@ chaquopy {
             install "requests"
             install "cloudscraper"
             install "Brotli"
+            install "html2text"
         }
     }
 }

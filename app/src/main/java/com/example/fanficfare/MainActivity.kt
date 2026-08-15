@@ -1,11 +1,15 @@
 package com.example.fanficfare
 
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.fanficfare.adapter.BookAdapter
 import com.example.fanficfare.model.BookItem
@@ -19,6 +23,38 @@ class MainActivity : AppCompatActivity() {
     private var pythonBridge: PythonBridge? = null
     private var selectedBook: BookItem? = null
     private var currentSort: String = "modified"
+
+    private fun hasStoragePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        } else true
+    }
+
+    private fun requestStoragePermission(onGranted: () -> Unit) {
+        val perms = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            perms.add(android.Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            perms.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            perms.add(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+        }
+        ActivityCompat.requestPermissions(this, perms.toTypedArray(), 1001)
+    }
+
+    private fun ensureStoragePermission(action: () -> Unit) {
+        if (hasStoragePermission()) {
+            action()
+        } else {
+            requestStoragePermission {
+                if (hasStoragePermission()) action() else setStatus("Storage permission denied")
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,6 +71,9 @@ class MainActivity : AppCompatActivity() {
         pythonBridge?.getInitError()?.let { error ->
             setStatus("Bridge init failed: $error")
         }
+        pythonBridge?.getFanFicFareError()?.let { error ->
+            setStatus("FanFicFare init failed: $error")
+        }
 
         bookAdapter = BookAdapter(downloads) { book ->
             selectedBook = book
@@ -47,7 +86,9 @@ class MainActivity : AppCompatActivity() {
             showDownloadDialog()
         }
         findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fabLoadLibrary).setOnClickListener {
-            showLoadLibraryDialog()
+            ensureStoragePermission {
+                showLoadLibraryDialog()
+            }
         }
 
         updateEmptyState()

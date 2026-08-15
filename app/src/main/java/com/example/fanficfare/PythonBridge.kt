@@ -51,6 +51,15 @@ class PythonBridge(private val context: Context) {
 
     fun getInitError(): String? = initError
 
+    fun getFanFicFareError(): String? {
+        return try {
+            val result = safeCall("get_fanficfare_error")
+            if (result.isBlank() || result == "None") null else result
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun safeCall(method: String, vararg args: Any): String {
         val mod = module
         if (mod == null) {

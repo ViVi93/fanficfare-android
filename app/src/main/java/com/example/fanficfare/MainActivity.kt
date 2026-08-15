@@ -28,6 +28,16 @@ class MainActivity : AppCompatActivity() {
             Python.start(com.chaquo.python.android.AndroidPlatform(this))
         }
         pythonBridge = PythonBridge(this)
+        pythonBridge?.getInitError()?.let { error ->
+            setStatus("Python init failed: $error")
+        }
+
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            runOnUiThread {
+                setStatus("Crash: ${throwable.message}")
+                android.widget.Toast.makeText(this, "Crash: ${throwable.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
 
         bookAdapter = BookAdapter(downloads) { book ->
             selectedBook = book

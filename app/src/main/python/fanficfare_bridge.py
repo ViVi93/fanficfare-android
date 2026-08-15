@@ -137,8 +137,27 @@ def extract_epub_metadata(epubPath):
                 if cover_data:
                     mime = cover_type or "image/jpeg"
                     cover = "data:%s;base64,%s" % (mime, __import__("base64").b64encode(cover_data).decode("ascii"))
-            except Exception:
-                cover = None
+            except Exception as bridge_error:
+                try:
+                    import re
+                    with zipfile.ZipFile(epubPath, "r") as z2:
+                        for name in z2.namelist():
+                            if re.match(r".*/images?/.*\.(png|jpg|jpeg|gif|webp)$", name, re.IGNORECASE):
+                                try:
+                                    cover_data = z2.read(name)
+                                    mime = "image/jpeg"
+                                    if name.lower().endswith(".png"):
+                                        mime = "image/png"
+                                    elif name.lower().endswith(".gif"):
+                                        mime = "image/gif"
+                                    elif name.lower().endswith(".webp"):
+                                        mime = "image/webp"
+                                    cover = "data:%s;base64,%s" % (mime, __import__("base64").b64encode(cover_data).decode("ascii"))
+                                    break
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
 
         return {
             "title": title,

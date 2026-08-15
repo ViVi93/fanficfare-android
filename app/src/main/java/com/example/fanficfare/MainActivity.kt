@@ -360,7 +360,7 @@ class MainActivity : AppCompatActivity() {
                 if (files.isEmpty()) {
                     showError("No EPUBs found in $dir")
                 } else {
-                    scanImportedEpubs(files)
+                    scanOriginalEpubs(folder)
                 }
             }
             .setNeutralButton("Settings") { _, _ ->
@@ -368,6 +368,43 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun scanOriginalEpubs(sourceDir: java.io.File) {
+        setStatus("Scanning ${sourceDir.absolutePath}...")
+        Thread {
+            val resultJson = pythonBridge?.scanEpubDir(sourceDir.absolutePath)
+                ?: """{"ok":false,"error":"bridge missing"}"""
+            val result = json(resultJson)
+            runOnUiThread {
+                if (result?.optBoolean("ok") == true) {
+                    val books = result.optJSONArray("books") ?: org.json.JSONArray()
+                    downloads.clear()
+                    for (i in 0 until books.length()) {
+                        val b = books.getJSONObject(i)
+                        downloads.add(
+                            BookItem(
+                                title = b.optString("title", "untitled"),
+                                author = b.optString("author", ""),
+                                uriString = b.optString("path", ""),
+                                lastModified = b.optLong("modified", 0L),
+                                sizeBytes = b.optLong("size", 0L),
+                                coverUriString = b.optString("cover", ""),
+                                url = b.optString("url", ""),
+                                chapters = b.optInt("chapters", 0)
+                            )
+                        )
+                    }
+                    downloads.sortByDescending { it.lastModified }
+                    bookAdapter.notifyDataSetChanged()
+                    updateEmptyState()
+                    setStatus("Loaded ${downloads.size} EPUBs")
+                    persistLibrary()
+                } else {
+                    showError("Scan failed: ${result?.optString("error") ?: "unknown"}")
+                }
+            }
+        }.start()
     }
 
     private fun discoverEpubsFromTree(rootUri: android.net.Uri): List<java.io.File> {

@@ -1,0 +1,1877 @@
+# -*- coding: utf-8 -*-
+
+# Copyright 2011 Fanficdownloader team, 2020 FanFicFare team
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+import os, re, sys
+from collections import defaultdict, OrderedDict
+import string
+import datetime
+from math import floor
+import base64
+import hashlib
+import uuid
+import logging
+logger = logging.getLogger(__name__)
+
+from urllib.parse import (urlparse, urljoin)
+from .ensure import ensure_binary, ensure_str
+
+import bs4
+
+from . import exceptions
+from .htmlcleanup import conditionalRemoveEntities, removeEntities, removeAllEntities
+from .requestable import Requestable
+from .configurable import re_compile
+from .htmlheuristics import was_run_marker
+
+SPACE_REPLACE=r'\s'
+SPLIT_META=r'\,'
+
+# Create convert_image method depending on which graphics lib we can
+# load.  Preferred: calibre, PIL, none
+
+imagetypes = {
+    'jpg':'image/jpeg',
+    'jpeg':'image/jpeg',
+    'png':'image/png',
+    'gif':'image/gif',
+    'svg':'image/svg+xml',
+    'webp':'image/webp',
+    'avif':'image/avif',
+    }
+
+try:
+    from calibre.utils.img import (
+        Canvas, image_from_data, image_and_format_from_data, image_to_data,
+        image_has_transparent_pixels, grayscale_image, resize_image,
+        set_image_allocation_limit
+    )
+    convtype = {'jpg':'JPG', 'png':'PNG'}
+
+    # Calibre function that increases qt image processing buffer size
+    # for larger than 32 megapixel images.  At time of writing,
+    # Calibre sets it up to 256 megapixel images
+    set_image_allocation_limit()
+
+    def get_image_size(data):
+        img = image_from_data(data)
+        size = img.size()
+        owidth = size.width()
+        oheight = size.height()
+        return owidth, oheight
+
+    def convert_image(url,data,sizes,grayscale,
+                      removetrans,imgtype="jpg",background='#ffffff',jpg_quality=95):
+        # logger.debug("calibre convert_image called")
+        ## I can just see somebody doing logo_svg.jpg
+        if url.lower().endswith('.svg') or '.svg?' in url.lower() \
+                or ensure_binary('<svg ') in data[:1000] \
+                or ensure_binary('xmlns="http://www.w3.org/2000/svg"') in data[:1000]:
+            raise exceptions.RejectImage("Calibre image processing chokes on SVG images.")
+        export = False
+        img, format = image_and_format_from_data(data)
+
+        size = img.size()
+        owidth = size.width()
+        oheight = size.height()
+        nwidth, nheight = sizes
+        scaled, nwidth, nheight = fit_image(owidth, oheight, nwidth, nheight)
+
+        if (0,0) == (owidth,oheight):
+            raise exceptions.RejectImage("Calibre image processing returned 0x0 image\nSee https://github.com/JimmXinu/FanFicFare/issues/997 for one possible reason.")
+
+        if scaled:
+            img = resize_image(img, nwidth, nheight)
+            export = True
+
+        if normalize_format_name(format) != imgtype:
+            export = True
+
+        if removetrans and image_has_transparent_pixels(img):
+            canvas = Canvas(img.size().width(), img.size().height(), str(background))
+            canvas.compose(img)
+            img = canvas.img
+            export = True
+
+        if grayscale and not img.isGrayscale():
+            img = grayscale_image(img)
+            export = True
+
+        if export:
+            if imgtype == 'jpg':
+                return (image_to_data(img, compression_quality=jpg_quality),imgtype,imagetypes[imgtype])
+            else:
+                return (image_to_data(img, fmt=convtype[imgtype]),imgtype,imagetypes[imgtype])
+        else:
+            # logger.debug("image used unchanged")
+            return (data,imgtype,imagetypes[imgtype])
+
+except:
+
+    # No calibre routines, try for Pillow for CLI.
+    try:
+        from PIL import Image
+        from io import BytesIO
+        convtype = {'jpg':'JPEG', 'png':'PNG'}
+
+        def get_image_size(data):
+            img = Image.open(BytesIO(data))
+            owidth, oheight = img.size
+            return owidth, oheight
+
+        def convert_image(url,data,sizes,grayscale,
+                          removetrans,imgtype="jpg",background='#ffffff',jpg_quality=95):
+            # logger.debug("Pillow convert_image called")
+            export = False
+            img = Image.open(BytesIO(data))
+
+            owidth, oheight = img.size
+            nwidth, nheight = sizes
+            scaled, nwidth, nheight = fit_image(owidth, oheight, nwidth, nheight)
+            if scaled:
+                img = img.resize((nwidth, nheight),Image.LANCZOS)
+                export = True
+
+            if normalize_format_name(img.format) != imgtype:
+                if img.mode == "P":
+                    # convert pallete gifs to RGB so jpg save doesn't fail.
+                    img = img.convert("RGB")
+                export = True
+
+            if removetrans and img.mode == "RGBA":
+                background = Image.new('RGBA', img.size, background)
+                # Paste the image on top of the background
+                background.paste(img, img)
+                img = background.convert('RGB')
+                export = True
+
+            if grayscale and img.mode != "L":
+                img = img.convert("L")
+                export = True
+
+            if export:
+                outsio = BytesIO()
+                if imgtype == 'jpg':
+                    img.save(outsio,convtype[imgtype],quality=jpg_quality,optimize=True)
+                else:
+                    img.save(outsio,convtype[imgtype])
+                return (outsio.getvalue(),imgtype,imagetypes[imgtype])
+            else:
+                # logger.debug("image used unchanged")
+                return (data,imgtype,imagetypes[imgtype])
+
+    except:
+        # No calibre or PIL, give a random largish size.
+        def get_image_size(data):
+            return 1000,1000
+
+        # No calibre or PIL, simple pass through with mimetype.
+        def convert_image(url,data,sizes,grayscale,
+                          removetrans,imgtype="jpg",background='#ffffff',jpg_quality=95):
+            # logger.debug("NO convert_image called")
+            return no_convert_image(url,data)
+
+## also used for explicit no image processing.
+def no_convert_image(url,data):
+    parsedUrl = urlparse(url)
+
+    ext=parsedUrl.path[parsedUrl.path.rfind('.')+1:].lower()
+
+    try:
+        sample_data = ensure_binary(data[:50])
+        if b'<!doctype html>' in sample_data or b'<!DOCTYPE html>' in sample_data:
+            raise exceptions.RejectImage("no_convert_image url:%s - html site"%url)
+    except (UnicodeEncodeError, TypeError) as e:
+        logger.debug("no_convert_image url:%s - Exception: %s"%(url,str(e)))
+
+    if ext not in imagetypes:
+        # not found at end of path, try end of whole URL in case of
+        # parameter.
+        ext = url[url.rfind('.')+1:].lower()
+        if ext not in imagetypes:
+            try:
+                from PIL import Image
+                from io import BytesIO
+                ext = Image.open(BytesIO(data)).format.lower()
+                logger.info("no_convert_image url:%s - from bits got '%s'" % (url, ext))
+            except (IOError, TypeError):
+                raise exceptions.RejectImage("no_convert_image url:%s - not a valid image"%url)
+            except ImportError:
+                pass
+            finally:
+                if ext not in imagetypes:
+                    logger.info("no_convert_image url:%s - no known extension -- using .jpg"%url)
+                    # doesn't have extension? use jpg.
+                    ext='jpg'
+
+    return (data,ext,imagetypes[ext])
+
+def normalize_format_name(fmt):
+    if fmt:
+        fmt = fmt.lower()
+        if fmt == 'jpeg':
+            fmt = 'jpg'
+    return fmt
+
+def fit_image(width, height, pwidth, pheight):
+    '''
+    Fit image in box of width pwidth and height pheight.
+    @param width: Width of image
+    @param height: Height of image
+    @param pwidth: Width of box
+    @param pheight: Height of box
+    @return: scaled, new_width, new_height. scaled is True iff new_width and/or new_height is different from width or height.
+    '''
+    scaled = height > pheight or width > pwidth
+    if height > pheight:
+        corrf = pheight/float(height)
+        width, height = floor(corrf*width), pheight
+    if width > pwidth:
+        corrf = pwidth/float(width)
+        width, height = pwidth, floor(corrf*height)
+    if height > pheight:
+        corrf = pheight/float(height)
+        width, height = floor(corrf*width), pheight
+
+    return scaled, int(width), int(height)
+
+try:
+    from calibre.library.comments import sanitize_comments_html
+except:
+    def sanitize_comments_html(t):
+        ## should only be called by Calibre version, so this shouldn't
+        ## trip.
+        # logger.debug("fake sanitize called...")
+        return t
+
+# The list comes from ffnet and ao3, the most popular multi-language
+# sites we support.  https://archiveofourown.org/languages
+langs = {
+    u'Afrikaans': 'afr',
+    u'Albanian': 'sq',
+    u'Arabic': 'ar',
+    u'Bahasa Indonesia': 'id',
+    u'Bahasa Malaysia': 'zsm',
+    u'Basa Jawa': 'jav',
+    u'Bosanski': 'bos',
+    u'Brezhoneg': 'bre',
+    u'Bulgarian': 'bg',
+    u'Catalan': 'ca',
+    u'Català': 'ca',
+    u'Cebuano': 'ceb',
+    u'Chinese': 'zh',
+    u'Chinuk Wawa': 'chn',
+    u'Croatian': 'hr',
+    u'Cymraeg': 'cy',
+    u'Czech': 'cs',
+    u'Danish': 'da',
+    u'Dansk': 'da',
+    u'Deutsch': 'de',
+    u'Devanagari': 'hi',
+    u'Dutch': 'nl',
+    u'Eald Englisċ': 'ang',
+    u'English': 'en',
+    u'Español': 'es',
+    u'Esperanto': 'eo',
+    u'Euskara': 'eu',
+    u'Farsi': 'fa',
+    u'Filipino': 'fil',
+    u'Finnish': 'fi',
+    u'Français': 'fr',
+    u'French': 'fr',
+    u'Furlan': 'fur',
+    u'Gaeilge': 'ga',
+    u'Galego': 'gl',
+    u'German': 'de',
+    u'Greek': 'el',
+    u'Gàidhlig': 'gd',
+    u'Hausa | هَرْشَن هَوْسَ': 'ha',
+    u'Hebrew': 'he',
+    u'Hindi': 'hi',
+    u'Hrvatski': 'hr',
+    u'Hungarian': 'hu',
+    u'Indonesian': 'id',
+    u'Interlingua': 'ia',
+    u'Italian': 'it',
+    u'Italiano': 'it',
+    u'Japanese': 'ja',
+    u'Khuzdul': 'mis', # fictional - Tolkien Dwarves
+    u'Kiswahili': 'sw',
+    u'Korean': 'ko',
+    u'Kurdî | کوردی': 'ckb',
+    u'Langue des signes québécoise': 'fcs',
+    u'Latin': 'la',
+    u'Latviešu valoda': 'lv',
+    u'Lietuvių': 'lt',
+    u'Lietuvių kalba': 'lt',
+    u'Lingua latina': 'la',
+    u'Lëtzebuergesch': 'lb',
+    u'Magyar': 'hu',
+    u'Malti': 'mt',
+    u'Mikisúkî': 'mik',
+    u'Nederlands': 'nl',
+    u'Norsk': 'no',
+    u'Norwegian': 'no',
+    u'Nāhuatl': 'nah',
+    u'Plattdüütsch': 'nds',
+    u'Polish': 'pl',
+    u'Polski': 'pl',
+    u'Portuguese': 'pt',
+    u'Português': 'pt',
+    u'Português brasileiro': 'pt-BR',
+    u'Português europeu': 'pt-PT',
+    u'Punjabi': 'pa',
+    u'Quenya': 'qya',
+    u'Romanian': 'ro',
+    u'Română': 'ro',
+    u'Russian': 'ru',
+    u'Scots': 'sco',
+    u'Serbian': 'sr',
+    u'Shqip': 'sq',
+    u'Sindarin': 'sjn', # fictional - Tolkien Elves
+    u'Slovenčina': 'sk',
+    u'Slovenščina': 'sl',
+    u'Spanish': 'es',
+    # u'Sprēkō Þiudiskō': '', # ??? Can't find
+    u'Suomi': 'fi',
+    u'Svenska': 'sv',
+    u'Swedish': 'sv',
+    u'Thai': 'th',
+    # u'Thermian': '', # fictional - Galaxy Quest
+    u'Tiếng Việt': 'vi',
+    u'Turkish': 'tr',
+    u'Türkçe': 'fr',
+    u'Vietnamese': 'vi',
+    u'Volapük': 'vo',
+    u'Wikang Filipino': 'fil',
+    u'af Soomaali': 'som',
+    u'asturianu': 'ast',
+    u'eesti keel': 'et',
+    u'isiZulu': 'zu',
+    u'kreyòl ayisyen': 'ht',
+    u'maayaʼ tʼàan': 'yua',
+    u'qazaqşa | қазақша': 'kk',
+    u'tlhIngan-Hol': 'tlh', # fictional - Star Trek Klingons
+    u'toki pona': 'tok',
+    u'Íslenska': 'is',
+    u'Čeština': 'cs',
+    u'ʻŌlelo Hawaiʻi': 'haw',
+    u'Ελληνικά': 'el',
+    u'τσακώνικα': 'tsd',
+    u'ϯⲙⲉⲧⲣⲉⲙⲛ̀ⲭⲏⲙⲓ': 'cop',
+    u'Азәрбајҹан дили | آذربایجان دیلی': 'aze',
+    u'Башҡорт теле': 'ba',
+    u'Български': 'bg',
+    u'Български език': 'bg',
+    u'Кыргызча': 'ky',
+    u'Нохчийн мотт': 'ce',
+    u'Русский': 'ru',
+    u'Српски': 'sr',
+    u'Українська': 'uk',
+    u'беларуская': 'be',
+    u'македонски': 'mk',
+    u'српски': 'sr',
+    u'українська': 'uk',
+    u'հայերեն': 'hy',
+    u'יידיש': 'yi',
+    u'עִבְרִית': 'he',
+    u'עברית': 'he',
+    u'ئۇيغۇر تىلى': 'ug',
+    u'العربية': 'ar',
+    u'اُردُو': 'ur',
+    u'بهاس ملايو ': 'ms',
+    u'فارسی': 'fa',
+    u'لسان عثمانى': 'ota',
+    u'پښتو': 'ps',
+    u'ܐܪܡܝܐ | ארמיא': 'arc',
+    u'मराठी': 'mr',
+    u'हिन्दी': 'hi',
+    u'বাংলা': 'bn',
+    u'ਪੰਜਾਬੀ': 'pa',
+    u'தமிழ்': 'ta',
+    u'తెలుగు': 'te',
+    u'ಕನ್ನಡ': 'kn',
+    u'മലയാളം': 'ml',
+    u'සිංහල': 'si',
+    u'ไทย': 'th',
+    u'བོད་སྐད་': 'bod',
+    u'မြန်မာဘာသာ': 'mya',
+    u'ქართული': 'ka',
+    u'ភាសាខ្មែរ': 'km',
+    u'ᠮᠠᠨᠵᡠ ᡤᡳᠰᡠᠨ': 'mnc',
+    u'ᠮᠣᠩᠭᠣᠯ ᠪᠢᠴᠢᠭ᠌ | Монгол Кирилл үсэг': 'mon',
+    u'中文': 'zh',
+    u'中文-吴语': 'wuu',
+    u'中文-客家话': 'hak',
+    u'中文-广东话 粵語': 'yue',
+    u'中文-普通话 國語': 'zh',
+    u'中文-闽南话 臺語': 'nan',
+    u'日本語': 'ja',
+    u'한국말': 'ko',
+    u'한국어': 'ko',
+    u'𐌲𐌿𐍄𐌹𐍃𐌺𐌰': 'got',
+    u'𒅴𒂠': 'sux',
+    u'𓂋𓏺𓈖 𓆎𓅓𓏏𓊖': 'egy'
+}
+
+class InExMatch:
+    keys = []
+    regex = None
+    match = None
+    negate = False
+
+    def  __init__(self,line):
+        if "=>" in line: # for back-compat when used with replace_metadata conditionals.
+            (self.keys,self.match) = line.split("=>")
+            self.match = self.match.replace(SPACE_REPLACE,' ')
+            self.regex = re_compile(self.match,line)
+        elif "=~" in line:
+            (self.keys,self.match) = line.split("=~")
+            self.match = self.match.replace(SPACE_REPLACE,' ')
+            self.regex = re_compile(self.match,line)
+        elif "!~" in line:
+            (self.keys,self.match) = line.split("!~")
+            self.match = self.match.replace(SPACE_REPLACE,' ')
+            self.regex = re_compile(self.match,line)
+            self.negate = True
+        elif "==" in line:
+            (self.keys,self.match) = line.split("==")
+            self.match = self.match.replace(SPACE_REPLACE,' ')
+        elif "!=" in line:
+            (self.keys,self.match) = line.split("!=")
+            self.match = self.match.replace(SPACE_REPLACE,' ')
+            self.negate = True
+        self.keys = [x.strip() for x in self.keys.split(",")]
+
+    # For conditional, only one key
+    def is_key(self,key):
+        return key == self.keys[0]
+
+    # For conditional, only one key
+    def key(self):
+        return self.keys[0]
+
+    def in_keys(self,key):
+        return key in self.keys
+
+    def is_match(self,param):
+        if not isinstance(param,list):
+            param = [param]
+        retval = False
+        # print(param)
+        for value in param:
+            if self.regex:
+                if self.regex.search(value):
+                    retval |= True
+                #print(">>>>>>>>>>>>>%s=~%s r: %s,%s=%s"%(self.match,value,self.negate,retval,self.negate != retval))
+            else:
+                retval |= self.match == value
+                #print(">>>>>>>>>>>>>%s==%s r: %s,%s=%s"%(self.match,value,self.negate,retval, self.negate != retval))
+
+        return self.negate != retval
+
+    def __str__(self):
+        if self.negate:
+            f='!'
+        else:
+            f='='
+        if self.regex:
+            s='~'
+        else:
+            s='='
+        return u'InExMatch(%s %s%s %s)'%(self.keys,f,s,self.match)
+
+## metakey[,metakey]=~pattern
+## metakey[,metakey]==string
+## *for* part lines.  Effect only when trailing conditional key=~regexp matches
+## metakey[,metakey]=~pattern[&&metakey=~regexp]
+## metakey[,metakey]==string[&&metakey=~regexp]
+## metakey[,metakey]=~pattern[&&metakey==string]
+## metakey[,metakey]==string[&&metakey==string]
+def set_in_ex_clude(setting):
+    dest = []
+    # print("set_in_ex_clude:"+setting)
+    for line in setting.splitlines():
+        full_line=line
+        if line:
+            (match,condmatch)=(None,None)
+            if "&&" in line:
+                (line,conditional) = line.split("&&")
+                condmatch = InExMatch(conditional)
+            match = InExMatch(line)
+            dest.append([full_line,match,condmatch])
+    return dest
+
+## Two or three part lines.  Two part effect everything.
+## Three part effect only those key(s) lists.
+## pattern=>replacement
+## metakey,metakey=>pattern=>replacement
+## *Five* part lines.  Effect only when trailing conditional key=>regexp matches
+## metakey[,metakey]=>pattern=>replacement[&&metakey=>regexp]
+def make_replacements(replace):
+    retval=[]
+    for repl_line in replace.splitlines():
+        line=repl_line
+        try:
+            (metakeys,regexp,replacement,cond_match)=(None,None,None,None)
+            if "&&" in line:
+                (line,conditional) = line.split("&&")
+                cond_match = InExMatch(conditional)
+            if "=>" in line:
+                parts = line.split("=>")
+                if len(parts) > 2:
+                    metakeys = [x.strip() for x in parts[0].split(",")]
+                    (regexp,replacement)=parts[1:]
+                else:
+                    (regexp,replacement)=parts
+
+            if regexp:
+                regexp = re_compile(regexp,line)
+                # A way to explicitly include spaces in the
+                # replacement string.  The .ini parser eats any
+                # trailing spaces.
+                replacement=replacement.replace(SPACE_REPLACE,' ')
+                retval.append([repl_line,metakeys,regexp,replacement,cond_match])
+        except Exception as e:
+            logger.error("Problem with Replacement Line:%s"%repl_line)
+            raise exceptions.PersonalIniFailed(e,'replace_metadata unpacking failed',repl_line)
+#            raise
+    # print("replace lines:%s"%len(retval))
+    return retval
+
+def make_chapter_text_replacements(replace):
+    retval=[]
+    for repl_line in replace.splitlines():
+        line=repl_line
+        try:
+            (regexp,replacement)=(None,None)
+            if "=>" in line:
+                parts = line.split("=>")
+                (regexp,replacement)=parts
+
+            if regexp:
+                regexp = re_compile(regexp,line)
+                # A way to explicitly include spaces in the
+                # replacement string.  The .ini parser eats any
+                # trailing spaces.
+                replacement=replacement\
+                    .replace(SPACE_REPLACE,' ')
+
+                retval.append([repl_line,regexp,replacement])
+        except Exception as e:
+            logger.error("Problem with Chapter Text Replacement Line:%s"%repl_line)
+            raise exceptions.PersonalIniFailed(e,'replace_chapter_text unpacking failed',repl_line)
+#            raise
+    # print("replace lines:%s"%len(retval))
+    return retval
+
+## uuid5 needs a namespace UUID object.  This is a random uuid2 one we
+## can all use so our uuids always match.
+IMG_NS = uuid.UUID('5d976d9e-7d55-4e9e-975a-8cec6c69f98e')
+def url2uuid(url):
+    return str(uuid.uuid5(IMG_NS,ensure_str(url)))
+
+class ImageStore:
+    def __init__(self,dedup=False):
+        self.prefix='ffdl'
+        self.cover_name='cover'
+
+        ## list of dicts, one per image
+        self.infos=[]
+        ## index of image urls->uuid, not including cover.
+        self.url_index={}
+        ## index of image uuid->info, not including cover.
+        self.uuid_index={}
+        ## dict of img sizes -> lists of info dicts
+        ## size_index contains list for case of different images of same size.
+        self.size_index=defaultdict(list)
+        self.cover = None
+        self.dedup = dedup
+
+    # returns newsrc
+    def add_img(self,url,ext=None,mime=None,data=None,cover=False,actuallyused=True,failure=False):
+        # logger.debug("add_img0(%s,%s,%s)"%(url,ext,mime))
+        # existing ffdl image, likely from CSS
+        m = re.match(r'^images/'+self.prefix+r'-(?P<uuid>[0-9a-fA-F-]+)\.(?P<ext>.+)$',url)
+        if m:
+            # logger.debug("---- uuid from match")
+            uuid = m.group('uuid')
+        else:
+            # logger.debug("---- uuid from URL")
+            uuid = url2uuid(url)
+        info = {'url':url,
+                'uuid':uuid,
+                'ext':ext,
+                #'newsrc':newsrc, # set below
+                'mime':mime,
+                # for the admittedly rare case of an updating epub
+                # *not* needing all the images is already contains.
+                'actuallyused':actuallyused,
+                'data':data}
+        if cover:
+            info['newsrc'] = "images/%s.%s"%(self.cover_name,ext)
+            self.cover = info
+        else:
+            info['newsrc'] = "images/%s-%s.%s"%(
+                self.prefix,
+                uuid,
+                ext)
+            ## Replace info out right if it's a dup image
+            was_deduped = False
+            if self.dedup and data:
+                same_sz_imgs = self.get_imgs_by_size(len(data),actuallyused)
+                for szimg in same_sz_imgs:
+                    if data == szimg['data']:
+                        # matching data, duplicate file with a different URL.
+                        logger.info("found duplicate image: %s, %s"%(szimg['newsrc'],
+                                                                     szimg['url']))
+                        info = szimg
+                        was_deduped = True
+                        break
+            ## I believe this can theoretically end up with more than
+            ## one 'info' hash for the same file if an image is in
+            ## both CSS and <img longdesc>
+            if url not in self.url_index:
+                self.url_index[url]=uuid
+            if uuid not in self.uuid_index:
+                self.uuid_index[uuid]=info
+                if data and not was_deduped:
+                    self.infos.append(info)
+                    self.size_index[len(data)].append(uuid)
+        if failure:
+            info['newsrc'] = 'failedtoload'
+            info['actuallyused'] = False
+        # logger.debug("add_img(%s,%s,%s,%s,%s,used:%s)"%(url,ext,mime,uuid,info['newsrc'],info['actuallyused']))
+        return info
+
+    def cache_failed_url(self,url):
+        # logger.debug("cache_failed_url(%s)"%url)
+        self.add_img(url,failure=True)
+
+    def get_img_by_url(self,url,actuallyused=True):
+        # logger.debug("get_img_by_url(%s)"%url)
+        uuid = self.url_index.get(url,None)
+        if not uuid:
+            uuid = url2uuid(url)
+        retval = self.get_img_by_uuid(uuid,actuallyused)
+        if not retval:
+            ## fall back to lookup by *embedded* uuid, assuming same pattern
+            ## as above: "images/prefix-index-uuid.ext"
+            m = re.match(r'^images/'+self.prefix+r'-(?P<uuid>[0-9a-fA-F-]+)\.(?P<ext>.+)$',url)
+            if m:
+                retval = self.get_img_by_uuid(m.group('uuid'),actuallyused)
+        return retval
+
+    def get_img_by_uuid(self,uuid,actuallyused=True):
+        # logger.debug("get_img_by_uuid(%s)"%uuid)
+        info = self.uuid_index.get(uuid,None)
+        if info and info['newsrc'] != 'failedtoload':
+            info['actuallyused'] = info['actuallyused'] or actuallyused
+        return info
+
+    def get_imgs_by_size(self,size,actuallyused=True):
+        return [ self.get_img_by_uuid(uuid,actuallyused) for uuid in self.size_index[size] ]
+
+    # cover plus list
+    def get_imgs(self):
+        retval = [ x for x in self.infos if x['actuallyused'] ]
+        if self.cover:
+            retval.insert(0,self.cover)
+        return retval
+
+    def debug_out(self):
+        # logger.debug(self.fails_index)
+        # import pprint
+        # logger.debug(pprint.pformat([ (x['url'], x['uuid'], x['newsrc']) for x in self.infos]))
+        pass
+
+class MetadataCache:
+    def __init__(self):
+        # save processed metadata, dicts keyed by 'key', then (removeentities,dorepl)
+        # {'key':{(removeentities,dorepl):"value",(...):"value"},'key':... }
+        self.processed_metadata_cache = {}
+        ## not entirely sure now why lists are separate, but I assume
+        ## there was a reason.
+        self.processed_metadata_list_cache = {}
+
+        ## lists of entries that depend on key value--IE, the ones
+        ## that should also be cache invalided when key is.
+        # {'key':['name','name',...]
+        self.dependent_entries = {}
+
+    def clear(self):
+        self.processed_metadata_cache = {}
+        self.processed_metadata_list_cache = {}
+
+    def invalidate(self,key,seen_list={}):
+        # logger.debug("invalidate(%s)"%key)
+        # logger.debug("seen_list(%s)"%seen_list)
+        if key in seen_list:
+            raise exceptions.CacheCleared('replace all')
+        try:
+            new_seen_list = dict(seen_list)
+            new_seen_list[key]=True
+            if key in self.processed_metadata_cache:
+                del self.processed_metadata_cache[key]
+            if key in self.processed_metadata_list_cache:
+                del self.processed_metadata_list_cache[key]
+
+            for entry in self.dependent_entries.get(key,[]):
+                ## replace_metadata lines without keys apply to all
+                ## entries--special key '' used to clear deps on *all*
+                ## cache sets.
+                if entry == '':
+                    # logger.debug("clear in invalidate(%s)"%key)
+                    raise exceptions.CacheCleared('recursed')
+                self.invalidate(entry,new_seen_list)
+        except exceptions.CacheCleared as e:
+            # logger.debug(e)
+            self.clear()
+        # logger.debug(self.dependent_entries)
+
+    def add_dependencies(self,include_key,list_keys):
+        for key in list_keys:
+            if key not in self.dependent_entries:
+                self.dependent_entries[key] = set()
+            self.dependent_entries[key].add(include_key)
+
+    def set_cached_scalar(self,key,removeallentities,doreplacements,value):
+        if key not in self.processed_metadata_cache:
+            self.processed_metadata_cache[key] = {}
+        self.processed_metadata_cache[key][(removeallentities,doreplacements)] = value
+
+    def is_cached_scalar(self,key,removeallentities,doreplacements):
+        return key in self.processed_metadata_cache \
+            and (removeallentities,doreplacements) in self.processed_metadata_cache[key]
+
+    def get_cached_scalar(self,key,removeallentities,doreplacements):
+        return self.processed_metadata_cache[key][(removeallentities,doreplacements)]
+
+
+    def set_cached_list(self,key,removeallentities,doreplacements,value):
+        if key not in self.processed_metadata_list_cache:
+            self.processed_metadata_list_cache[key] = {}
+        self.processed_metadata_list_cache[key][(removeallentities,doreplacements)] = value
+
+    def is_cached_list(self,key,removeallentities,doreplacements):
+        return key in self.processed_metadata_list_cache \
+            and (removeallentities,doreplacements) in self.processed_metadata_list_cache[key]
+
+    def get_cached_list(self,key,removeallentities,doreplacements):
+        return self.processed_metadata_list_cache[key][(removeallentities,doreplacements)]
+
+
+class Story(Requestable):
+
+    def __init__(self, configuration):
+        Requestable.__init__(self, configuration)
+        try:
+            ## calibre plugin will set externally to match PI version.
+            self.metadata = {'version':os.environ['CURRENT_VERSION_ID']}
+        except:
+            self.metadata = {'version':'unknown'}
+        self.metadata['python_version']=sys.version
+        self.replacements = []
+        self.chapter_text_replacements = []
+        self.in_ex_cludes = {}
+        self.chapters = [] # chapters will be dict containing(url,title,html,etc)
+        self.extra_css = ""  # story-wide author-defined CSS, like AO3's workskins
+        self.chapter_first = None
+        self.chapter_last = None
+
+        self.img_store = ImageStore(dedup=self.getConfig('dedup_img_files'))
+
+        self.metadata_cache = MetadataCache()
+
+        ## set include_in_ cache dependencies
+        for entry in self.getValidMetaList():
+            if self.hasConfig("include_in_"+entry):
+                self.metadata_cache.add_dependencies(entry,
+                  [ k.replace('.NOREPL','') for k in self.getConfigList("include_in_"+entry) ])
+
+        self.cover=None # *href* of new cover image--need to create html.
+        self.oldcover=None # (oldcoverhtmlhref,oldcoverhtmltype,oldcoverhtmldata,oldcoverimghref,oldcoverimgtype,oldcoverimgdata)
+        self.calibrebookmark=None # cheesy way to carry calibre bookmark file forward across update.
+        self.logfile=None # cheesy way to carry log file forward across update.
+
+        self.replacements_prepped = False
+        self.chapter_text_replacements_prepped = False
+
+        self.chapter_error_count = 0
+
+        # direct_fetcher is used for downloading image in some case
+        # by using RequestsFetcher instead of the expected fetcher
+        self.direct_fetcher = None
+        if self.getConfig('use_flaresolverr_proxy'):
+            logger.debug("use_flaresolverr_proxy:%s"%self.getConfig('use_flaresolverr_proxy'))
+        if self.getConfig('use_browser_cache'):
+            logger.debug("use_browser_cache:%s"%self.getConfig('use_browser_cache'))
+        if self.getConfig('use_flaresolverr_proxy') == 'directimages' or self.getConfig('use_browser_cache') == 'directimages':
+            from . import fetchers
+            fetcher = fetchers.RequestsFetcher(self.getConfig,
+                                               self.getConfigList)
+            def get_request_raw(url,
+                                referer=None,
+                                usecache=True,
+                                image=False): ## referer is used with raw for images.
+                return fetcher.get_request_redirected(
+                    url,
+                    referer=referer,
+                    usecache=usecache,
+                    image=image)[0]
+            self.direct_fetcher = get_request_raw
+
+    def prepare_replacements(self):
+        if not self.replacements_prepped and not self.is_lightweight():
+            # logger.debug("prepare_replacements")
+            # logger.debug("sections:%s"%self.configuration.sectionslist)
+
+            ## Look for config parameter, split and add each to metadata field.
+            for (config,metadata) in [("extracategories","category"),
+                                      ("extragenres","genre"),
+                                      ("extracharacters","characters"),
+                                      ("extraships","ships"),
+                                      ("extrawarnings","warnings")]:
+                for val in self.getConfigList(config):
+                    self.addToList(metadata,val)
+
+            self.replacements =  make_replacements(self.getConfig('replace_metadata'))
+
+            ## set replace_metadata conditional key cache dependencies
+            for replaceline in self.replacements:
+                (repl_line,metakeys,regexp,replacement,cond_match) = replaceline
+                ## replace_metadata lines without keys apply to all
+                ## entries--special key '' used to clear deps on *all*
+                ## cache sets.
+                if not metakeys:
+                    metakeys = ['']
+                for key in metakeys:
+                    if cond_match:
+                        self.metadata_cache.add_dependencies(key.replace('_LIST',''),
+                                                             [ cond_match.key() ])
+
+            in_ex_clude_list = ['include_metadata_pre','exclude_metadata_pre',
+                                'include_metadata_post','exclude_metadata_post']
+            for ie in in_ex_clude_list:
+                ies = self.getConfig(ie)
+                # print("%s %s"%(ie,ies))
+                if ies:
+                    iel = []
+                    self.in_ex_cludes[ie] = set_in_ex_clude(ies)
+            self.replacements_prepped = True
+
+            for which in self.in_ex_cludes.values():
+                for (line,match,cond_match) in which:
+                    for key in match.keys:
+                        if cond_match:
+                            self.metadata_cache.add_dependencies(key.replace('_LIST',''),
+                                                                 [ cond_match.key() ])
+
+    def clear_processed_metadata_cache(self):
+        self.metadata_cache.clear()
+
+    def set_chapters_range(self,first=None,last=None):
+        self.chapter_first=first
+        self.chapter_last=last
+
+    def join_list(self, key, vallist):
+        return self.getConfig("join_string_"+key,u", ").replace(SPACE_REPLACE,' ').join([ str(x) for x in vallist if x is not None ])
+
+    def setMetadata(self, key, value, condremoveentities=True):
+
+        # delete cached replace'd value.
+        self.metadata_cache.invalidate(key)
+
+        # Fixing everything downstream to handle bool primatives is a
+        # pain.
+        if isinstance(value,bool):
+            value = str(value)
+        # keep as list type, but set as only value.
+        if self.isList(key):
+            self.addToList(key,value,condremoveentities=condremoveentities,clear=True)
+        else:
+            ## still keeps &lt; &lt; and &amp;
+            if condremoveentities:
+                self.metadata[key]=conditionalRemoveEntities(value)
+            else:
+                self.metadata[key]=value
+
+        if key == "language":
+            try:
+                # getMetadata not just self.metadata[] to do replace_metadata.
+                self.setMetadata('langcode',langs[self.getMetadataRaw(key)])
+            except:
+                self.setMetadata('langcode','en')
+
+        if key == 'dateUpdated' and value:
+            # Last Update tags for Bill.
+            self.addToList('lastupdate',value.strftime("Last Update Year/Month: %Y/%m"),clear=True)
+            self.addToList('lastupdate',value.strftime("Last Update: %Y/%m/%d"))
+
+        if key == 'sectionUrl' and value:
+            self.addUrlConfigSection(value) # adapter/writer share the
+                                            # same configuration.
+                                            # ignored if config
+                                            # is_lightweight()
+            self.replacements_prepped = False
+
+    def getMetadataForConditional(self,key,seen_list={}):
+        if self.getConfig("conditionals_use_lists",True) and not key.endswith("_LIST"):
+            condval = self.getList(key,seen_list=seen_list)
+        else:
+            condval = self.getMetadata(key.replace("_LIST",""),seen_list=seen_list)
+        return condval
+
+    def do_in_ex_clude(self,which,value,key,seen_list):
+        if value and which in self.in_ex_cludes:
+            include = 'include' in which
+            keyfound = False
+            found = False
+            for (line,match,cond_match) in self.in_ex_cludes[which]:
+                keyfndnow = False
+                if match.in_keys(key):
+                    if line in seen_list:
+                        logger.info("Skipping %s key(%s) value(%s) line(%s) to prevent infinite recursion."%(which,key,value,line))
+                        continue
+                    # key in keys and either no conditional, or conditional matched
+                    if cond_match == None or cond_match.is_key(key):
+                        keyfndnow = True
+                    else:
+                        new_seen_list = dict(seen_list)
+                        new_seen_list[line]=True
+                        # print(cond_match)
+                        condval = self.getMetadataForConditional(cond_match.key(),seen_list=new_seen_list)
+                        keyfndnow = cond_match.is_match(condval)
+                        # print("match:%s %s\ncond_match:%s %s\n\tkeyfound:%s\n\tfound:%s"%(
+                        #         match,value,cond_match,condval,keyfound,found))
+                    keyfound |= keyfndnow
+                    if keyfndnow:
+                        found = isinstance(value,str) and match.is_match(value)
+                    if found:
+                        # print("match:%s %s\n\tkeyfndnow:%s\n\tfound:%s"%(
+                        #         match,value,keyfndnow,found))
+                        if not include:
+                            value = None
+                        break
+            if include and keyfound and not found:
+                value = None
+        return value
+
+    def doReplacements(self,value,key,return_list=False,seen_list={}):
+        # logger.debug("doReplacements(%s,%s,%s)"%(value,key,seen_list))
+        # sets self.replacements and self.in_ex_cludes if needed
+        self.prepare_replacements()
+
+        value = self.do_in_ex_clude('include_metadata_pre',value,key,seen_list)
+        value = self.do_in_ex_clude('exclude_metadata_pre',value,key,seen_list)
+
+        retlist = [value]
+        for replaceline in self.replacements:
+            (repl_line,metakeys,regexp,replacement,cond_match) = replaceline
+            # logger.debug("replacement tuple:%s"%replaceline)
+            # logger.debug("key:%s value:%s"%(key,value))
+            # logger.debug("value class:%s"%value.__class__.__name__)
+            if (metakeys == None or key in metakeys) \
+                    and isinstance(value,str) \
+                    and regexp.search(value):
+                # recursion on pattern, bail -- Compare by original text
+                # line because I saw an issue with duplicate lines in a
+                # huuuge replace list cause a problem.  Also allows dict()
+                # instead of list() for quicker lookups.
+                if repl_line in seen_list:
+                    logger.info("Skipping replace_metadata line '%s' on %s to prevent infinite recursion."%(repl_line,key))
+                    continue
+                doreplace=True
+                if cond_match and cond_match.key() != key: # prevent infinite recursion.
+                    new_seen_list = dict(seen_list)
+                    new_seen_list[repl_line]=True
+                    # print(cond_match)
+                    condval = self.getMetadataForConditional(cond_match.key(),seen_list=new_seen_list)
+                    doreplace = condval != None and cond_match.is_match(condval)
+
+                if doreplace:
+                    # split into more than one list entry if
+                    # SPLIT_META present in replacement string.  Split
+                    # first, then regex sub, then recurse call replace
+                    # on each.  Break out of loop, each split element
+                    # handled individually by recursion call.
+                    if SPLIT_META in replacement:
+                        retlist = []
+                        for splitrepl in replacement.split(SPLIT_META):
+                            try:
+                                tval = regexp.sub(splitrepl,value)
+                            except:
+                                logger.error("Exception with replacement line,value:(%s),(%s)"%(repl_line,value))
+                                raise
+                            new_seen_list = dict(seen_list)
+                            new_seen_list[repl_line]=True
+                            retlist.extend(self.doReplacements(tval,
+                                                               key,
+                                                               return_list=True,
+                                                               seen_list=new_seen_list))
+                        break
+                    else:
+                        # print("replacement,value:%s,%s->%s"%(replacement,value,regexp.sub(replacement,value)))
+                        try:
+                            value = regexp.sub(replacement,value)
+                            retlist = [value]
+                        except:
+                            logger.error("Exception with replacement line,value:(%s),(%s)"%(repl_line,value))
+                            raise
+
+        for val in retlist:
+            retlist = [ self.do_in_ex_clude('include_metadata_post',x,key=key,seen_list=seen_list) for x in retlist ]
+            retlist = [ self.do_in_ex_clude('exclude_metadata_post',x,key=key,seen_list=seen_list) for x in retlist ]
+
+        if return_list:
+            return retlist
+        else:
+            return self.join_list(key,retlist)
+
+    # for saving an html-ified copy of metadata.
+    def dump_html_metadata(self):
+        lines=[]
+        for k,v in sorted(iter(self.metadata.items())):
+            #logger.debug("k:%s v:%s"%(k,v))
+            classes=['metadata']
+            if isinstance(v, (datetime.date, datetime.datetime, datetime.time)):
+                classes.append("datetime")
+                val = v.isoformat()
+            elif isinstance(v,list):
+                classes.append("list")
+                if '' in v:
+                    v.remove('')
+                if None in v:
+                    v.remove(None)
+                #logger.debug("k:%s v:%s"%(k,v))
+                # force ints/floats to strings.
+                val = "<ul>\n<li>%s</li>\n</ul>" % "</li>\n<li>".join([ "%s"%x for x in v ])
+            elif isinstance(v, (int)):
+                classes.append("int")
+                val = v
+            else:
+                val = v
+
+            # don't include items passed in for calibre cols, etc.
+            if not k.startswith('calibre_') and k not in ['output_css']:
+                lines.append("<p><span class='label'>%s</span>: <div class='%s' id='%s'>%s</div><p>\n"%(
+                        self.get_label(k),
+                        " ".join(classes),
+                        k,val))
+        return "\n".join(lines)
+
+    # for loading an html-ified copy of metadata.
+    def load_html_metadata(self,data):
+        soup = bs4.BeautifulSoup(data,'html5lib')
+        for tag in soup.find_all('div','metadata'):
+            val = None
+            if 'datetime' in tag['class']:
+                v = tag.string
+                try:
+                    val = datetime.datetime.strptime(v, '%Y-%m-%dT%H:%M:%S.%f')
+                except ValueError:
+                    try:
+                        val = datetime.datetime.strptime(v, '%Y-%m-%dT%H:%M:%S')
+                    except ValueError:
+                        try:
+                            val = datetime.datetime.strptime(v, '%Y-%m-%d')
+                        except ValueError:
+                            pass
+            elif 'list' in tag['class']:
+                val = []
+                for i in tag.find_all('li'):
+                    # keeps &amp; but removes <li></li> because BS4
+                    # halps by converting NavigableString to string
+                    # (losing entities)
+                    val.append(str(i)[4:-5])
+            elif 'int' in tag['class']:
+                # Python reports true when asked isinstance(<bool>, (int))
+                # bools now converted to str when set.
+                if tag.string in ('True','False'):
+                    val = tag.string
+                else:
+                    val = int(tag.string)
+            else:
+                val = str("\n".join([ str(c) for c in tag.contents ]))
+
+            #logger.debug("key(%s)=val(%s)"%(tag['id'],val))
+            if val != None:
+                self.metadata[tag['id']]=val
+
+        # self.metadata = json.loads(s, object_hook=datetime_decoder)
+
+    def getChapterCount(self):
+        ## returns chapter count adjusted for start-end range.
+        value = 0
+        try:
+            url_chapters = value = int(self.getMetadata("numChapters").replace(',',''))
+        except:
+            logger.warning("Failed to get number of chapters--no chapters recorded by adapter")
+        if self.chapter_first:
+            value = url_chapters - (int(self.chapter_first) - 1)
+        if self.chapter_last:
+            value = value - (url_chapters - int(self.chapter_last))
+        if value < 1:
+            raise exceptions.FailedToDownload("No chapters to download after chapter range/-b/-e and ignore_chapter_url_list applied")
+        return value
+
+    def getMetadataRaw(self,key):
+        if self.isValidMetaEntry(key) and key in self.metadata:
+            return self.metadata[key]
+
+    def getMetadata(self, key,
+                    removeallentities=False,
+                    doreplacements=True,
+                    seen_list={}):
+        if self.isImmutableMetaEntry(key):
+            doreplacements = False
+
+        # check for a cached value to speed processing
+        if self.metadata_cache.is_cached_scalar(key,removeallentities,doreplacements):
+            return self.metadata_cache.get_cached_scalar(key,removeallentities,doreplacements)
+
+        value = None
+        if not self.isValidMetaEntry(key):
+            pass # cache not valid entry, too.
+#            return value
+
+        elif self.isList(key):
+            # join_string = self.getConfig("join_string_"+key,u", ").replace(SPACE_REPLACE,' ')
+            # value = join_string.join(self.getList(key, removeallentities, doreplacements=True))
+            value = self.join_list(key,self.getList(key, removeallentities, doreplacements=True,seen_list=seen_list))
+            if doreplacements:
+                value = self.doReplacements(value,key+"_LIST",seen_list=seen_list)
+        elif key in self.metadata:
+            value = self.metadata[key]
+            if value:
+                if key in ["numWords","numChapters"]+self.getConfigList("comma_entries",[]):
+                    try:
+                        value = commaGroups(str(value))
+                    except Exception as e:
+                        logger.warning("Failed to add commas to %s value:(%s) exception(%s)"%(key,value,e))
+                if key in ("dateCreated"):
+                    value = value.strftime(self.getConfig(key+"_format","%Y-%m-%d %H:%M:%S"))
+                if key in ("datePublished","dateUpdated"):
+                    value = value.strftime(self.getConfig(key+"_format","%Y-%m-%d"))
+                if isinstance(value, (datetime.date, datetime.datetime, datetime.time)) and self.hasConfig(key+"_format"):
+                    # logger.info("DATE: %s"%key)
+                    value = value.strftime(self.getConfig(key+"_format"))
+                if key == "title" and (self.chapter_first or self.chapter_last) and self.getConfig("title_chapter_range_pattern"):
+                    first = self.chapter_first or "1"
+                    last = self.chapter_last or self.getMetadata("numChapters")
+                    templ = string.Template(self.getConfig("title_chapter_range_pattern"))
+                    value = templ.substitute({'title':value,
+                                              'first':commaGroups(first),
+                                              'last':commaGroups(last)})
+
+            if doreplacements:
+                value=self.doReplacements(value,key,seen_list=seen_list)
+            if removeallentities and value != None:
+                value = removeAllEntities(value)
+        else: #if self.getConfig("default_value_"+key):
+            value = self.getConfig("default_value_"+key)
+
+        # save a cached value to speed processing
+        self.metadata_cache.set_cached_scalar(key,removeallentities,doreplacements,value)
+
+        return value
+
+    def getAllMetadata(self,
+                       removeallentities=False,
+                       doreplacements=True,
+                       keeplists=False):
+        '''
+        All single value *and* list value metadata as strings (unless
+        keeplists=True, then keep lists).
+        '''
+        allmetadata = {}
+
+        # special handling for authors/authorUrls
+        ## XXX make a function to handle missing URLs?
+        linkhtml="<a class='%slink' href='%s'>%s</a>"
+        if self.isList('author'): # more than one author, assume multiple authorUrl too.
+            htmllist=[]
+            for i, auth in enumerate(self.getList('author', removeallentities, doreplacements)):
+                if len(self.getList('authorUrl', removeallentities, doreplacements)) <= i:
+                    aurl = None
+                else:
+                    aurl = self.getList('authorUrl', removeallentities, doreplacements)[i]
+                htmllist.append(linkhtml%('author',aurl,auth))
+            self.setMetadata('authorHTML',self.join_list("join_string_authorHTML",htmllist))
+        else:
+            self.setMetadata('authorHTML',linkhtml%('author',self.getMetadata('authorUrl', removeallentities, doreplacements),
+                                                    self.getMetadata('author', removeallentities, doreplacements)))
+
+        self.setMetadata('titleHTML',linkhtml%('title',
+                                               self.getMetadata('storyUrl', removeallentities, doreplacements),
+                                               self.getMetadata('title', removeallentities, doreplacements)))
+
+        series = self.getMetadata('series', removeallentities, doreplacements)
+        seriesUrl = self.getMetadata('seriesUrl', removeallentities, doreplacements)
+        if series:
+            # linkhtml isn't configurable.  If it ever is, we may want
+            # to still set seriesHTML without series.
+            if seriesUrl:
+                self.setMetadata('seriesHTML',linkhtml%('series',seriesUrl,series))
+            else:
+                self.setMetadata('seriesHTML',series)
+
+        # logger.debug("make_linkhtml_entries:%s"%self.getConfig('make_linkhtml_entries'))
+        for k in self.getConfigList('make_linkhtml_entries'):
+            # Assuming list, because it has to be site specific and
+            # they are all lists.  Bail if kUrl list not the same
+            # length.
+            # logger.debug("\nk:%s\nlist:%s\nlistURL:%s"%(k,self.getList(k),self.getList(k+'Url')))
+            if len(self.getList(k+'Url', removeallentities, doreplacements)) != len(self.getList(k, removeallentities, doreplacements)):
+                continue
+            htmllist=[]
+            for i, v in enumerate(self.getList(k, removeallentities, doreplacements)):
+                url = self.getList(k+'Url', removeallentities, doreplacements)[i]
+                htmllist.append(linkhtml%(k,url,v))
+            # join_string = self.getConfig("join_string_"+k+"HTML",u", ").replace(SPACE_REPLACE,' ')
+            self.setMetadata(k+'HTML',self.join_list("join_string_"+k+"HTML",htmllist))
+
+        for k in self.getValidMetaList():
+            if self.isList(k) and keeplists:
+                allmetadata[k] = self.getList(k, removeallentities, doreplacements)
+            else:
+                allmetadata[k] = self.getMetadata(k, removeallentities, doreplacements)
+
+        return allmetadata
+
+    def get_sanitized_description(self):
+        '''
+        For calibre version so this code can be consolidated between
+        fff_plugin.py and jobs.py
+        '''
+        description = self.getMetadata("description")
+        # logger.debug("description:%s"%description)
+        if not description:
+            description = ''
+        else:
+            if not self.getConfig('keep_summary_html'):
+                ## because of the html->MD text->html dance, text only
+                ## (or MD/MD-like) descs come out better.
+                description = sanitize_comments_html(description)
+        # lengthy FFF_replace_br_with_p_has_been_run" causes
+        # problems with EpubSplit and EpubMerge comments
+        description = description.replace(u'<!-- ' +was_run_marker+ u' -->\n',u'')
+        description = description.replace(u'<div id="' +was_run_marker+ u'">\n',u'<div>')
+        return description
+
+    # just for less clutter in adapters.
+    def extendList(self,listname,l):
+        for v in l:
+            self.addToList(listname,v.strip())
+
+    def addToList(self,listname,value,condremoveentities=True,clear=False):
+        # delete cached replace'd value.
+        self.metadata_cache.invalidate(listname)
+
+        if value==None:
+            return
+        if condremoveentities:
+            value = conditionalRemoveEntities(value)
+        if clear or not self.isList(listname) or not listname in self.metadata:
+            # Calling addToList to a non-list meta will overwrite it.
+            self.metadata[listname]=[]
+        # prevent duplicates.
+        if not value in self.metadata[listname]:
+            self.metadata[listname].append(value)
+
+    def isList(self,listname):
+        'Everything set with an include_in_* is considered a list.'
+        return self.isListType(listname) or \
+            ( self.isValidMetaEntry(listname) and listname in self.metadata \
+                  and isinstance(self.metadata[listname],list) )
+
+    def getList(self,listname,
+                removeallentities=False,
+                doreplacements=True,
+                includelist=[],
+                skip_cache=False,
+                seen_list={}):
+        #print("getList(%s,%s)"%(listname,includelist))
+        retlist = []
+
+        if self.isImmutableMetaEntry(listname):
+            doreplacements = False
+
+        # check for a cached value to speed processing
+        if not skip_cache and self.metadata_cache.is_cached_list(listname,removeallentities,doreplacements):
+            return self.metadata_cache.get_cached_list(listname,removeallentities,doreplacements)
+
+        if not self.isValidMetaEntry(listname):
+            retlist = []
+        else:
+            # includelist prevents infinite recursion of include_in_'s
+            if self.hasConfig("include_in_"+listname) and listname not in includelist:
+                for k in self.getConfigList("include_in_"+listname):
+                    ## allow for static string includes when double quoted ""
+                    if k.startswith('"') and k.endswith('"'):
+                        retlist.append(k[1:-1])
+                    else:
+                        ldorepl = doreplacements
+                        if k.endswith('.NOREPL'):
+                            k = k[:-len('.NOREPL')]
+                            ldorepl = False
+                        retlist.extend(self.getList(k,removeallentities=False,
+                                                    doreplacements=ldorepl,includelist=includelist+[listname],
+                                                    skip_cache=True,
+                                                    seen_list=seen_list))
+            else:
+
+                if not self.isList(listname):
+                    retlist = [self.getMetadata(listname,removeallentities=False,
+                                                doreplacements=False, # will be done below as-per list
+                                                seen_list=seen_list)]
+                else:
+                    retlist = self.getMetadataRaw(listname)
+                    if retlist is None:
+                        retlist = []
+
+            # reorder ships so b/a and c/b/a become a/b and a/b/c.  Only on '/',
+            # use replace_metadata to change separator first if needed.
+            # ships=>[ ]*(/|&amp;|&)[ ]*=>/
+            if listname == 'ships' and self.getConfig('sort_ships') and doreplacements and retlist:
+                # retlist = [ '/'.join(sorted(x.split('/'))) for x in retlist ]
+                ## empty default of /=>/
+                sort_ships_splits = self.getConfig('sort_ships_splits',"/=>/")
+
+                for line in sort_ships_splits.splitlines():
+                    if line:
+                        ## logger.debug("sort_ships_splits:%s"%line)
+                        ## logger.debug(retlist)
+                        (splitre,splitmerge) = line.split("=>")
+                        splitmerge = splitmerge.replace(SPACE_REPLACE,' ')
+                        newretlist = []
+                        for x in retlist:
+                            curlist = []
+                            for y in re.split(splitre,x):
+                                ## logger.debug("x:(%s) y:(%s)"%(x,y))
+                                ## for SPLIT_META(\,)
+                                if x != y and doreplacements: # doreplacements always true here (currently)
+                                    y = self.doReplacements(y,'ships_CHARS',return_list=True,
+                                                            seen_list=seen_list)
+                                else:
+                                    ## needs to be a list to extend curlist.
+                                    y=[x]
+                                if y[0]: ## skip if empty
+                                    curlist.extend(y)
+                                ## logger.debug("curlist:%s"%(curlist,))
+                            newretlist.append( splitmerge.join(sorted(curlist)) )
+
+                        retlist = newretlist
+                        ## logger.debug(retlist)
+
+            ## Add value of add_genre_when_multi_category to genre if
+            ## there's more than one category value.  Does not work
+            ## consistently well if you try to include_in_ chain genre
+            ## back into category--breaks with fandoms sites like AO3
+            if( listname == 'genre' and self.getConfig('add_genre_when_multi_category')
+                and len(self.getList('category',
+                                     removeallentities=False,
+                                     # to avoid inf loops if genre/cat substs
+                                     includelist=includelist+[listname],
+                                     doreplacements=False,
+                                     skip_cache=True,
+                                     seen_list=seen_list
+                                     )) > 1
+                and self.getConfig('add_genre_when_multi_category') not in retlist ):
+                retlist.append(self.getConfig('add_genre_when_multi_category'))
+
+            if listname == 'extratags' and not retlist:
+                ## extratags comes directly from .ini Here to allow
+                ## include_in_extratags to still work for completeness
+                retlist = self.getConfigList('extratags')
+
+            if retlist:
+                if doreplacements:
+                    newretlist = []
+                    for val in retlist:
+                        newretlist.extend(self.doReplacements(val,listname,return_list=True,
+                                                              seen_list=seen_list))
+                    retlist = newretlist
+
+                if removeallentities:
+                    retlist = [ removeAllEntities(x) for x in retlist ]
+
+                retlist = [x for x in retlist if x!=None and x!='']
+
+            if retlist:
+                if listname in ('author','authorUrl','authorId') or self.getConfig('keep_in_order_'+listname):
+                    # need to retain order for author & authorUrl so the
+                    # two match up.
+                    retlist = unique_list(retlist)
+                else:
+                    # remove dups and sort.
+                    retlist = sorted(list(set(retlist)))
+
+                ## Add value of add_genre_when_multi_category to
+                ## category if there's more than one category
+                ## value (before this, obviously).  Applied
+                ## *after* doReplacements.  For normalization
+                ## crusaders who want Crossover as a category
+                ## instead of genre.  Moved after dedup'ing so
+                ## consolidated category values don't count.
+                if( listname == 'category'
+                    and self.getConfig('add_category_when_multi_category')
+                    and len(retlist) > 1
+                    and self.getConfig('add_category_when_multi_category') not in retlist ):
+                    retlist.append(self.getConfig('add_category_when_multi_category'))
+                    ## same sort as above, but has to be after due to
+                    ## changing list. unique filter not needed: 'not
+                    ## in retlist' check
+                    if not (listname in ('author','authorUrl','authorId') or self.getConfig('keep_in_order_'+listname)):
+                        retlist = sorted(list(set(retlist)))
+
+            else:
+                retlist = []
+
+        if not skip_cache:
+            self.metadata_cache.set_cached_list(listname,removeallentities,doreplacements,retlist)
+
+        return retlist
+
+    def getSubjectTags(self, removeallentities=False):
+        ## Used both to populate epub <dc:subject> tags and Calibre
+        ## Tags column.
+
+        # to avoid duplicates subject tags *and* allow order of
+        # <dc:subject> tags.
+        subjectset = OrderedDict()
+
+        tags_list = self.getConfigList("include_subject_tags") + self.getConfigList("extra_subject_tags")
+
+        ## This used to spin on keys of self.getAllMetadata() look for
+        ## key in tags_list.  No idea why, probably from even older code
+        ## 4bb91cd0c5877cf64a779c92d1f9f338a130fa5b
+        ## Found a reason, if a poor one.  extratags was populated in
+        ## story as a side-effect.  Moved to getList()
+        for entry in tags_list:
+            ## allow both _LIST and .SPLIT
+            entry_key = entry.replace('_LIST','').replace('.SPLIT','')
+            if not self.isValidMetaEntry(entry_key):
+                logger.warning("Skipping invalid metadata entry (%s) in include_subject_tags",entry)
+                continue
+            if '_LIST' in entry:
+                # _LIST indicates to use the whole list (as a string)
+                # to match _LIST in replace_metadata.  Then split by
+                # comma(,)
+                value_list = [ self.getMetadata(entry_key,
+                                                removeallentities=removeallentities) ]
+            else:
+                # use lists to match prior behavior, skipping _LIST
+                # replace_metadata lines.
+                value_list = self.getList(entry_key,
+                                          removeallentities=removeallentities)
+            if '.SPLIT' in entry:
+                # split each entry value by ',' .SPLIT was basically
+                # obsoleted by \, splitting, but may still be used in
+                # some users' config.  Could also be useful with _LIST
+                # now.
+                split_list = []
+                for value in value_list:
+                    split_list.extend(value.split(','))
+                value_list = split_list
+
+            for v in [ x.strip() for x in value_list ]:
+                if v: # skip '' or None
+                    subjectset[v] = True
+
+        # logger.debug("getSubjectTags:%s"%subjectset.keys())
+        return list(subjectset.keys())
+
+    def addChapter(self, chap, newchap=False):
+        # logger.debug("addChapter(%s,%s)"%(chap,newchap))
+        chapter = defaultdict(str,chap) # default unknown to empty string
+        chapter['html'] = removeEntities(chapter['html'])
+        if self.getConfig('strip_chapter_numbers') and \
+                self.getConfig('chapter_title_strip_pattern'):
+            chapter['title'] = re.sub(self.getConfig('chapter_title_strip_pattern'),"",chapter['title'])
+        chapter.update({'origtitle':chapter['title'],
+                        'toctitle':chapter['title'],
+                        'new':newchap,
+                        'number':len(self.chapters)+1,
+                        'index04':"%04d"%(len(self.chapters)+1)})
+        ## Due to poor planning on my part, chapter_title_*_pattern
+        ## expect index==1 while output settings expected index=0001.
+        ## index04 is to disambiguate, but index is kept for users'
+        ## pre-existing settings.
+        chapter['index']=chapter['index04']
+        self.chapters.append(chapter)
+
+    def getChapters(self,fortoc=False):
+        "Chapters will be defaultdicts(str)"
+        retval = []
+
+        ## only add numbers if more than one chapter.  Ditto (new) marks.
+        addnums = len(self.chapters) > 1 and (
+            self.getConfig('add_chapter_numbers') == "true"
+            or (self.getConfig('add_chapter_numbers') == "toconly" and fortoc) )
+        marknew = self.getConfig('mark_new_chapters') # true or latestonly
+
+        defpattern = self.getConfig('chapter_title_def_pattern','${title}') # default val in case of missing defaults.ini
+        if addnums and marknew:
+            pattern = self.getConfig('chapter_title_add_pattern')
+            newpattern = self.getConfig('chapter_title_addnew_pattern')
+        elif addnums:
+            pattern = self.getConfig('chapter_title_add_pattern')
+            newpattern = pattern
+        elif marknew:
+            pattern = defpattern
+            newpattern = self.getConfig('chapter_title_new_pattern')
+        else:
+            pattern = defpattern
+            newpattern = pattern
+
+        if self.getConfig('add_chapter_numbers') in ["true","toconly"]:
+            tocpattern = self.getConfig('chapter_title_add_pattern')
+        else:
+            tocpattern = defpattern
+
+        # logger.debug("Patterns: (%s)(%s)"%(pattern,newpattern))
+        templ = string.Template(pattern)
+        newtempl = string.Template(newpattern)
+        toctempl = string.Template(tocpattern)
+
+        marked_new_chapters = 0
+        for index, chap in enumerate(self.chapters):
+            if chap['new'] or self.getMetadata('newforanthology'):
+                usetempl = newtempl
+                marked_new_chapters += 1
+            else:
+                usetempl = templ
+            # logger.debug("chap(%s)"%chap)
+            chapter = defaultdict(str,chap)
+            ## Due to poor planning on my part,
+            ## chapter_title_*_pattern expect index==1 not
+            ## index=0001 like output settings.  index04 is now
+            ## used, but index is still included for backward
+            ## compatibility.
+            chapter['title'] = self.do_chapter_text_replacements(chapter['title'])
+            chapter['index'] = chapter['number']
+            chapter['chapter'] = usetempl.substitute(chapter)
+            chapter['origtitle'] = templ.substitute(chapter)
+            chapter['toctitle'] = toctempl.substitute(chapter)
+            # set after, otherwise changes origtitle and toctitle
+            chapter['title'] = chapter['chapter']
+            ## chapter['html'] is a string.
+            chapter['html'] = self.do_chapter_text_replacements(chapter['html'])
+            retval.append(chapter)
+        if marked_new_chapters:
+            self.setMetadata('marked_new_chapters',marked_new_chapters)
+        return retval
+
+    def do_chapter_text_replacements(self,data):
+        '''
+        'Undocumented' feature.  This is a shotgun with a stirrup on
+        the end--you *will* shoot yourself in the foot a lot with it.
+        '''
+        # only compile chapter_text_replacements once.
+        if not self.chapter_text_replacements and self.getConfig('replace_chapter_text'):
+            self.chapter_text_replacements = make_chapter_text_replacements(self.getConfig('replace_chapter_text'))
+            # logger.debug(self.chapter_text_replacements)
+        for replaceline in self.chapter_text_replacements:
+            (repl_line,regexp,replacement) = replaceline
+            if regexp.search(data):
+                data = regexp.sub(replacement,data)
+        return data
+
+    def get_filename_safe_metadata(self,pattern=None):
+        origvalues = self.getAllMetadata()
+        values={}
+        if not pattern:
+            pattern = re_compile(self.getConfig("output_filename_safepattern",
+                                                r"(^\.|/\.|[^a-zA-Z0-9_\. \[\]\(\)&'-]+)"),
+                                 "output_filename_safepattern")
+        for k in origvalues.keys():
+            if k == 'formatext': # don't do file extension--we set it anyway.
+                values[k]=self.getMetadata(k)
+            else:
+                values[k]=re.sub(pattern,'_', removeAllEntities(self.getMetadata(k)))
+        return values
+
+    def formatFileName(self,template,allowunsafefilename=True):
+        # fall back default:
+        if not template:
+            template="${title}-${siteabbrev}_${storyId}${formatext}"
+
+        if allowunsafefilename:
+            values = self.getAllMetadata()
+        else:
+            values = self.get_filename_safe_metadata()
+
+        return string.Template(template).substitute(values) #.encode('utf8')
+
+    ## Apply no_image_processing globally, or based on matching img src.
+    def no_image_processing(self,imgurl=None):
+        if self.getConfig('no_image_processing'):
+            logger.debug("No image processing no_image_processing:true")
+            return True
+        nipregexp = self.getConfig('no_image_processing_regexp')
+        if nipregexp and imgurl and re.search(nipregexp,imgurl):
+            logger.debug("No image processing (%s) matches no_image_processing_regexp(%s)"%(imgurl,nipregexp))
+            return True
+
+    # for base_adapter to call to load pre-existing images from update
+    # epub.
+    def load_oldimgs(self,oldimgs):
+        for url in oldimgs.keys():
+            ## need to take ext from saved src, not origurl,
+            ## likely changed to jpg.
+            (src,data)=oldimgs[url]
+            ext = src.split('.')[-1]
+            # logger.debug("load_oldimgs:(%s,%s,%s)"%(url,ext,imagetypes[ext]))
+            self.img_store.add_img(url,
+                                   ext,
+                                   imagetypes[ext],
+                                   data,
+                                   actuallyused=False)
+
+    # pass fetch in from adapter in case we need the cookies collected
+    # as well as it's a base_story class method.
+    def addImgUrl(self,parenturl,url,fetch,cover=None,coverexclusion=None):
+        logger.debug("addImgUrl(parenturl=%s,url=%s,cover=%s,coverexclusion=%s"%(parenturl,url,cover,coverexclusion))
+
+        ## flaresolverr can't download images and browser_cache can be setup to ignore image,
+        ## so this directly downloads them using RequestsFetcher.
+        if self.direct_fetcher:
+            # logger.debug("addImgUrl: using direct_fetcher")
+            fetch = self.direct_fetcher
+
+        # otherwise it saves the image in the epub even though it
+        # isn't used anywhere.
+        if cover and self.getConfig('never_make_cover'):
+            logger.debug("%s rejected as cover by never_make_cover"%url)
+            return (None,None)
+
+        url = url.strip() # ran across an image with a space in the
+                          # src. Browser handled it, so we'd better, too.
+
+        newsrc = None
+        imgdata = None
+        if url.startswith("data:image"):
+            if 'base64' in url and self.getConfig("convert_inline_images",True):
+                head, base64data = url.split(',', 1)
+                # logger.debug("%s len(%s)"%(head,len(base64data)))
+                # Get the file extension (gif, jpeg, png)
+                file_ext = head.split(';')[0].split('/')[1]
+
+                # Decode the image data
+                imgdata = base64.b64decode(base64data)
+                imgurl = "file:///fakefile/img-data-image/"+hashlib.md5(imgdata).hexdigest()+"."+file_ext
+            else:
+                # don't do anything to in-line images.
+                return (url, "inline image")
+        else:
+            ## Mistakenly ended up with some // in image urls, like:
+            ## https://forums.spacebattles.com//styles/default/xenforo/clear.png
+            ## Removing one /, but not ://
+            if not url.startswith("file:"): # keep file:///
+                url = re.sub(r"([^:])//",r"\1/",url)
+            if url.startswith("http") or url.startswith("file:") or parenturl == None:
+                imgurl = url
+            else:
+                imgurl = urljoin(parenturl,url)
+
+        ## apply coverexclusion to specific covers, too.  Primarily for ffnet imageu.
+        ## (Note that default and force covers don't pass cover_exclusion_regexp)
+        if cover and coverexclusion and re.search(coverexclusion,imgurl):
+            logger.debug("%s rejected as cover by cover_exclusion_regexp"%imgurl)
+            return (None,None)
+
+        self.img_store.debug_out()
+        imginfo = self.img_store.get_img_by_url(imgurl)
+        if not imginfo:
+            try:
+                if imgurl.startswith('failedtoload'):
+                    if self.getConfig('retry_failedtoload_images') and re.match(r'^failedtoload (https?|file|ftp):',imgurl): # option
+                        imgurl = imgurl[len('failedtoload '):]
+                        logger.debug("\n\nRetrying failedtoload img(%s)\n"%imgurl)
+                    else:
+                        return (imgurl,'')
+
+                if not imgdata:
+                    # might already have from data:image in-line allow
+
+                    # allow referer to be forced for a few image sites
+                    # and authors who link images that watermark or
+                    # don't work anymore.
+                    refererurl = parenturl
+                    if( self.getConfig("force_img_self_referer_regexp") and
+                        re.search(self.getConfig("force_img_self_referer_regexp"),
+                                  url) ):
+                        refererurl = url
+                        logger.debug("Use Referer:%s"%refererurl)
+                    imgdata = fetch(imgurl,referer=refererurl,image=True)
+
+                if self.no_image_processing(imgurl):
+                    (data,ext,mime) = no_convert_image(imgurl,
+                                                       imgdata)
+                else:
+                    # logger.debug("Doing image processing on (%s)"%imgurl)
+                    try:
+                        sizes = [ int(x) for x in self.getConfigList('image_max_size',['580', '725']) ]
+                    except Exception as e:
+                        raise exceptions.FailedToDownload("Failed to parse image_max_size from personal.ini:%s\nException: %s"%(self.getConfigList('image_max_size'),e))
+                    grayscale = self.getConfig('grayscale_images')
+                    imgtype = self.getConfig('convert_images_to')
+                    if not imgtype:
+                        imgtype = "jpg"
+                    removetrans = self.getConfig('remove_transparency')
+                    removetrans = removetrans or grayscale or imgtype=="jpg"
+                    if 'ffdl-' in imgurl:
+                        raise exceptions.FailedToDownload("ffdl image is internal only...")
+                    bgcolor = self.getConfig('background_color','ffffff')
+                    if not bgcolor or len(bgcolor)<3 or len(bgcolor)>6 or not re.match(r"^[0-9a-fA-F]+$",bgcolor):
+                        logger.info("background_color(%s) needs to be a hexidecimal color--using ffffff instead."%bgcolor)
+                        bgcolor = 'ffffff'
+                    try:
+                        jpg_quality = int(self.getConfig('jpg_quality', '95'))
+                    except Exception as e:
+                        raise exceptions.FailedToDownload("Failed to parse jpg_quality as int from personal.ini:%s\nException: %s"%(self.getConfig('jpg_quality'),e))
+                    (data,ext,mime) = convert_image(imgurl,
+                                                    imgdata,
+                                                    sizes,
+                                                    grayscale,
+                                                    removetrans,
+                                                    imgtype,
+                                                    background="#"+bgcolor,
+                                                    jpg_quality=jpg_quality)
+            except Exception as e:
+                try:
+                    logger.info("Failed to load or convert image, \nparent:%s\nskipping:%s\nException: %s"%(parenturl,imgurl,e))
+                except:
+                    logger.info("Failed to load or convert image, \nparent:%s\nskipping:%s\n(Exception output also caused exception)"%(parenturl,imgurl))
+                self.img_store.cache_failed_url(imgurl)
+                fs = "failedtoload %s"%imgurl
+                return (fs,'')
+
+            if not cover: # cover now handled below
+                imginfo = self.img_store.add_img(imgurl,
+                                                 ext,
+                                                 mime,
+                                                 data)
+                newsrc = imginfo['newsrc']
+                imgurl = imginfo['url']
+        else:
+            if imginfo['newsrc'].startswith('failedtoload'):
+                fs = "failedtoload %s"%imgurl
+                return (fs,fs)
+            ## image was found in existing store.
+            self.img_store.debug_out()
+            logger.debug("existing image url found:%s->%s(%s)"%(imgurl,imginfo['newsrc'],imginfo['url']))
+            newsrc = imginfo['newsrc']
+
+            ## for cover handling
+            imgurl = imginfo['url']
+            ext    = imginfo['ext']
+            mime   = imginfo['mime']
+            data   = imginfo['data']
+
+        # logger.debug("%s,%s"%(newsrc,imgurl))
+        # explicit cover, check the size, but not for default and force
+        if cover=='specific' and not self.check_cover_min_size(data):
+            logger.debug("%s rejected as cover by cover_min_size"%imgurl)
+            return (None,None)
+
+        self.img_store.debug_out()
+        # First image cover
+        # Only if: No cover already AND
+        #          make_firstimage_cover AND
+        #          NOT never_make_cover AND
+        #          not (coverexclusion and coverexclusion match)
+        if not cover and \
+                self.cover == None and \
+                self.getConfig('make_firstimage_cover'):
+            logger.debug("Attempt make_firstimage_cover(%s)"%imgurl)
+            if self.getConfig('never_make_cover'):
+                logger.debug("%s rejected as cover by never_make_cover"%imgurl)
+            elif coverexclusion and re.search(coverexclusion,imgurl):
+                logger.debug("%s rejected as cover by cover_exclusion_regexp"%imgurl)
+            elif not self.check_cover_min_size(data):
+                logger.debug("%s rejected as cover by cover_min_size"%imgurl)
+            else:
+                cover = 'first'
+
+        if cover: # 'specific', 'first', 'default' and 'force'
+            ## adds a copy even if already in img_store
+            imginfo = self.img_store.add_img(imgurl,
+                                             ext,
+                                             mime,
+                                             data,
+                                             cover=True)
+            self.cover = imginfo['newsrc']
+            self.setMetadata('cover_image',cover)
+            logger.debug("use cover(%s): %s"%(cover,imgurl))
+            if not newsrc:
+                newsrc = self.cover
+        self.img_store.debug_out()
+
+        # logger.debug("%s,%s"%(newsrc,imgurl))
+        return (newsrc, imgurl)
+
+    def check_cover_min_size(self,imgdata):
+        cover_big_enough = True
+        if not self.no_image_processing():
+            ## don't try to call get_image_size() when
+            ## 'no_image_processing'.  SVGs fail in Calibre, but prior
+            ## call to convert_image should have already detected .svg
+            try:
+                sizes = [ int(x) for x in self.getConfigList('cover_min_size') ]
+                if sizes:
+                    owidth, oheight = get_image_size(imgdata)
+                    cover_big_enough = owidth >= sizes[0] and oheight >= sizes[1]
+                    # logger.debug("cover_big_enough:%s %s>=%s, %s>=%s"%(cover_big_enough,owidth,sizes[0],oheight,sizes[1]))
+            except Exception as e:
+                logger.warning("Failed to process cover_min_size from personal.ini:%s\nException: %s"%(self.getConfigList('cover_min_size'),e))
+        return cover_big_enough
+
+    def getImgUrls(self):
+        retlist = []
+        for i, info in enumerate(self.img_store.get_imgs()):
+            retlist.append(info)
+        if self.getConfig('include_images') == 'true':
+            for imgfn in self.getConfigList('additional_images'):
+                data = self.get_request_raw(imgfn)
+                (discarddata,ext,mime) = no_convert_image(imgfn,data)
+                retlist.append({
+                        'newsrc':"images/"+os.path.basename(imgfn),
+                        'mime':mime,
+                        'data':data,
+                        })
+        return retlist
+
+    def __str__(self):
+        return "Metadata: " +str(self.metadata)
+
+def commaGroups(s):
+    groups = []
+    while s and s[-1].isdigit():
+        groups.append(s[-3:])
+        s = s[:-3]
+    return s + ','.join(reversed(groups))
+
+# http://stackoverflow.com/questions/480214/how-do-you-remove-duplicates-from-a-list-in-python-whilst-preserving-order
+def unique_list(seq):
+    seen = set()
+    seen_add = seen.add
+    try:
+        return [x for x in seq if not (x in seen or seen_add(x))]
+    except:
+        logger.debug("unique_list exception seq:%s"%seq)
+        raise

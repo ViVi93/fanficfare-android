@@ -18,8 +18,13 @@ jobs:
           java-version: 17
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: "platform-tools;platforms;android-34;build-tools;34.0.0"
+      - name: Install SDK packages
+        run: |
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
       - name: Build debug APK
         run: ./gradlew assembleDebug
       - name: Upload debug APK

@@ -45,11 +45,14 @@ chaquopy {
         buildPython "/usr/bin/python3.12"
         pip {
             install "beautifulsoup4"
-            install "requests-file"
-            install "requests"
-            install "cloudscraper"
-            install "Brotli"
+            install "chardet"
+            install "html5lib"
             install "html2text"
+            install "cloudscraper"
+            install "requests"
+            install "requests-file"
+            install "urllib3"
+            install "Brotli"
         }
     }
 }

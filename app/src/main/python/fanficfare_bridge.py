@@ -218,7 +218,9 @@ def _get_dcsource_chaptercount(epubPath):
                         chaptercount = 0
                         for line in content.splitlines():
                             if "DateThis" in line or "chaptercount" in line.lower():
-                                pass
+                                m = re.search(r'chaptercount["\s:=]+(\d+)', line, re.IGNORECASE)
+                                if m:
+                                    chaptercount = int(m.group(1))
                             if line.startswith("http://") or line.startswith("https://"):
                                 source = line.strip()
                         return source or "", chaptercount

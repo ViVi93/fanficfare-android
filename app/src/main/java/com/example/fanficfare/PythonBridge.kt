@@ -7,49 +7,60 @@ import org.json.JSONObject
 
 class PythonBridge(private val context: Context) {
 
-    private val module: PyObject by lazy {
-        val python = Python.getInstance()
-        val sys = python.getModule("sys")
-        val path = context.filesDir.absolutePath + "/python"
-        sys.callAttr("path", "append", path)
-        python.getModule("fanficfare_bridge")
+    private var module: PyObject? = null
+    private var initError: String? = null
+
+    init {
+        try {
+            val python = Python.getInstance()
+            val sys = python.getModule("sys")
+            val path = context.filesDir.absolutePath + "/python"
+            sys.callAttr("path", "append", path)
+            module = python.getModule("fanficfare_bridge")
+        } catch (e: Exception) {
+            initError = e.message ?: "unknown"
+        }
     }
 
     fun fanficfareDownload(url: String, outDir: String): String =
-        call("download_story", url, outDir)
+        safeCall("download_story", url, outDir)
 
     fun fanficfareMetadata(url: String): String =
-        call("get_metadata", url)
+        safeCall("get_metadata", url)
 
     fun fanficfareListSites(): String =
-        call("list_sites")
+        safeCall("list_sites")
 
     fun scanEpubDir(directory: String): String =
-        call("scan_epub_dir", directory)
+        safeCall("scan_epub_dir", directory)
 
     fun saveLibraryIndex(indexPath: String, booksJson: String): String =
-        call("save_library_index", indexPath, booksJson)
+        safeCall("save_library_index", indexPath, booksJson)
 
     fun loadLibraryIndex(indexPath: String): String =
-        call("load_library_index", indexPath)
+        safeCall("load_library_index", indexPath)
 
     fun getEpubUpdateUrl(epubPath: String): String =
-        call("get_epub_update_url", epubPath)
+        safeCall("get_epub_update_url", epubPath)
 
     fun deleteEpub(epubPath: String): String =
-        call("delete_epub", epubPath)
+        safeCall("delete_epub", epubPath)
 
     fun updateEpubFromPath(epubPath: String, outDir: String): String =
-        call("update_epub_from_path", epubPath, outDir)
+        safeCall("update_epub_from_path", epubPath, outDir)
 
     fun forceDownloadFromEpub(epubPath: String, outDir: String): String =
-        call("force_download_from_epub", epubPath, outDir)
+        safeCall("force_download_from_epub", epubPath, outDir)
 
-    private fun call(method: String, vararg args: Any): String {
+    private fun safeCall(method: String, vararg args: Any): String {
+        val mod = module
+        if (mod == null) {
+            return JSONObject().put("ok", false).put("error", "Bridge init failed: $initError").toString()
+        }
         return try {
-            val result = module.callAttr(method, *args)
+            val result = mod.callAttr(method, *args)
             result.toString()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             JSONObject().put("ok", false).put("error", e.message ?: "unknown").toString()
         }
     }

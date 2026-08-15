@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import traceback
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -10,10 +11,11 @@ if SRC_DIR not in sys.path:
 
 _FANFICFARE_AVAILABLE = None
 _FANFICFARE_ERROR = None
+_FANFICFARE_TRACEBACK = None
 
 
 def _import_fanficfare():
-    global _FANFICFARE_AVAILABLE, _FANFICFARE_ERROR
+    global _FANFICFARE_AVAILABLE, _FANFICFARE_ERROR, _FANFICFARE_TRACEBACK
     if _FANFICFARE_AVAILABLE is not None:
         return _FANFICFARE_AVAILABLE
     try:
@@ -24,10 +26,38 @@ def _import_fanficfare():
         _FANFICFARE_AVAILABLE = True
         return True
     except Exception as e:
-        _FANFICFARE_ERROR = str(e)
+        _FANFICFARE_ERROR = "{}: {}".format(type(e).__name__, e)
+        _FANFICFARE_TRACEBACK = traceback.format_exc()
+        print("FANFICFARE_IMPORT_ERROR: " + _FANFICFARE_ERROR)
+        print(_FANFICFARE_TRACEBACK)
         _FANFICFARE_AVAILABLE = False
-        print("FANFICFARE_IMPORT_ERROR: " + str(e))
         return False
+
+
+def diagnose_fanficfare_imports():
+    global _FANFICFARE_ERROR, _FANFICFARE_TRACEBACK
+    results = []
+    tests = [
+        ("import fanficfare", "import fanficfare"),
+        ("from fanficfare import adapters", "from fanficfare import adapters"),
+        ("from fanficfare.configurable import Configurable", "from fanficfare.configurable import Configurable"),
+        ("from fanficfare import writers", "from fanficfare import writers"),
+        ("from fanficfare.epubutils import get_dcsource_chaptercount, get_update_data, get_cover_img", "from fanficfare.epubutils import get_dcsource_chaptercount, get_update_data, get_cover_img"),
+    ]
+    for label, stmt in tests:
+        try:
+            exec(stmt, globals())
+            results.append({"test": label, "ok": True})
+        except Exception as e:
+            tb = traceback.format_exc()
+            results.append({
+                "test": label,
+                "ok": False,
+                "error_type": type(e).__name__,
+                "error": str(e),
+                "traceback": tb,
+            })
+    return json.dumps({"ok": True, "results": results})
 
 
 def list_sites():

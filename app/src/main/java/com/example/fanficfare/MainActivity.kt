@@ -217,7 +217,10 @@ class MainActivity : AppCompatActivity() {
                         refreshBookPath(book, title, path)
                     }
                 } else {
-                    setStatus("Download failed: ${result?.optString("error") ?: "unknown"}")
+                    val errorMsg = result?.optString("error") ?: "unknown"
+                    val detail = result?.optString("detail")
+                    val fullMsg = if (!detail.isNullOrBlank()) "$errorMsg\n$detail" else errorMsg
+                    showError("Download failed: $fullMsg")
                 }
             }
         }.start()

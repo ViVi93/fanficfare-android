@@ -60,6 +60,9 @@ class PythonBridge(private val context: Context) {
         }
     }
 
+    fun diagnoseFanFicFareImports(): String =
+        safeCall("diagnose_fanficfare_imports")
+
     private fun safeCall(method: String, vararg args: Any): String {
         val mod = module
         if (mod == null) {

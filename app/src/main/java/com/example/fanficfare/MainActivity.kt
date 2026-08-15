@@ -1,8 +1,10 @@
 package com.example.fanficfare
 
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
@@ -23,6 +25,8 @@ class MainActivity : AppCompatActivity() {
     private var pythonBridge: PythonBridge? = null
     private var selectedBook: BookItem? = null
     private var currentSort: String = "modified"
+    private var libraryFolderUri: android.net.Uri? = null
+    private val REQUEST_SAF_FOLDER = 1002
 
     private fun hasStoragePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -326,47 +330,122 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLoadLibraryDialog() {
-        val input = EditText(this)
-        input.hint = "Folder path"
-        AlertDialog.Builder(this)
-            .setTitle("Load EPUB Library")
-            .setView(input)
-            .setPositiveButton("Scan") { _, _ ->
-                val dir = input.text.toString().trim()
-                if (dir.isBlank()) return@setPositiveButton
-                setStatus("Scanning...")
-                Thread {
-                    val resultJson = pythonBridge?.scanEpubDir(dir) ?: """{"ok":false,"error":"bridge missing"}"""
-                    val result = json(resultJson)
-                    runOnUiThread {
-                        if (result?.optBoolean("ok") == true) {
-                            val books = result.optJSONArray("books") ?: org.json.JSONArray()
-                            downloads.clear()
-                            for (i in 0 until books.length()) {
-                                val b = books.getJSONObject(i)
-                                val title = b.optString("title", "untitled")
-                                val author = b.optString("author", "")
-                                val url = b.optString("url", "")
-                                val chapters = b.optInt("chapters", 0)
-                                val path = b.optString("path", "")
-                                val size = b.optLong("size", 0L)
-                                val modified = b.optLong("modified", 0L)
-                                val cover = b.optString("cover", "")
-                                downloads.add(BookItem(title, author, path, modified, size, coverUriString = cover, url = url, chapters = chapters))
+        val intent = Intent("android.provider.action.OPEN_DOCUMENT_TREE")
+        try {
+            startActivityForResult(intent, REQUEST_SAF_FOLDER)
+        } catch (e: Exception) {
+            showError("Cannot open folder picker: ${e.message}")
+        }
+    }
+
+    private fun discoverEpubsFromTree(rootUri: android.net.Uri): List<java.io.File> {
+        val resolver = contentResolver
+        val picked = mutableListOf<java.io.File>()
+        val outDir = java.io.File(filesDir, "imported").apply { mkdirs() }
+        val toVisit = ArrayDeque<android.net.Uri>()
+        toVisit.add(rootUri)
+
+        while (toVisit.isNotEmpty()) {
+            val current = toVisit.removeFirst()
+            try {
+                val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(
+                    current,
+                    android.provider.DocumentsContract.getTreeDocumentId(current)
+                )
+                val cursor = resolver.query(childrenUri, arrayOf(
+                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
+                ), null, null, null)
+                cursor?.use {
+                    while (it.moveToNext()) {
+                        val name = it.getString(0) ?: continue
+                        val mime = it.getString(1) ?: continue
+                        val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                            current,
+                            it.getString(it.getColumnIndexOrThrow(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID))
+                        )
+                        if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
+                            toVisit.add(docUri)
+                        } else if (name.lowercase().endsWith(".epub")) {
+                            val dest = java.io.File(outDir, name)
+                            try {
+                                resolver.openInputStream(docUri)?.use { input ->
+                                    java.io.FileOutputStream(dest).use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                picked.add(dest)
+                            } catch (e: Exception) {
+                                // skip unreadable file
                             }
-                            downloads.sortByDescending { it.lastModified }
-                            bookAdapter.notifyDataSetChanged()
-                            updateEmptyState()
-                            setStatus("Loaded ${downloads.size} EPUBs")
-                            persistLibrary()
-                        } else {
-                            showError("Scan failed: ${result?.optString("error") ?: "unknown"}")
                         }
                     }
-                }.start()
+                }
+            } catch (e: Exception) {
+                // skip unreadable tree node
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
+        return picked
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_SAF_FOLDER && resultCode == RESULT_OK && data != null) {
+            val treeUri = data.data ?: return
+            libraryFolderUri = treeUri
+            contentResolver.takePersistableUriPermission(
+                treeUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            setStatus("Scanning folder...")
+            Thread {
+                val epubs = discoverEpubsFromTree(treeUri)
+                runOnUiThread {
+                    if (epubs.isEmpty()) {
+                        showError("No EPUBs found in selected folder")
+                    } else {
+                        scanImportedEpubs(epubs)
+                    }
+                }
+            }.start()
+        }
+    }
+
+    private fun scanImportedEpubs(files: List<java.io.File>) {
+        setStatus("Scanning ${files.size} files...")
+        Thread {
+            val resultJson = pythonBridge?.scanEpubDir(files.first().parentFile?.absolutePath ?: filesDir.absolutePath)
+                ?: """{"ok":false,"error":"bridge missing"}"""
+            val result = json(resultJson)
+            runOnUiThread {
+                if (result?.optBoolean("ok") == true) {
+                    val books = result.optJSONArray("books") ?: org.json.JSONArray()
+                    downloads.clear()
+                    for (i in 0 until books.length()) {
+                        val b = books.getJSONObject(i)
+                        downloads.add(
+                            BookItem(
+                                title = b.optString("title", "untitled"),
+                                author = b.optString("author", ""),
+                                uriString = b.optString("path", ""),
+                                lastModified = b.optLong("modified", 0L),
+                                sizeBytes = b.optLong("size", 0L),
+                                coverUriString = b.optString("cover", ""),
+                                url = b.optString("url", ""),
+                                chapters = b.optInt("chapters", 0)
+                            )
+                        )
+                    }
+                    downloads.sortByDescending { it.lastModified }
+                    bookAdapter.notifyDataSetChanged()
+                    updateEmptyState()
+                    setStatus("Loaded ${downloads.size} EPUBs")
+                    persistLibrary()
+                } else {
+                    showError("Scan failed: ${result?.optString("error") ?: "unknown"}")
+                }
+            }
+        }.start()
     }
 
     private fun persistLibrary() {

@@ -47,6 +47,7 @@ chaquopy {
             install "beautifulsoup4"
             install "requests-file"
             install "requests"
+            install "cloudscraper"
         }
     }
 }

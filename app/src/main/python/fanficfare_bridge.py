@@ -46,6 +46,7 @@ def diagnose_fanficfare_imports():
         ("from fanficfare.configurable import Configurable", "from fanficfare.configurable import Configurable"),
         ("from fanficfare import writers", "from fanficfare import writers"),
         ("from fanficfare.epubutils import get_dcsource_chaptercount, get_update_data, get_cover_img", "from fanficfare.epubutils import get_dcsource_chaptercount, get_update_data, get_cover_img"),
+        ("import apsw", "import apsw"),
     ]
     for label, stmt in tests:
         try:

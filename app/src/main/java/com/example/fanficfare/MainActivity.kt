@@ -25,18 +25,15 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         if (!Python.isStarted()) {
-            Python.start(com.chaquo.python.android.AndroidPlatform(this))
+            try {
+                Python.start(com.chaquo.python.android.AndroidPlatform(this))
+            } catch (e: Exception) {
+                setStatus("Python init failed: ${e.message}")
+            }
         }
         pythonBridge = PythonBridge(this)
         pythonBridge?.getInitError()?.let { error ->
-            setStatus("Python init failed: $error")
-        }
-
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            runOnUiThread {
-                setStatus("Crash: ${throwable.message}")
-                android.widget.Toast.makeText(this, "Crash: ${throwable.message}", android.widget.Toast.LENGTH_LONG).show()
-            }
+            setStatus("Bridge init failed: $error")
         }
 
         bookAdapter = BookAdapter(downloads) { book ->

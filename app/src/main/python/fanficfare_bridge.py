@@ -26,6 +26,7 @@ def _import_fanficfare():
     except Exception as e:
         _FANFICFARE_ERROR = str(e)
         _FANFICFARE_AVAILABLE = False
+        print("FANFICFARE_IMPORT_ERROR: " + str(e))
         return False
 
 

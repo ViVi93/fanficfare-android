@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="colorOnPrimary">#ffffff</color>
-    <color name="colorPrimary">#2f7a32</color>
-    <color name="colorPrimaryVariant">#245a27</color>
-    <color name="colorSecondary">#8bc34a</color>
-    <string name="app_name">FanFicFare</string>
-</resources>

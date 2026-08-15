@@ -334,8 +334,40 @@ class MainActivity : AppCompatActivity() {
         try {
             startActivityForResult(intent, REQUEST_SAF_FOLDER)
         } catch (e: Exception) {
-            showError("Cannot open folder picker: ${e.message}")
+            showFallbackLibraryDialog()
         }
+    }
+
+    private fun showFallbackLibraryDialog() {
+        val input = EditText(this)
+        input.hint = "/storage/emulated/0/Download/FFF"
+        AlertDialog.Builder(this)
+            .setTitle("Load EPUB Library")
+            .setMessage("Folder picker unavailable. Enter path manually, or grant All Files Access in Settings.")
+            .setView(input)
+            .setPositiveButton("Scan") { _, _ ->
+                val dir = input.text.toString().trim()
+                if (dir.isBlank()) return@setPositiveButton
+                val folder = java.io.File(dir)
+                if (!folder.exists() || !folder.isDirectory) {
+                    showError("Folder not found: $dir")
+                    return@setPositiveButton
+                }
+                val files = mutableListOf<java.io.File>()
+                folder.walkTopDown().forEach {
+                    if (it.isFile && it.extension.equals("epub", ignoreCase = true)) files.add(it)
+                }
+                if (files.isEmpty()) {
+                    showError("No EPUBs found in $dir")
+                } else {
+                    scanImportedEpubs(files)
+                }
+            }
+            .setNeutralButton("Settings") { _, _ ->
+                startActivity(android.content.Intent(this, SettingsActivity::class.java))
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun discoverEpubsFromTree(rootUri: android.net.Uri): List<java.io.File> {
@@ -412,9 +444,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scanImportedEpubs(files: List<java.io.File>) {
-        setStatus("Scanning ${files.size} files...")
+        val importDir = java.io.File(filesDir, "imported").apply { mkdirs() }
+        setStatus("Importing ${files.size} files...")
         Thread {
-            val resultJson = pythonBridge?.scanEpubDir(files.first().parentFile?.absolutePath ?: filesDir.absolutePath)
+            val copied = mutableListOf<java.io.File>()
+            files.forEach { src ->
+                val dest = java.io.File(importDir, src.name)
+                try {
+                    src.copyTo(dest, overwrite = true)
+                    copied.add(dest)
+                } catch (e: Exception) {
+                    // skip
+                }
+            }
+            runOnUiThread {
+                if (copied.isEmpty()) {
+                    showError("Could not import any files")
+                } else {
+                    setStatus("Scanning ${copied.size} files...")
+                }
+            }
+            val resultJson = pythonBridge?.scanEpubDir(importDir.absolutePath)
                 ?: """{"ok":false,"error":"bridge missing"}"""
             val result = json(resultJson)
             runOnUiThread {

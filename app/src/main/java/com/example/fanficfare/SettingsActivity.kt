@@ -33,6 +33,23 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
             finish()
         }
+
+        val btnAllFiles = findViewById<Button>(R.id.buttonAllFilesAccess)
+        if (btnAllFiles != null) {
+            btnAllFiles.setOnClickListener {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.data = android.net.Uri.parse("package:$packageName")
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    } catch (e2: Exception) {
+                        Toast.makeText(this, "Cannot open settings: ${e2.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

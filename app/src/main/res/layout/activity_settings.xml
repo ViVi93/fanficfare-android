@@ -34,4 +34,11 @@
         android:layout_marginTop="16dp"
         android:text="Save" />
 
+    <Button
+        android:id="@+id/buttonAllFilesAccess"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="Grant All Files Access" />
+
 </LinearLayout>

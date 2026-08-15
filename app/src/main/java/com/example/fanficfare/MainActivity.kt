@@ -39,6 +39,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fabPickFolder).setOnClickListener {
             showDownloadDialog()
         }
+        findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fabLoadLibrary).setOnClickListener {
+            showLoadLibraryDialog()
+        }
 
         updateEmptyState()
         loadPersistedLibrary()
@@ -213,8 +216,12 @@ class MainActivity : AppCompatActivity() {
             if (url.isBlank()) return@setOnClickListener
             setStatus("Downloading...")
             Thread {
-                val resultJson = pythonBridge?.fanficfareDownload(url, filesDir.absolutePath)
-                    ?: """{"ok":false,"error":"bridge missing"}"""
+                val resultJson = try {
+                    pythonBridge?.fanficfareDownload(url, filesDir.absolutePath)
+                        ?: """{"ok":false,"error":"bridge missing"}"""
+                } catch (e: Exception) {
+                    """{"ok":false,"error":${JSONObject().put("msg", e.message).toString()}}"""
+                }
                 val result = json(resultJson)
                 runOnUiThread {
                     if (result?.optBoolean("ok") == true) {
@@ -225,6 +232,7 @@ class MainActivity : AppCompatActivity() {
                             downloads.add(0, BookItem(title, "", path, System.currentTimeMillis(), 0))
                             bookAdapter.notifyDataSetChanged()
                             updateEmptyState()
+                            persistLibrary()
                         }
                     } else {
                         setStatus("Download failed: ${result?.optString("error") ?: "unknown"}")
@@ -237,11 +245,15 @@ class MainActivity : AppCompatActivity() {
             if (url.isBlank()) return@setOnClickListener
             setStatus("Updating...")
             Thread {
-                val resultJson = pythonBridge?.fanficfareMetadata(url)
-                    ?: """{"ok":false,"error":"bridge missing"}"""
+                val resultJson = try {
+                    pythonBridge?.fanficfareMetadata(url)
+                        ?: """{"ok":false,"error":"bridge missing"}"""
+                } catch (e: Exception) {
+                    """{"ok":false,"error":${JSONObject().put("msg", e.message).toString()}}"""
+                }
                 val result = json(resultJson)
                 runOnUiThread {
-                    setStatus(if (result?.optBoolean("ok") == true) "Metadata fetched" else "Update check failed")
+                    setStatus(if (result?.optBoolean("ok") == true) "Metadata fetched" else "Update check failed: ${result?.optString("error") ?: "unknown"}")
                 }
             }.start()
         }

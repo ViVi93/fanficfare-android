@@ -42,4 +42,14 @@
         android:layout_margin="16dp"
         android:text="+" />
 
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fabLoadLibrary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="16dp"
+        android:src="@android:drawable/ic_menu_agenda"
+        app:backgroundTint="?attr/colorPrimaryVariant"
+        android:contentDescription="Load Library" />
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

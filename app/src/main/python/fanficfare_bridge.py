@@ -3,28 +3,38 @@ import os
 import sys
 import zipfile
 import xml.etree.ElementTree as ET
-from datetime import datetime
 
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from fanficfare import adapters
-from fanficfare.configurable import Configuration
-from fanficfare import writers
-from fanficfare.epubutils import get_dcsource_chaptercount, get_update_data, get_cover_img
+try:
+    from fanficfare import adapters
+    from fanficfare.configurable import Configurable
+    from fanficfare import writers
+    from fanficfare.epubutils import get_dcsource_chaptercount, get_update_data, get_cover_img
+    FANFICFARE_AVAILABLE = True
+except Exception:
+    FANFICFARE_AVAILABLE = False
 
 
 def list_sites():
-    sites = []
-    for site, examples in adapters.getSiteExamples():
-        sites.append({"site": site, "examples": examples[:3]})
-    return json.dumps({"ok": True, "sites": sites})
+    if not FANFICFARE_AVAILABLE:
+        return json.dumps({"ok": False, "error": "FanFicFare not available"})
+    try:
+        sites = []
+        for site, examples in adapters.getSiteExamples():
+            sites.append({"site": site, "examples": examples[:3]})
+        return json.dumps({"ok": True, "sites": sites})
+    except Exception as e:
+        return json.dumps({"ok": False, "error": str(e)})
 
 
 def get_metadata(url):
+    if not FANFICFARE_AVAILABLE:
+        return json.dumps({"ok": False, "error": "FanFicFare not available"})
     try:
-        configuration = Configuration("test1.com", None, None)
+        configuration = Configurable("test1.com", None, None)
         configuration.setConfig("url", url)
         adapter = adapters.getAdapter(configuration, url)
         adapter.getStoryMetadataOnly()
@@ -39,8 +49,10 @@ def get_metadata(url):
 
 
 def download_story(url, outDir):
+    if not FANFICFARE_AVAILABLE:
+        return json.dumps({"ok": False, "error": "FanFicFare not available"})
     try:
-        configuration = Configuration("test1.com", None, None)
+        configuration = Configurable("test1.com", None, None)
         configuration.setConfig("url", url)
         adapter = adapters.getAdapter(configuration, url)
         writer = writers.getWriter("epub", configuration, adapter)
@@ -82,7 +94,7 @@ def extract_epub_metadata(epubPath):
         url = ""
         chapters = 0
         cover = None
-        
+
         with zipfile.ZipFile(epubPath, "r") as z:
             for name in z.namelist():
                 if name.endswith(".opf"):
@@ -99,7 +111,7 @@ def extract_epub_metadata(epubPath):
                     except Exception:
                         pass
                     break
-            
+
             for name in z.namelist():
                 if "calibre" in name.lower() or name.endswith(".txt"):
                     try:
@@ -110,7 +122,7 @@ def extract_epub_metadata(epubPath):
                                 break
                     except Exception:
                         pass
-            
+
             try:
                 source, chaptercount = get_dcsource_chaptercount(epubPath)
                 if source:
@@ -119,16 +131,15 @@ def extract_epub_metadata(epubPath):
                     chapters = chaptercount
             except Exception:
                 pass
-            
+
             try:
                 cover_type, cover_data = get_cover_img(epubPath)
                 if cover_data:
-                    import base64
                     mime = cover_type or "image/jpeg"
-                    cover = "data:%s;base64,%s" % (mime, base64.b64encode(cover_data).decode("ascii"))
+                    cover = "data:%s;base64,%s" % (mime, __import__("base64").b64encode(cover_data).decode("ascii"))
             except Exception:
                 cover = None
-        
+
         return {
             "title": title,
             "author": author,
@@ -167,22 +178,24 @@ def delete_epub(epubPath):
 
 
 def update_epub_from_path(epubPath, outDir):
+    if not FANFICFARE_AVAILABLE:
+        return json.dumps({"ok": False, "error": "FanFicFare not available"})
     try:
-        source, chaptercount = get_dcsource_chaptercount(epubPath)
+        source, _ = get_dcsource_chaptercount(epubPath)
         if not source:
             return json.dumps({"ok": False, "error": "No story URL found in epub"})
-        
-        configuration = Configuration("test1.com", None, None)
+
+        configuration = Configurable("test1.com", None, None)
         configuration.setConfig("url", source)
         adapter = adapters.getAdapter(configuration, source)
-        
+
         writer = writers.getWriter("epub", configuration, adapter)
         filename = writer.getOutputFileName()
         outpath = os.path.join(outDir, os.path.basename(filename))
-        
+
         with open(outpath, "wb") as out:
             writer.writeStory(outstream=out, metaonly=False, update=True, oldfile=epubPath)
-        
+
         return json.dumps({
             "ok": True,
             "title": adapter.story.title or filename,
@@ -193,6 +206,8 @@ def update_epub_from_path(epubPath, outDir):
 
 
 def force_download_from_epub(epubPath, outDir):
+    if not FANFICFARE_AVAILABLE:
+        return json.dumps({"ok": False, "error": "FanFicFare not available"})
     try:
         source, _ = get_dcsource_chaptercount(epubPath)
         if not source:
@@ -200,3 +215,23 @@ def force_download_from_epub(epubPath, outDir):
         return download_story(source, outDir)
     except Exception as e:
         return json.dumps({"ok": False, "error": str(e)})
+
+
+def save_library_index(indexPath, booksJson):
+    try:
+        with open(indexPath, "w", encoding="utf-8") as f:
+            f.write(booksJson)
+        return json.dumps({"ok": True})
+    except Exception as e:
+        return json.dumps({"ok": False, "error": str(e)})
+
+
+def load_library_index(indexPath):
+    try:
+        if not os.path.exists(indexPath):
+            return json.dumps({"ok": True, "books": []})
+        with open(indexPath, "r", encoding="utf-8") as f:
+            data = f.read()
+        return json.dumps({"ok": True, "books": __import__("json").loads(data).get("books", [])})
+    except Exception as e:
+        return json.dumps({"ok": False, "error": str(e), "books": []})

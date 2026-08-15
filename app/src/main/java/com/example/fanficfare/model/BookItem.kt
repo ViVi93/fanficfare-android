@@ -6,5 +6,7 @@ data class BookItem(
     val uriString: String,
     val lastModified: Long,
     val sizeBytes: Long,
-    val coverUriString: String? = null
+    val coverUriString: String? = null,
+    val url: String = "",
+    val chapters: Int = 0
 )

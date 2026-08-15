@@ -9,4 +9,25 @@
         android:id="@+id/action_update"
         android:title="Update"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_load_library"
+        android:title="Load Library"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_settings"
+        android:title="Settings"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_refresh_all"
+        android:title="Refresh All"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_sort"
+        android:title="Sort"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_search"
+        android:title="Search"
+        app:showAsAction="never"
+        android:icon="@android:drawable/ic_menu_search" />
 </menu>

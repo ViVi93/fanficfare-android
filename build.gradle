@@ -2,20 +2,11 @@ buildscript {
     repositories {
         google()
         maven { url = uri("https://repo1.maven.org/maven2/") }
+        mavenCentral()
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.2.2'
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.20'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22'
+        classpath 'com.chaquo.python:com.chaquo.python.gradle.plugin:17.0.0'
     }
-}
-
-allprojects {
-    repositories {
-        google()
-        maven { url = uri("https://repo1.maven.org/maven2/") }
-    }
-}
-
-task clean(type: Delete) {
-    delete rootProject.buildDir
 }

@@ -47,6 +47,17 @@
             app:layout_constraintStart_toEndOf="@id/imageCover"
             app:layout_constraintTop_toBottomOf="@id/textTitle" />
 
+        <TextView
+            android:id="@+id/textChapters"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Chapters"
+            android:textSize="12sp"
+            android:textColor="?android:attr/textColorSecondary"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/imageCover"
+            app:layout_constraintTop_toBottomOf="@id/textAuthor" />
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 
 </com.google.android.material.card.MaterialCardView>

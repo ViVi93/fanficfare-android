@@ -4,24 +4,34 @@ import android.os.Bundle
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.fanficfare.adapter.BookAdapter
 import com.example.fanficfare.model.BookItem
+import com.chaquo.python.Python
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
     private val downloads = mutableListOf<BookItem>()
     private lateinit var bookAdapter: BookAdapter
-    private val bridge = PythonBridge()
+    private var pythonBridge: PythonBridge? = null
+    private var selectedBook: BookItem? = null
+    private var currentSort: String = "modified"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        if (!Python.isStarted()) {
+            Python.start(com.chaquo.python.android.AndroidPlatform(this))
+        }
+        pythonBridge = PythonBridge(this)
+
         bookAdapter = BookAdapter(downloads) { book ->
-            setStatus("Selected: ${book.title}")
+            selectedBook = book
+            showBookOptionsDialog(book)
         }
         findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).layoutManager = LinearLayoutManager(this)
         findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
@@ -31,6 +41,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         updateEmptyState()
+        loadPersistedLibrary()
 
         findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar).setOnMenuItemClickListener { item ->
             when (item.itemId) {
@@ -38,8 +49,24 @@ class MainActivity : AppCompatActivity() {
                     showDownloadDialog()
                     true
                 }
-                R.id.action_update -> {
-                    showUpdateDialog()
+                R.id.action_load_library -> {
+                    showLoadLibraryDialog()
+                    true
+                }
+                R.id.action_settings -> {
+                    startActivity(android.content.Intent(this, SettingsActivity::class.java))
+                    true
+                }
+                R.id.action_refresh_all -> {
+                    refreshAllBooks()
+                    true
+                }
+                R.id.action_sort -> {
+                    showSortDialog()
+                    true
+                }
+                R.id.action_search -> {
+                    showSearchDialog()
                     true
                 }
                 else -> false
@@ -56,6 +83,128 @@ class MainActivity : AppCompatActivity() {
         empty?.visibility = if (downloads.isEmpty()) View.VISIBLE else View.GONE
     }
 
+    private fun showBookOptionsDialog(book: BookItem) {
+        val options = mutableListOf<String>()
+        if (book.url.isNotBlank()) {
+            options.add("Update")
+            options.add("Force Download")
+        }
+        options.add("Delete")
+        options.add("Show Path")
+
+        AlertDialog.Builder(this)
+            .setTitle(book.title.ifBlank { "Book" })
+            .setItems(options.toTypedArray()) { _, which ->
+                val choice = options[which]
+                when (choice) {
+                    "Update" -> updateBook(book)
+                    "Force Download" -> forceDownloadBook(book)
+                    "Delete" -> deleteBook(book)
+                    "Show Path" -> showPath(book)
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun updateBook(book: BookItem) {
+        val url = book.url
+        if (url.isBlank()) {
+            setStatus("No URL found for this book")
+            return
+        }
+        setStatus("Updating...")
+        Thread {
+            val resultJson = pythonBridge?.updateEpubFromPath(book.uriString, filesDir.absolutePath)
+                ?: """{"ok":false,"error":"bridge missing"}"""
+            val result = json(resultJson)
+            runOnUiThread {
+                if (result?.optBoolean("ok") == true) {
+                    val title = result.optString("title", book.title)
+                    val path = result.optString("path", "")
+                    setStatus("Updated: $title")
+                    if (path.isNotBlank()) {
+                        refreshBookPath(book, title, path)
+                    }
+                } else {
+                    setStatus("Update failed: ${result?.optString("error") ?: "unknown"}")
+                }
+            }
+        }.start()
+    }
+
+    private fun forceDownloadBook(book: BookItem) {
+        val url = book.url
+        if (url.isBlank()) {
+            setStatus("No URL found for this book")
+            return
+        }
+        setStatus("Force downloading...")
+        Thread {
+            val resultJson = pythonBridge?.forceDownloadFromEpub(book.uriString, filesDir.absolutePath)
+                ?: """{"ok":false,"error":"bridge missing"}"""
+            val result = json(resultJson)
+            runOnUiThread {
+                if (result?.optBoolean("ok") == true) {
+                    val title = result.optString("title", book.title)
+                    val path = result.optString("path", "")
+                    setStatus("Downloaded: $title")
+                    if (path.isNotBlank()) {
+                        refreshBookPath(book, title, path)
+                    }
+                } else {
+                    setStatus("Download failed: ${result?.optString("error") ?: "unknown"}")
+                }
+            }
+        }.start()
+    }
+
+    private fun deleteBook(book: BookItem) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete")
+            .setMessage("Delete ${book.title.ifBlank { "this book" }}?")
+            .setPositiveButton("Delete") { _, _ ->
+                Thread {
+                    val resultJson = pythonBridge?.deleteEpub(book.uriString)
+                        ?: """{"ok":false,"error":"bridge missing"}"""
+                    val result = json(resultJson)
+                    runOnUiThread {
+                        if (result?.optBoolean("ok") == true) {
+                            downloads.remove(book)
+                            bookAdapter.notifyDataSetChanged()
+                            updateEmptyState()
+                            setStatus("Deleted")
+                        } else {
+                            setStatus("Delete failed: ${result?.optString("error") ?: "unknown"}")
+                        }
+                    }
+                }.start()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showPath(book: BookItem) {
+        AlertDialog.Builder(this)
+            .setTitle("Path")
+            .setMessage(book.uriString)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun refreshBookPath(oldBook: BookItem, title: String, path: String) {
+        val index = downloads.indexOf(oldBook)
+        if (index >= 0) {
+            val updated = oldBook.copy(
+                title = title,
+                uriString = path,
+                lastModified = System.currentTimeMillis()
+            )
+            downloads[index] = updated
+            bookAdapter.notifyDataSetChanged()
+        }
+    }
+
     private fun showDownloadDialog() {
         val view = layoutInflater.inflate(R.layout.dialog_download, null)
         val input = view.findViewById<EditText>(R.id.inputUrl)
@@ -64,12 +213,19 @@ class MainActivity : AppCompatActivity() {
             if (url.isBlank()) return@setOnClickListener
             setStatus("Downloading...")
             Thread {
-                val resultJson = bridge.fanficfareDownload(url, filesDir.absolutePath)
+                val resultJson = pythonBridge?.fanficfareDownload(url, filesDir.absolutePath)
+                    ?: """{"ok":false,"error":"bridge missing"}"""
                 val result = json(resultJson)
                 runOnUiThread {
                     if (result?.optBoolean("ok") == true) {
                         val title = result.optString("title", "story")
+                        val path = result.optString("path", "")
                         setStatus("Saved: $title")
+                        if (path.isNotBlank()) {
+                            downloads.add(0, BookItem(title, "", path, System.currentTimeMillis(), 0))
+                            bookAdapter.notifyDataSetChanged()
+                            updateEmptyState()
+                        }
                     } else {
                         setStatus("Download failed: ${result?.optString("error") ?: "unknown"}")
                     }
@@ -81,35 +237,58 @@ class MainActivity : AppCompatActivity() {
             if (url.isBlank()) return@setOnClickListener
             setStatus("Updating...")
             Thread {
-                val resultJson = bridge.fanficfareMetadata(url)
+                val resultJson = pythonBridge?.fanficfareMetadata(url)
+                    ?: """{"ok":false,"error":"bridge missing"}"""
                 val result = json(resultJson)
                 runOnUiThread {
                     setStatus(if (result?.optBoolean("ok") == true) "Metadata fetched" else "Update check failed")
                 }
             }.start()
         }
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("FanFicFare")
             .setView(view)
             .setNegativeButton("Close", null)
             .show()
     }
 
-    private fun showUpdateDialog() {
+    private fun showLoadLibraryDialog() {
         val input = EditText(this)
-        input.hint = "Story URL"
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Update EPUB")
+        input.hint = "Folder path"
+        AlertDialog.Builder(this)
+            .setTitle("Load EPUB Library")
             .setView(input)
-            .setPositiveButton("Update") { _, _ ->
-                val url = input.text.toString().trim()
-                if (url.isBlank()) return@setPositiveButton
-                setStatus("Updating...")
+            .setPositiveButton("Scan") { _, _ ->
+                val dir = input.text.toString().trim()
+                if (dir.isBlank()) return@setPositiveButton
+                setStatus("Scanning...")
                 Thread {
-                    val resultJson = bridge.fanficfareMetadata(url)
+                    val resultJson = pythonBridge?.scanEpubDir(dir) ?: """{"ok":false,"error":"bridge missing"}"""
                     val result = json(resultJson)
                     runOnUiThread {
-                        setStatus(if (result?.optBoolean("ok") == true) "Update check done" else "Update failed")
+                        if (result?.optBoolean("ok") == true) {
+                            val books = result.optJSONArray("books") ?: org.json.JSONArray()
+                            downloads.clear()
+                            for (i in 0 until books.length()) {
+                                val b = books.getJSONObject(i)
+                                val title = b.optString("title", "untitled")
+                                val author = b.optString("author", "")
+                                val url = b.optString("url", "")
+                                val chapters = b.optInt("chapters", 0)
+                                val path = b.optString("path", "")
+                                val size = b.optLong("size", 0L)
+                                val modified = b.optLong("modified", 0L)
+                                val cover = b.optString("cover", "")
+                                downloads.add(BookItem(title, author, path, modified, size, coverUriString = cover, url = url, chapters = chapters))
+                            }
+                            downloads.sortByDescending { it.lastModified }
+                            bookAdapter.notifyDataSetChanged()
+                            updateEmptyState()
+                            setStatus("Loaded ${downloads.size} EPUBs")
+                            persistLibrary()
+                        } else {
+                            setStatus("Scan failed: ${result?.optString("error") ?: "unknown"}")
+                        }
                     }
                 }.start()
             }
@@ -117,7 +296,167 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun persistLibrary() {
+        val books = org.json.JSONArray()
+        for (b in downloads) {
+            val obj = org.json.JSONObject()
+            obj.put("title", b.title)
+            obj.put("author", b.author)
+            obj.put("url", b.url)
+            obj.put("chapters", b.chapters)
+            obj.put("path", b.uriString)
+            obj.put("size", b.sizeBytes)
+            obj.put("modified", b.lastModified)
+            obj.put("cover", b.coverUriString)
+            books.put(obj)
+        }
+        val payload = org.json.JSONObject().put("books", books).toString()
+        val indexPath = getFilePath("library_index.json")
+        Thread {
+            val resultJson = pythonBridge?.saveLibraryIndex(indexPath, payload)
+                ?: """{"ok":false,"error":"bridge missing"}"""
+            val result = json(resultJson)
+            if (result?.optBoolean("ok") != true) {
+                runOnUiThread { setStatus("Save index failed") }
+            }
+        }.start()
+    }
+
+    private fun loadPersistedLibrary() {
+        val indexPath = getFilePath("library_index.json")
+        Thread {
+            val resultJson = pythonBridge?.loadLibraryIndex(indexPath)
+                ?: """{"ok":false,"error":"bridge missing"}"""
+            val result = json(resultJson)
+            runOnUiThread {
+                if (result?.optBoolean("ok") == true) {
+                    val books = result.optJSONArray("books") ?: org.json.JSONArray()
+                    downloads.clear()
+                    for (i in 0 until books.length()) {
+                        val b = books.getJSONObject(i)
+                        downloads.add(
+                            BookItem(
+                                title = b.optString("title", "untitled"),
+                                author = b.optString("author", ""),
+                                uriString = b.optString("path", ""),
+                                lastModified = b.optLong("modified", 0L),
+                                sizeBytes = b.optLong("size", 0L),
+                                coverUriString = b.optString("cover", ""),
+                                url = b.optString("url", ""),
+                                chapters = b.optInt("chapters", 0)
+                            )
+                        )
+                    }
+                    applySort()
+                    bookAdapter.notifyDataSetChanged()
+                    updateEmptyState()
+                }
+            }
+        }.start()
+    }
+
+    private fun applySort() {
+        when (currentSort) {
+            "title" -> downloads.sortBy { it.title.lowercase() }
+            "author" -> downloads.sortBy { it.author.lowercase() }
+            "chapters" -> downloads.sortByDescending { it.chapters }
+            "modified" -> downloads.sortByDescending { it.lastModified }
+            "size" -> downloads.sortByDescending { it.sizeBytes }
+        }
+    }
+
+    private fun showSortDialog() {
+        val options = arrayOf("Date Added", "Title", "Author", "Chapters", "Size")
+        AlertDialog.Builder(this)
+            .setTitle("Sort By")
+            .setItems(options) { _, which ->
+                currentSort = when (which) {
+                    1 -> "title"
+                    2 -> "author"
+                    3 -> "chapters"
+                    4 -> "size"
+                    else -> "modified"
+                }
+                applySort()
+                bookAdapter.notifyDataSetChanged()
+            }
+            .show()
+    }
+
+    private fun showSearchDialog() {
+        val input = EditText(this)
+        input.hint = "Search title or author"
+        AlertDialog.Builder(this)
+            .setTitle("Search")
+            .setView(input)
+            .setPositiveButton("Search") { _, _ ->
+                val query = input.text.toString().trim().lowercase()
+                if (query.isBlank()) {
+                    applySort()
+                    bookAdapter.notifyDataSetChanged()
+                    return@setPositiveButton
+                }
+                val filtered = downloads.filter { book ->
+                    book.title.lowercase().contains(query) || book.author.lowercase().contains(query)
+                }
+                bookAdapter = BookAdapter(filtered) { book ->
+                    selectedBook = book
+                    showBookOptionsDialog(book)
+                }
+                findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
+                updateEmptyState()
+            }
+            .setNegativeButton("Clear") { _, _ ->
+                applySort()
+                bookAdapter = BookAdapter(downloads) { book ->
+                    selectedBook = book
+                    showBookOptionsDialog(book)
+                }
+                findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
+                updateEmptyState()
+            }
+            .show()
+    }
+
+    private fun getFilePath(name: String): String {
+        val dir = filesDir
+        if (!dir.exists()) dir.mkdirs()
+        return java.io.File(dir, name).absolutePath
+    }
+
     private fun json(text: String): JSONObject? {
         return try { JSONObject(text) } catch (e: Exception) { null }
+    }
+
+    private fun refreshAllBooks() {
+        val updatable = downloads.filter { it.url.isNotBlank() }
+        if (updatable.isEmpty()) {
+            setStatus("No updatable books")
+            return
+        }
+        setStatus("Refreshing ${updatable.size} books...")
+        Thread {
+            var successCount = 0
+            var failCount = 0
+            for (book in updatable) {
+                val resultJson = pythonBridge?.updateEpubFromPath(book.uriString, SettingsActivity.getOutputDir(this))
+                    ?: """{"ok":false,"error":"bridge missing"}"""
+                val result = json(resultJson)
+                if (result?.optBoolean("ok") == true) {
+                    successCount++
+                    val title = result.optString("title", book.title)
+                    val path = result.optString("path", "")
+                    if (path.isNotBlank()) {
+                        runOnUiThread { refreshBookPath(book, title, path) }
+                    }
+                } else {
+                    failCount++
+                }
+            }
+            runOnUiThread {
+                setStatus("Refresh complete. Updated: $successCount, Failed: $failCount")
+                persistLibrary()
+            }
+        }.start()
     }
 }

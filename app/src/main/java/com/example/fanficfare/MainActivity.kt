@@ -81,6 +81,15 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.textStatus).text = text
     }
 
+    private fun toast(text: String) {
+        android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    private fun showError(message: String) {
+        setStatus(message)
+        toast(message)
+    }
+
     private fun updateEmptyState() {
         val empty = findViewById<TextView>(R.id.textEmpty)
         empty?.visibility = if (downloads.isEmpty()) View.VISIBLE else View.GONE
@@ -130,7 +139,7 @@ class MainActivity : AppCompatActivity() {
                         refreshBookPath(book, title, path)
                     }
                 } else {
-                    setStatus("Update failed: ${result?.optString("error") ?: "unknown"}")
+                    showError("Update failed: ${result?.optString("error") ?: "unknown"}")
                 }
             }
         }.start()
@@ -178,7 +187,7 @@ class MainActivity : AppCompatActivity() {
                             updateEmptyState()
                             setStatus("Deleted")
                         } else {
-                            setStatus("Delete failed: ${result?.optString("error") ?: "unknown"}")
+                            showError("Delete failed: ${result?.optString("error") ?: "unknown"}")
                         }
                     }
                 }.start()
@@ -235,7 +244,7 @@ class MainActivity : AppCompatActivity() {
                             persistLibrary()
                         }
                     } else {
-                        setStatus("Download failed: ${result?.optString("error") ?: "unknown"}")
+                        showError("Download failed: ${result?.optString("error") ?: "unknown"}")
                     }
                 }
             }.start()
@@ -253,7 +262,11 @@ class MainActivity : AppCompatActivity() {
                 }
                 val result = json(resultJson)
                 runOnUiThread {
-                    setStatus(if (result?.optBoolean("ok") == true) "Metadata fetched" else "Update check failed: ${result?.optString("error") ?: "unknown"}")
+                    if (result?.optBoolean("ok") == true) {
+                        setStatus("Metadata fetched")
+                    } else {
+                        showError("Update check failed: ${result?.optString("error") ?: "unknown"}")
+                    }
                 }
             }.start()
         }
@@ -299,7 +312,7 @@ class MainActivity : AppCompatActivity() {
                             setStatus("Loaded ${downloads.size} EPUBs")
                             persistLibrary()
                         } else {
-                            setStatus("Scan failed: ${result?.optString("error") ?: "unknown"}")
+                            showError("Scan failed: ${result?.optString("error") ?: "unknown"}")
                         }
                     }
                 }.start()

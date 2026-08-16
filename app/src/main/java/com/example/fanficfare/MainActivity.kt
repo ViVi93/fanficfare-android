@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private var currentSort: String = "modified"
     private var libraryFolderUri: android.net.Uri? = null
     private val REQUEST_SAF_FOLDER = 1002
+    private val REQUEST_BOOK_DETAIL = 1003
 
     private fun hasStoragePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -146,6 +147,18 @@ class MainActivity : AppCompatActivity() {
         toast(message)
     }
 
+    fun getPythonBridge(): PythonBridge? = pythonBridge
+
+    private fun findBookByIdentity(book: BookItem): Int {
+        val byUrl = downloads.indexOfFirst { it.url.isNotBlank() && it.url == book.url }
+        if (byUrl >= 0) return byUrl
+        val normalized = book.uriString.trim()
+        if (normalized.isNotBlank()) {
+            return downloads.indexOfFirst { it.uriString.trim() == normalized }
+        }
+        return -1
+    }
+
     private fun updateEmptyState() {
         val empty = findViewById<TextView>(R.id.textEmpty)
         empty?.visibility = if (downloads.isEmpty()) View.VISIBLE else View.GONE
@@ -157,6 +170,7 @@ class MainActivity : AppCompatActivity() {
             options.add("Update")
             options.add("Force Download")
         }
+        options.add("Details")
         options.add("Delete")
         options.add("Show Path")
 
@@ -167,12 +181,26 @@ class MainActivity : AppCompatActivity() {
                 when (choice) {
                     "Update" -> updateBook(book)
                     "Force Download" -> forceDownloadBook(book)
+                    "Details" -> openBookDetail(book)
                     "Delete" -> deleteBook(book)
                     "Show Path" -> showPath(book)
                 }
             }
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    private fun openBookDetail(book: BookItem) {
+        val intent = Intent(this, BookDetailActivity::class.java)
+            .putExtra("title", book.title)
+            .putExtra("author", book.author)
+            .putExtra("path", book.uriString)
+            .putExtra("modified", book.lastModified)
+            .putExtra("size", book.sizeBytes)
+            .putExtra("cover", book.coverUriString)
+            .putExtra("url", book.url)
+            .putExtra("chapters", book.chapters)
+        startActivityForResult(intent, REQUEST_BOOK_DETAIL)
     }
 
     private fun updateBook(book: BookItem) {
@@ -273,6 +301,7 @@ class MainActivity : AppCompatActivity() {
                             bookAdapter.notifyDataSetChanged()
                             updateEmptyState()
                             setStatus("Deleted")
+                            persistLibrary()
                         } else {
                             showError("Delete failed: ${result?.optString("error") ?: "unknown"}")
                         }
@@ -338,7 +367,13 @@ class MainActivity : AppCompatActivity() {
                             val finalPath = copyToOutputDir(source, outputDir)
                             setStatus("Saved: $title")
                             val author = result.optString("author", "")
-                            downloads.add(0, BookItem(title, author, finalPath, System.currentTimeMillis(), 0))
+                            val newBook = BookItem(title, author, finalPath, System.currentTimeMillis(), 0)
+                            val existing = findBookByIdentity(newBook)
+                            if (existing >= 0) {
+                                downloads[existing] = newBook
+                            } else {
+                                downloads.add(0, newBook)
+                            }
                             bookAdapter.notifyDataSetChanged()
                             updateEmptyState()
                             persistLibrary()
@@ -469,13 +504,16 @@ class MainActivity : AppCompatActivity() {
                 if (result?.optBoolean("ok") == true) {
                     val books = result.optJSONArray("books") ?: org.json.JSONArray()
                     downloads.clear()
+                    val seen = mutableSetOf<String>()
                     for (i in 0 until books.length()) {
                         val b = books.getJSONObject(i)
+                        val path = b.optString("path", "")
+                        if (path.isNotBlank() && !seen.add(path)) continue
                         downloads.add(
                             BookItem(
                                 title = b.optString("title", "untitled"),
                                 author = b.optString("author", ""),
-                                uriString = b.optString("path", ""),
+                                uriString = path,
                                 lastModified = b.optLong("modified", 0L),
                                 sizeBytes = b.optLong("size", 0L),
                                 coverUriString = b.optString("cover", ""),
@@ -566,6 +604,33 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }.start()
+        } else if (requestCode == REQUEST_BOOK_DETAIL && resultCode == RESULT_OK && data != null) {
+            val deleted = data.getBooleanExtra("deleted", false)
+            if (deleted) {
+                val position = selectedBook?.let { downloads.indexOf(it) } ?: -1
+                if (position >= 0) {
+                    downloads.removeAt(position)
+                    bookAdapter.notifyDataSetChanged()
+                    updateEmptyState()
+                    persistLibrary()
+                }
+                return
+            }
+
+            val title = data.getStringExtra("title") ?: ""
+            val author = data.getStringExtra("author") ?: ""
+            val path = data.getStringExtra("path") ?: ""
+            val modified = data.getLongExtra("modified", 0L)
+            val book = selectedBook
+            if (book != null && path.isNotBlank()) {
+                val updated = book.copy(title = title, author = author, uriString = path, lastModified = modified)
+                val index = downloads.indexOf(book)
+                if (index >= 0) {
+                    downloads[index] = updated
+                }
+                bookAdapter.notifyDataSetChanged()
+                persistLibrary()
+            }
         }
     }
 
@@ -597,13 +662,16 @@ class MainActivity : AppCompatActivity() {
                 if (result?.optBoolean("ok") == true) {
                     val books = result.optJSONArray("books") ?: org.json.JSONArray()
                     downloads.clear()
+                    val seen = mutableSetOf<String>()
                     for (i in 0 until books.length()) {
                         val b = books.getJSONObject(i)
+                        val path = b.optString("path", "")
+                        if (path.isNotBlank() && !seen.add(path)) continue
                         downloads.add(
                             BookItem(
                                 title = b.optString("title", "untitled"),
                                 author = b.optString("author", ""),
-                                uriString = b.optString("path", ""),
+                                uriString = path,
                                 lastModified = b.optLong("modified", 0L),
                                 sizeBytes = b.optLong("size", 0L),
                                 coverUriString = b.optString("cover", ""),

@@ -114,6 +114,7 @@ def download_story(url, outDir):
         return json.dumps({
             "ok": True,
             "title": adapter.story.getMetadata("title") or filename,
+            "author": adapter.story.getMetadata("author") or "",
             "path": outpath,
         })
     except Exception as e:
@@ -320,6 +321,7 @@ def update_epub_from_path(epubPath, outDir):
         return json.dumps({
             "ok": True,
             "title": adapter.story.getMetadata("title") or filename,
+            "author": adapter.story.getMetadata("author") or "",
             "path": outpath,
         })
     except Exception as e:

@@ -2,6 +2,7 @@ package com.example.fanficfare
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -12,11 +13,15 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.fanficfare.adapter.BookAdapter
 import com.example.fanficfare.model.BookItem
 import com.chaquo.python.Python
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
 
@@ -185,10 +190,24 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (result?.optBoolean("ok") == true) {
                     val title = result.optString("title", book.title)
-                    val path = result.optString("path", "")
-                    setStatus("Updated: $title")
-                    if (path.isNotBlank()) {
-                        refreshBookPath(book, title, path)
+                    val internalPath = result.optString("path", "")
+                    val outputDir = SettingsActivity.getOutputDir(this@MainActivity)
+                    if (internalPath.isNotBlank()) {
+                        try {
+                            val source = File(internalPath)
+                            if (source.exists() && source.isFile) {
+                                val finalPath = copyToOutputDir(source, outputDir)
+                                val author = result.optString("author", book.author)
+                                setStatus("Updated: $title")
+                                refreshBookPath(book, title, author, finalPath)
+                            } else {
+                                setStatus("Updated: $title")
+                            }
+                        } catch (e: Exception) {
+                            setStatus("Updated: $title")
+                        }
+                    } else {
+                        setStatus("Updated: $title")
                     }
                 } else {
                     showError("Update failed: ${result?.optString("error") ?: "unknown"}")
@@ -211,10 +230,24 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (result?.optBoolean("ok") == true) {
                     val title = result.optString("title", book.title)
-                    val path = result.optString("path", "")
-                    setStatus("Downloaded: $title")
-                    if (path.isNotBlank()) {
-                        refreshBookPath(book, title, path)
+                    val internalPath = result.optString("path", "")
+                    val outputDir = SettingsActivity.getOutputDir(this@MainActivity)
+                    if (internalPath.isNotBlank()) {
+                        try {
+                            val source = File(internalPath)
+                            if (source.exists() && source.isFile) {
+                                val finalPath = copyToOutputDir(source, outputDir)
+                                val author = result.optString("author", book.author)
+                                setStatus("Downloaded: $title")
+                                refreshBookPath(book, title, author, finalPath)
+                            } else {
+                                setStatus("Downloaded: $title")
+                            }
+                        } catch (e: Exception) {
+                            setStatus("Downloaded: $title")
+                        }
+                    } else {
+                        setStatus("Downloaded: $title")
                     }
                 } else {
                     val errorMsg = result?.optString("error") ?: "unknown"
@@ -259,11 +292,12 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun refreshBookPath(oldBook: BookItem, title: String, path: String) {
+    private fun refreshBookPath(oldBook: BookItem, title: String, author: String, path: String) {
         val index = downloads.indexOf(oldBook)
         if (index >= 0) {
             val updated = oldBook.copy(
                 title = title,
+                author = author,
                 uriString = path,
                 lastModified = System.currentTimeMillis()
             )
@@ -290,13 +324,27 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (result?.optBoolean("ok") == true) {
                         val title = result.optString("title", "story")
-                        val path = result.optString("path", "")
-                        setStatus("Saved: $title")
-                        if (path.isNotBlank()) {
-                            downloads.add(0, BookItem(title, "", path, System.currentTimeMillis(), 0))
+                        val internalPath = result.optString("path", "")
+                        val outputDir = SettingsActivity.getOutputDir(this@MainActivity)
+                        if (internalPath.isBlank()) {
+                            showError("Download failed: missing output path")
+                            return@runOnUiThread
+                        }
+                        try {
+                            val source = File(internalPath)
+                            if (!source.exists() || !source.isFile) {
+                                showError("Download failed: generated file missing")
+                                return@runOnUiThread
+                            }
+                            val finalPath = copyToOutputDir(source, outputDir)
+                            setStatus("Saved: $title")
+                            val author = result.optString("author", "")
+                            downloads.add(0, BookItem(title, author, finalPath, System.currentTimeMillis(), 0))
                             bookAdapter.notifyDataSetChanged()
                             updateEmptyState()
                             persistLibrary()
+                        } catch (e: Exception) {
+                            showError("Download failed: ${e.message}")
                         }
                     } else {
                         val errorMsg = result?.optString("error") ?: "unknown"
@@ -705,6 +753,46 @@ class MainActivity : AppCompatActivity() {
         return java.io.File(dir, name).absolutePath
     }
 
+    private fun ensureLocalFile(uriOrPath: String): Pair<File, Boolean> {
+        val file = File(uriOrPath)
+        return if (file.exists() && file.isFile) {
+            Pair(file, false)
+        } else {
+            val uri = Uri.parse(uriOrPath)
+            val tempFile = File(cacheDir, "bridge_src_${System.currentTimeMillis()}.epub")
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw IOException("Cannot open source: $uriOrPath")
+            Pair(tempFile, true)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun copyToOutputDir(sourceFile: File, outputDir: String): String {
+        return if (outputDir.startsWith("content://")) {
+            val treeUri = Uri.parse(outputDir)
+            val treeDoc = DocumentFile.fromTreeUri(this, treeUri)
+                ?: throw IOException("Invalid output directory")
+            val mimeType = "application/epub+zip"
+            val newFile = treeDoc.createFile(mimeType, sourceFile.nameWithoutExtension)
+                ?: throw IOException("Cannot create file in output directory")
+            contentResolver.openOutputStream(newFile.uri)?.use { output ->
+                sourceFile.inputStream().use { input ->
+                    input.copyTo(output)
+                }
+            } ?: throw IOException("Cannot open output stream")
+            newFile.uri.toString()
+        } else {
+            val destDir = File(outputDir)
+            if (!destDir.exists()) destDir.mkdirs()
+            val outFile = File(destDir, sourceFile.name)
+            sourceFile.copyTo(outFile, overwrite = true)
+            outFile.absolutePath
+        }
+    }
+
     private fun json(text: String): JSONObject? {
         return try { JSONObject(text) } catch (e: Exception) { null }
     }
@@ -720,15 +808,25 @@ class MainActivity : AppCompatActivity() {
             var successCount = 0
             var failCount = 0
             for (book in updatable) {
-                val resultJson = pythonBridge?.updateEpubFromPath(book.uriString, SettingsActivity.getOutputDir(this))
+                val resultJson = pythonBridge?.updateEpubFromPath(book.uriString, filesDir.absolutePath)
                     ?: """{"ok":false,"error":"bridge missing"}"""
                 val result = json(resultJson)
                 if (result?.optBoolean("ok") == true) {
                     successCount++
                     val title = result.optString("title", book.title)
-                    val path = result.optString("path", "")
-                    if (path.isNotBlank()) {
-                        runOnUiThread { refreshBookPath(book, title, path) }
+                    val internalPath = result.optString("path", "")
+                    if (internalPath.isNotBlank()) {
+                        try {
+                            val source = File(internalPath)
+                            if (source.exists() && source.isFile) {
+                                val outputDir = SettingsActivity.getOutputDir(this@MainActivity)
+                                val finalPath = copyToOutputDir(source, outputDir)
+                                val author = result.optString("author", book.author)
+                                runOnUiThread { refreshBookPath(book, title, author, finalPath) }
+                            }
+                        } catch (e: Exception) {
+                            // ignore copy failures in batch mode
+                        }
                     }
                 } else {
                     failCount++

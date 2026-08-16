@@ -55,7 +55,12 @@ class BookDetailActivity : AppCompatActivity() {
         url.text = bookUrl.ifBlank { "" }
         path.text = bookPath
         size.text = formatSize(bookSize)
-        modified.text = DateFormat.format("yyyy-MM-dd HH:mm", bookModified).toString()
+        modified.text = if (bookModified > 0) {
+            DateFormat.format("yyyy-MM-dd HH:mm", bookModified).toString()
+        } else {
+            val file = File(bookPath)
+            if (file.exists()) DateFormat.format("yyyy-MM-dd HH:mm", file.lastModified()).toString() else "Unknown date"
+        }
 
         val coverData = bookCover
         if (!coverData.isNullOrBlank() && coverData.startsWith("data:")) {
@@ -117,7 +122,7 @@ class BookDetailActivity : AppCompatActivity() {
     }
 
     private fun updateBook() {
-        val bridge = (application as com.example.fanficfare.MainActivity).getPythonBridge() ?: run {
+        val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
             Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
             return
         }
@@ -149,7 +154,7 @@ class BookDetailActivity : AppCompatActivity() {
     }
 
     private fun forceDownloadBook() {
-        val bridge = (application as com.example.fanficfare.MainActivity).getPythonBridge() ?: run {
+        val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
             Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
             return
         }
@@ -200,7 +205,7 @@ class BookDetailActivity : AppCompatActivity() {
     }
 
     private fun deleteBook() {
-        val bridge = (application as com.example.fanficfare.MainActivity).getPythonBridge() ?: run {
+        val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
             Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
             return
         }

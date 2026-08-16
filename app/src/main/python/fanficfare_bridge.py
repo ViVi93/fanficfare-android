@@ -89,8 +89,8 @@ def get_metadata(url):
         adapter.getStoryMetadataOnly()
         return json.dumps({
             "ok": True,
-            "title": adapter.story.title or "",
-            "author": adapter.story.author or "",
+            "title": adapter.story.getMetadata("title") or "",
+            "author": adapter.story.getMetadata("author") or "",
             "chapters": adapter.story.getChapterCount(),
         })
     except Exception as e:
@@ -113,7 +113,7 @@ def download_story(url, outDir):
             writer.writeStory(outstream=out)
         return json.dumps({
             "ok": True,
-            "title": adapter.story.title or filename,
+            "title": adapter.story.getMetadata("title") or filename,
             "path": outpath,
         })
     except Exception as e:
@@ -319,7 +319,7 @@ def update_epub_from_path(epubPath, outDir):
             writer.writeStory(outstream=out, metaonly=False, update=True, oldfile=epubPath)
         return json.dumps({
             "ok": True,
-            "title": adapter.story.title or filename,
+            "title": adapter.story.getMetadata("title") or filename,
             "path": outpath,
         })
     except Exception as e:

@@ -115,7 +115,7 @@ class BookDetailActivity : AppCompatActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         try {
-            startActivity(Intent.createChooser(intent, "Open EPUB"))
+            startActivity(intent)
         } catch (e: Exception) {
             Toast.makeText(this, "No EPUB reader installed", Toast.LENGTH_LONG).show()
         }
@@ -131,6 +131,10 @@ class BookDetailActivity : AppCompatActivity() {
             val result = org.json.JSONObject(resultJson)
             runOnUiThread {
                 if (result.optBoolean("ok")) {
+                    if (result.optBoolean("skipped")) {
+                        showError("Update skipped: ${result.optString("reason", "already current")}")
+                        return@runOnUiThread
+                    }
                     val title = result.optString("title", bookTitle)
                     val author = result.optString("author", bookAuthor)
                     val path = result.optString("path", "")
@@ -144,7 +148,7 @@ class BookDetailActivity : AppCompatActivity() {
                             finishWithResult(title, author, bookPath, System.currentTimeMillis())
                         }
                     } catch (e: Exception) {
-                        finishWithResult(title, author, bookPath, System.currentTimeMillis())
+                        showError("Update failed: ${e.message ?: "copy/output error"}")
                     }
                 } else {
                     showError("Update failed: ${result.optString("error") ?: "unknown"}")
@@ -176,7 +180,7 @@ class BookDetailActivity : AppCompatActivity() {
                             finishWithResult(title, author, bookPath, System.currentTimeMillis())
                         }
                     } catch (e: Exception) {
-                        finishWithResult(title, author, bookPath, System.currentTimeMillis())
+                        showError("Download failed: ${e.message ?: "copy/output error"}")
                     }
                 } else {
                     showError("Download failed: ${result.optString("error") ?: "unknown"}")

@@ -515,7 +515,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showFallbackLibraryDialog() {
         val input = EditText(this)
-        input.hint = "/storage/emulated/0/Download/FFF"
+        val outputDir = SettingsActivity.getOutputDir(this)
+        input.hint = if (outputDir.startsWith("content://")) {
+            "SAF URI selected — use the folder picker instead"
+        } else {
+            outputDir.ifBlank { "/storage/emulated/0/Download" }
+        }
         AlertDialog.Builder(this)
             .setTitle("Load EPUB Library")
             .setMessage("Folder picker unavailable. Enter path manually, or grant All Files Access in Settings.")

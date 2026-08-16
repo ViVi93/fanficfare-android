@@ -153,6 +153,11 @@ def _extract_epub_metadata(epubPath):
                 author_node = root.find(".//dc:creator", ns)
                 if author_node is not None and author_node.text:
                     author = author_node.text.strip()
+                manifest = None
+                for elem in root.iter():
+                    if elem.tag.endswith("manifest"):
+                        manifest = elem
+                        break
                 for meta in root.findall(".//{http://purl.org/dc/elements/1.1/}meta") + root.findall(".//{http://www.idpf.org/2007/opf/}meta") + root.findall(".//meta"):
                     name_attr = meta.get("name", "") or meta.get("{http://purl.org/dc/elements/1.1/}name", "") or meta.get("{http://www.idpf.org/2007/opf/}name", "")
                     content = meta.get("content", "") or ""
@@ -162,20 +167,18 @@ def _extract_epub_metadata(epubPath):
                         pass
                     elif name_attr.lower() == "cover":
                         cover_id = content.strip()
-                        if cover_id:
-                            manifest = root.find("opf:manifest", ns)
-                            if manifest is not None:
-                                for item in manifest.findall("opf:item", ns):
-                                    if item.get("id") == cover_id:
-                                        href = item.get("href", "")
-                                        media_type = item.get("media-type", "")
-                                        if href and media_type.startswith("image/"):
-                                            try:
-                                                data = z.read(href)
-                                                cover = "data:%s;base64,%s" % (media_type, __import__("base64").b64encode(data).decode("ascii"))
-                                            except Exception:
-                                                pass
-                                            break
+                        if cover_id and manifest is not None:
+                            for item in manifest:
+                                if item.tag.endswith("item") and item.get("id") == cover_id:
+                                    href = item.get("href", "")
+                                    media_type = item.get("media-type", "")
+                                    if href and media_type.startswith("image/"):
+                                        try:
+                                            data = z.read(href)
+                                            cover = "data:%s;base64,%s" % (media_type, __import__("base64").b64encode(data).decode("ascii"))
+                                        except Exception:
+                                            pass
+                                        break
                     elif "url" in name_attr.lower() or "source" in name_attr.lower():
                         if content.startswith("http://") or content.startswith("https://"):
                             url = content.strip()
@@ -227,21 +230,40 @@ def _extract_epub_metadata(epubPath):
 
         if cover is None:
             try:
-                opf_for_manifest = opf_name
-                if opf_for_manifest:
-                    opf_bytes = z.read(opf_for_manifest)
-                    root_for_manifest = ET.fromstring(opf_bytes)
-                    ns_for_manifest = {"opf": "http://www.idpf.org/2007/opf"}
-                    manifest = root_for_manifest.find("opf:manifest", ns_for_manifest)
-                    if manifest is not None:
-                        for item in manifest.findall("opf:item", ns_for_manifest):
+                manifest = None
+                if opf_name:
+                    try:
+                        opf_bytes = z.read(opf_name)
+                        root_for_manifest = ET.fromstring(opf_bytes)
+                        for elem in root_for_manifest.iter():
+                            if elem.tag.endswith("manifest"):
+                                manifest = elem
+                                break
+                    except Exception:
+                        pass
+                if manifest is None:
+                    for name in names:
+                        if name.lower().endswith(".opf"):
+                            try:
+                                opf_bytes = z.read(name)
+                                root_for_manifest = ET.fromstring(opf_bytes)
+                                for elem in root_for_manifest.iter():
+                                    if elem.tag.endswith("manifest"):
+                                        manifest = elem
+                                        break
+                                if manifest is not None:
+                                    break
+                            except Exception:
+                                pass
+                if manifest is not None:
+                    for item in manifest:
+                        if item.tag.endswith("item"):
                             href = item.get("href", "")
                             media_type = item.get("media-type", "")
                             if media_type.startswith("image/"):
                                 try:
                                     data = z.read(href)
-                                    mime = media_type
-                                    cover = "data:%s;base64,%s" % (mime, __import__("base64").b64encode(data).decode("ascii"))
+                                    cover = "data:%s;base64,%s" % (media_type, __import__("base64").b64encode(data).decode("ascii"))
                                     break
                                 except Exception:
                                     pass

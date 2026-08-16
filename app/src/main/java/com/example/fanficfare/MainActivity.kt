@@ -31,7 +31,6 @@ class MainActivity : AppCompatActivity() {
     private var currentSort: String = "modified"
     private var libraryFolderUri: android.net.Uri? = null
     private var libraryFolderPath: String? = null
-    private val REQUEST_SAF_FOLDER = 1002
     private val REQUEST_BOOK_DETAIL = 1003
     private lateinit var pickLibraryFolder: androidx.activity.result.ActivityResultLauncher<android.net.Uri?>
 
@@ -549,7 +548,11 @@ class MainActivity : AppCompatActivity() {
             }.start()
             return
         }
-        pickLibraryFolder.launch(null)
+        try {
+            pickLibraryFolder.launch(null)
+        } catch (e: Exception) {
+            showFallbackLibraryDialog()
+        }
     }
 
     private fun showFallbackLibraryDialog() {
@@ -571,14 +574,11 @@ class MainActivity : AppCompatActivity() {
                 libraryFolderPath = folder.absolutePath
                 libraryFolderUri = null
                 saveLibraryLocation()
-                val files = mutableListOf<java.io.File>()
-                folder.walkTopDown().forEach {
-                    if (it.isFile && it.extension.equals("epub", ignoreCase = true)) files.add(it)
-                }
+                val files = folder.walkTopDown().filter { it.isFile && it.extension.equals("epub", ignoreCase = true) }.toList()
                 if (files.isEmpty()) {
                     showError("No EPUBs found in $dir")
                 } else {
-                    scanOriginalEpubs(folder)
+                    scanImportedEpubs(files)
                 }
             }
             .setNeutralButton("Settings") { _, _ ->
@@ -680,25 +680,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_SAF_FOLDER && resultCode == RESULT_OK && data != null) {
-            val treeUri = data.data ?: return
-            libraryFolderUri = treeUri
-            contentResolver.takePersistableUriPermission(
-                treeUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
-            setStatus("Scanning folder...")
-            Thread {
-                val epubs = discoverEpubsFromTree(treeUri)
-                runOnUiThread {
-                    if (epubs.isEmpty()) {
-                        showError("No EPUBs found in selected folder")
-                    } else {
-                        scanImportedEpubs(epubs)
-                    }
-                }
-            }.start()
-        } else if (requestCode == REQUEST_BOOK_DETAIL && resultCode == RESULT_OK && data != null) {
+        if (requestCode == REQUEST_BOOK_DETAIL && resultCode == RESULT_OK && data != null) {
             val deleted = data.getBooleanExtra("deleted", false)
             if (deleted) {
                 val position = selectedBook?.let { downloads.indexOf(it) } ?: -1

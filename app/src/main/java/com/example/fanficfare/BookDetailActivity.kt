@@ -128,7 +128,7 @@ class BookDetailActivity : AppCompatActivity() {
         }
         Thread {
             val resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
-                bridge.updateEpubFromPath(localPath, filesDir.absolutePath)
+                bridge.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
             } ?: run {
                 runOnUiThread { showError("Cannot read EPUB from this location") }
                 return@Thread
@@ -169,7 +169,7 @@ class BookDetailActivity : AppCompatActivity() {
         }
         Thread {
             val resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
-                bridge.forceDownloadFromEpub(localPath, filesDir.absolutePath)
+                bridge.forceDownloadFromEpub(localPath.absolutePath, filesDir.absolutePath)
             } ?: run {
                 runOnUiThread { showError("Cannot read EPUB from this location") }
                 return@Thread
@@ -219,10 +219,6 @@ class BookDetailActivity : AppCompatActivity() {
     }
 
     private fun deleteBook() {
-        val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
-            Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
-            return
-        }
         Thread {
             val ok = StorageBridge.deleteEpub(this, bookPath)
             runOnUiThread {

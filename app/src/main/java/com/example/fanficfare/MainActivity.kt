@@ -212,7 +212,7 @@ class MainActivity : AppCompatActivity() {
         setStatus("Updating...")
         Thread {
             val resultJson = StorageBridge.withLocalEpub(this, book.uriString) { localPath ->
-                pythonBridge?.updateEpubFromPath(localPath, filesDir.absolutePath)
+                pythonBridge?.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
             } ?: run {
                 runOnUiThread { showError("Cannot read EPUB from this location") }
                 return@Thread
@@ -235,8 +235,8 @@ class MainActivity : AppCompatActivity() {
                                     uriString = finalPath,
                                     lastModified = result.optLong("modified", System.currentTimeMillis()),
                                     sizeBytes = result.optLong("size", 0L),
-                                    coverUriString = result.optString("cover", book.coverUriString),
-                                    url = result.optString("url", book.url),
+                                    coverUriString = result.optString("cover", book.coverUriString ?: ""),
+                                    url = result.optString("url", book.url ?: ""),
                                     chapters = result.optInt("chapters", 0)
                                 )
                                 val idx = findBookByIdentity(book)
@@ -271,7 +271,7 @@ class MainActivity : AppCompatActivity() {
         setStatus("Force downloading...")
         Thread {
             val resultJson = StorageBridge.withLocalEpub(this, book.uriString) { localPath ->
-                pythonBridge?.forceDownloadFromEpub(localPath, filesDir.absolutePath)
+                pythonBridge?.forceDownloadFromEpub(localPath.absolutePath, filesDir.absolutePath)
             } ?: run {
                 runOnUiThread { showError("Cannot read EPUB from this location") }
                 return@Thread
@@ -294,8 +294,8 @@ class MainActivity : AppCompatActivity() {
                                     uriString = finalPath,
                                     lastModified = result.optLong("modified", System.currentTimeMillis()),
                                     sizeBytes = result.optLong("size", 0L),
-                                    coverUriString = result.optString("cover", book.coverUriString),
-                                    url = result.optString("url", book.url),
+                                    coverUriString = result.optString("cover", book.coverUriString ?: ""),
+                                    url = result.optString("url", book.url ?: ""),
                                     chapters = result.optInt("chapters", 0)
                                 )
                                 val idx = findBookByIdentity(book)
@@ -920,7 +920,7 @@ class MainActivity : AppCompatActivity() {
             var failCount = 0
             for (book in updatable) {
                 val resultJson = StorageBridge.withLocalEpub(this, book.uriString) { localPath ->
-                    pythonBridge?.updateEpubFromPath(localPath, filesDir.absolutePath)
+                    pythonBridge?.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
                 }
                 if (resultJson == null) {
                     failCount++

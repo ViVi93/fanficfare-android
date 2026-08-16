@@ -146,20 +146,36 @@ def _extract_epub_metadata(epubPath):
             try:
                 opf = z.read(opf_name).decode("utf-8", errors="ignore")
                 root = ET.fromstring(opf)
-                ns = {"dc": "http://purl.org/dc/elements/1.1/"}
+                ns = {"dc": "http://purl.org/dc/elements/1.1/", "opf": "http://www.idpf.org/2007/opf/"}
                 title_node = root.find(".//dc:title", ns)
                 if title_node is not None and title_node.text:
                     title = title_node.text.strip()
                 author_node = root.find(".//dc:creator", ns)
                 if author_node is not None and author_node.text:
                     author = author_node.text.strip()
-                for meta in root.findall(".//{http://purl.org/dc/elements/1.1/}meta") + root.findall(".//meta"):
-                    name_attr = meta.get("name", "") or meta.get("{http://purl.org/dc/elements/1.1/}name", "")
+                for meta in root.findall(".//{http://purl.org/dc/elements/1.1/}meta") + root.findall(".//{http://www.idpf.org/2007/opf/}meta") + root.findall(".//meta"):
+                    name_attr = meta.get("name", "") or meta.get("{http://purl.org/dc/elements/1.1/}name", "") or meta.get("{http://www.idpf.org/2007/opf/}name", "")
                     content = meta.get("content", "") or ""
                     if "chaptercount" in name_attr.lower() and content.isdigit():
                         chapters = int(content)
                     elif name_attr.lower() in {"calibredit", "calibreurl", "calibrecontributor"}:
                         pass
+                    elif name_attr.lower() == "cover":
+                        cover_id = content.strip()
+                        if cover_id:
+                            manifest = root.find("opf:manifest", ns)
+                            if manifest is not None:
+                                for item in manifest.findall("opf:item", ns):
+                                    if item.get("id") == cover_id:
+                                        href = item.get("href", "")
+                                        media_type = item.get("media-type", "")
+                                        if href and media_type.startswith("image/"):
+                                            try:
+                                                data = z.read(href)
+                                                cover = "data:%s;base64,%s" % (media_type, __import__("base64").b64encode(data).decode("ascii"))
+                                            except Exception:
+                                                pass
+                                            break
                     elif "url" in name_attr.lower() or "source" in name_attr.lower():
                         if content.startswith("http://") or content.startswith("https://"):
                             url = content.strip()
@@ -189,24 +205,48 @@ def _extract_epub_metadata(epubPath):
                     except Exception:
                         pass
 
-        for name in names:
-            lower = name.lower()
-            if lower.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")):
-                base = lower.split("/")[-1].replace(".jpg", "").replace(".jpeg", "").replace(".png", "").replace(".gif", "").replace(".webp", "")
-                if base in {"cover", "coverimage"} or lower.count("/") == 1 and "cover" in base:
-                    try:
-                        data = z.read(name)
-                        mime = "image/jpeg"
-                        if lower.endswith(".png"):
-                            mime = "image/png"
-                        elif lower.endswith(".gif"):
-                            mime = "image/gif"
-                        elif lower.endswith(".webp"):
-                            mime = "image/webp"
-                        cover = "data:%s;base64,%s" % (mime, __import__("base64").b64encode(data).decode("ascii"))
-                        break
-                    except Exception:
-                        pass
+        if cover is None:
+            for name in names:
+                lower = name.lower()
+                if lower.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")):
+                    base = lower.split("/")[-1].replace(".jpg", "").replace(".jpeg", "").replace(".png", "").replace(".gif", "").replace(".webp", "")
+                    if base in {"cover", "coverimage"} or lower.count("/") == 1 and "cover" in base:
+                        try:
+                            data = z.read(name)
+                            mime = "image/jpeg"
+                            if lower.endswith(".png"):
+                                mime = "image/png"
+                            elif lower.endswith(".gif"):
+                                mime = "image/gif"
+                            elif lower.endswith(".webp"):
+                                mime = "image/webp"
+                            cover = "data:%s;base64,%s" % (mime, __import__("base64").b64encode(data).decode("ascii"))
+                            break
+                        except Exception:
+                            pass
+
+        if cover is None:
+            try:
+                opf_for_manifest = opf_name
+                if opf_for_manifest:
+                    opf_bytes = z.read(opf_for_manifest)
+                    root_for_manifest = ET.fromstring(opf_bytes)
+                    ns_for_manifest = {"opf": "http://www.idpf.org/2007/opf"}
+                    manifest = root_for_manifest.find("opf:manifest", ns_for_manifest)
+                    if manifest is not None:
+                        for item in manifest.findall("opf:item", ns_for_manifest):
+                            href = item.get("href", "")
+                            media_type = item.get("media-type", "")
+                            if media_type.startswith("image/"):
+                                try:
+                                    data = z.read(href)
+                                    mime = media_type
+                                    cover = "data:%s;base64,%s" % (mime, __import__("base64").b64encode(data).decode("ascii"))
+                                    break
+                                except Exception:
+                                    pass
+            except Exception:
+                pass
 
     return {
         "title": title,

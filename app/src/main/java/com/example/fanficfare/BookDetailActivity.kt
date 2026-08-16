@@ -174,26 +174,33 @@ class BookDetailActivity : AppCompatActivity() {
                 runOnUiThread { showError("Cannot read EPUB from this location") }
                 return@Thread
             }
-            val result = org.json.JSONObject(resultJson)
             runOnUiThread {
-                if (result.optBoolean("ok")) {
-                    val title = result.optString("title", bookTitle)
-                    val author = result.optString("author", bookAuthor)
-                    val path = result.optString("path", "")
-                    val outputDir = SettingsActivity.getOutputDir(this)
-                    try {
-                        val source = File(path)
-                        if (source.exists() && source.isFile) {
-                            val finalPath = copyToOutputDir(source, outputDir)
-                            finishWithResult(title, author, finalPath, System.currentTimeMillis())
-                        } else {
-                            finishWithResult(title, author, bookPath, System.currentTimeMillis())
+                try {
+                    val result = org.json.JSONObject(resultJson)
+                    if (result.optBoolean("ok")) {
+                        val title = result.optString("title", bookTitle)
+                        val author = result.optString("author", bookAuthor)
+                        val path = result.optString("path", "")
+                        val outputDir = SettingsActivity.getOutputDir(this)
+                        try {
+                            val source = File(path)
+                            if (source.exists() && source.isFile) {
+                                val finalPath = copyToOutputDir(source, outputDir)
+                                finishWithResult(title, author, finalPath, System.currentTimeMillis())
+                            } else {
+                                finishWithResult(title, author, bookPath, System.currentTimeMillis())
+                            }
+                        } catch (e: Exception) {
+                            showError("Download failed: ${e.message ?: "copy/output error"}")
                         }
-                    } catch (e: Exception) {
-                        showError("Download failed: ${e.message ?: "copy/output error"}")
+                    } else {
+                        val errorMsg = result.optString("error") ?: "unknown"
+                        val detail = result.optString("detail")
+                        val fullMsg = if (!detail.isNullOrBlank()) "$errorMsg\n$detail" else errorMsg
+                        showError("Force download failed: $fullMsg")
                     }
-                } else {
-                    showError("Download failed: ${result.optString("error") ?: "unknown"}")
+                } catch (e: Exception) {
+                    showError("Force download failed: invalid response from bridge")
                 }
             }
         }.start()

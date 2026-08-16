@@ -30,8 +30,10 @@ class MainActivity : AppCompatActivity() {
     private var selectedBook: BookItem? = null
     private var currentSort: String = "modified"
     private var libraryFolderUri: android.net.Uri? = null
+    private var libraryFolderPath: String? = null
     private val REQUEST_SAF_FOLDER = 1002
     private val REQUEST_BOOK_DETAIL = 1003
+    private lateinit var pickLibraryFolder: androidx.activity.result.ActivityResultLauncher<android.net.Uri?>
 
     private fun hasStoragePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -102,6 +104,31 @@ class MainActivity : AppCompatActivity() {
 
         updateEmptyState()
         loadPersistedLibrary()
+
+        pickLibraryFolder = registerForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+        ) { uri ->
+            if (uri != null) {
+                libraryFolderUri = uri
+                libraryFolderPath = null
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+                saveLibraryLocation()
+                setStatus("Scanning folder...")
+                Thread {
+                    val epubs = discoverEpubsFromTree(uri)
+                    runOnUiThread {
+                        if (epubs.isEmpty()) {
+                            showError("No EPUBs found in selected folder")
+                        } else {
+                            scanImportedEpubs(epubs)
+                        }
+                    }
+                }.start()
+            }
+        }
 
         findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar).setOnMenuItemClickListener { item ->
             when (item.itemId) {
@@ -276,49 +303,53 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { showError("Cannot read EPUB from this location") }
                 return@Thread
             }
-            val result = json(resultJson)
             runOnUiThread {
-                if (result?.optBoolean("ok") == true) {
-                    val title = result.optString("title", book.title)
-                    val author = result.optString("author", book.author)
-                    val internalPath = result.optString("path", "")
-                    val outputDir = SettingsActivity.getOutputDir(this@MainActivity)
-                    if (internalPath.isNotBlank()) {
-                        try {
-                            val source = File(internalPath)
-                            if (source.exists() && source.isFile) {
-                                val finalPath = copyToOutputDir(source, outputDir)
-                                val updated = BookItem(
-                                    title = title,
-                                    author = author,
-                                    uriString = finalPath,
-                                    lastModified = result.optLong("modified", System.currentTimeMillis()),
-                                    sizeBytes = result.optLong("size", 0L),
-                                    coverUriString = result.optString("cover", book.coverUriString ?: ""),
-                                    url = result.optString("url", book.url ?: ""),
-                                    chapters = result.optInt("chapters", 0)
-                                )
-                                val idx = findBookByIdentity(book)
-                                if (idx >= 0) downloads[idx] = updated else downloads.add(0, updated)
-                                bookAdapter.notifyDataSetChanged()
-                                setStatus("Downloaded: $title")
-                                persistLibrary()
-                            } else {
-                                setStatus("Downloaded: $title")
-                                persistLibrary()
+                try {
+                    val result = org.json.JSONObject(resultJson)
+                    if (result.optBoolean("ok")) {
+                        val title = result.optString("title", book.title)
+                        val author = result.optString("author", book.author)
+                        val internalPath = result.optString("path", "")
+                        val outputDir = SettingsActivity.getOutputDir(this@MainActivity)
+                        if (internalPath.isNotBlank()) {
+                            try {
+                                val source = File(internalPath)
+                                if (source.exists() && source.isFile) {
+                                    val finalPath = copyToOutputDir(source, outputDir)
+                                    val updated = BookItem(
+                                        title = title,
+                                        author = author,
+                                        uriString = finalPath,
+                                        lastModified = result.optLong("modified", System.currentTimeMillis()),
+                                        sizeBytes = result.optLong("size", 0L),
+                                        coverUriString = result.optString("cover", book.coverUriString ?: ""),
+                                        url = result.optString("url", book.url ?: ""),
+                                        chapters = result.optInt("chapters", 0)
+                                    )
+                                    val idx = findBookByIdentity(book)
+                                    if (idx >= 0) downloads[idx] = updated else downloads.add(0, updated)
+                                    bookAdapter.notifyDataSetChanged()
+                                    setStatus("Downloaded: $title")
+                                    persistLibrary()
+                                } else {
+                                    setStatus("Downloaded: $title")
+                                    persistLibrary()
+                                }
+                            } catch (e: Exception) {
+                                showError("Download failed: ${e.message ?: "copy/output error"}")
                             }
-                        } catch (e: Exception) {
-                            showError("Download failed: ${e.message}")
+                        } else {
+                            setStatus("Downloaded: $title")
+                            persistLibrary()
                         }
                     } else {
-                        setStatus("Downloaded: $title")
-                        persistLibrary()
+                        val errorMsg = result.optString("error") ?: "unknown"
+                        val detail = result.optString("detail")
+                        val fullMsg = if (!detail.isNullOrBlank()) "$errorMsg\n$detail" else errorMsg
+                        showError("Download failed: $fullMsg")
                     }
-                } else {
-                    val errorMsg = result?.optString("error") ?: "unknown"
-                    val detail = result?.optString("detail")
-                    val fullMsg = if (!detail.isNullOrBlank()) "$errorMsg\n$detail" else errorMsg
-                    showError("Download failed: $fullMsg")
+                } catch (e: Exception) {
+                    showError("Force download failed: invalid response from bridge")
                 }
             }
         }.start()
@@ -495,13 +526,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLoadLibraryDialog() {
-        if (libraryFolderUri != null) {
-            setStatus("Scanning saved folder...")
+        if (libraryFolderUri != null || !libraryFolderPath.isNullOrBlank()) {
+            setStatus("Scanning saved library folder...")
             Thread {
-                val epubs = discoverEpubsFromTree(libraryFolderUri!!)
+                val epubs = if (libraryFolderUri != null) {
+                    discoverEpubsFromTree(libraryFolderUri!!)
+                } else {
+                    val folder = java.io.File(libraryFolderPath!!)
+                    if (!folder.exists() || !folder.isDirectory) {
+                        runOnUiThread { showError("Saved library folder not found") }
+                        return@Thread
+                    }
+                    folder.walkTopDown().filter { it.isFile && it.extension.equals("epub", ignoreCase = true) }.toList()
+                }
                 runOnUiThread {
                     if (epubs.isEmpty()) {
-                        showError("No EPUBs found in saved folder")
+                        showError("No EPUBs found in saved library folder")
                     } else {
                         scanImportedEpubs(epubs)
                     }
@@ -509,25 +549,16 @@ class MainActivity : AppCompatActivity() {
             }.start()
             return
         }
-        val intent = Intent("android.provider.action.OPEN_DOCUMENT_TREE")
-        try {
-            startActivityForResult(intent, REQUEST_SAF_FOLDER)
-        } catch (e: Exception) {
-            showFallbackLibraryDialog()
-        }
+        pickLibraryFolder.launch(null)
     }
 
     private fun showFallbackLibraryDialog() {
         val input = EditText(this)
-        val outputDir = SettingsActivity.getOutputDir(this)
-        input.hint = if (outputDir.startsWith("content://")) {
-            "SAF URI selected — use the folder picker instead"
-        } else {
-            outputDir.ifBlank { "/storage/emulated/0/Download" }
-        }
+        val libraryHint = libraryFolderPath ?: "/storage/emulated/0/Download"
+        input.hint = libraryHint
         AlertDialog.Builder(this)
             .setTitle("Load EPUB Library")
-            .setMessage("Folder picker unavailable. Enter path manually, or grant All Files Access in Settings.")
+            .setMessage("Folder picker unavailable. Enter a library folder path manually, or grant All Files Access in Settings.")
             .setView(input)
             .setPositiveButton("Scan") { _, _ ->
                 val dir = input.text.toString().trim()
@@ -537,6 +568,9 @@ class MainActivity : AppCompatActivity() {
                     showError("Folder not found: $dir")
                     return@setPositiveButton
                 }
+                libraryFolderPath = folder.absolutePath
+                libraryFolderUri = null
+                saveLibraryLocation()
                 val files = mutableListOf<java.io.File>()
                 folder.walkTopDown().forEach {
                     if (it.isFile && it.extension.equals("epub", ignoreCase = true)) files.add(it)
@@ -779,6 +813,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadPersistedLibrary() {
+        loadLibraryLocation()
         val indexPath = getFilePath("library_index.json")
         Thread {
             val resultJson = pythonBridge?.loadLibraryIndex(indexPath)
@@ -878,6 +913,28 @@ class MainActivity : AppCompatActivity() {
         val dir = filesDir
         if (!dir.exists()) dir.mkdirs()
         return java.io.File(dir, name).absolutePath
+    }
+
+    private fun saveLibraryLocation() {
+        val prefs = getSharedPreferences("fanficfare_prefs", MODE_PRIVATE)
+        val editor = prefs.edit()
+        if (libraryFolderUri != null) {
+            editor.putString("library_folder_uri", libraryFolderUri.toString())
+            editor.remove("library_folder_path")
+        } else if (!libraryFolderPath.isNullOrBlank()) {
+            editor.putString("library_folder_path", libraryFolderPath)
+            editor.remove("library_folder_uri")
+        } else {
+            editor.remove("library_folder_uri")
+            editor.remove("library_folder_path")
+        }
+        editor.apply()
+    }
+
+    private fun loadLibraryLocation() {
+        val prefs = getSharedPreferences("fanficfare_prefs", MODE_PRIVATE)
+        libraryFolderUri = prefs.getString("library_folder_uri", null)?.let { android.net.Uri.parse(it) }
+        libraryFolderPath = prefs.getString("library_folder_path", null)
     }
 
     @Throws(IOException::class)

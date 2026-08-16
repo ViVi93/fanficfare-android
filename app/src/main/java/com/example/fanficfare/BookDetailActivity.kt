@@ -127,7 +127,12 @@ class BookDetailActivity : AppCompatActivity() {
             return
         }
         Thread {
-            val resultJson = bridge.updateEpubFromPath(bookPath, filesDir.absolutePath)
+            val resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
+                bridge.updateEpubFromPath(localPath, filesDir.absolutePath)
+            } ?: run {
+                runOnUiThread { showError("Cannot read EPUB from this location") }
+                return@Thread
+            }
             val result = org.json.JSONObject(resultJson)
             runOnUiThread {
                 if (result.optBoolean("ok")) {
@@ -163,7 +168,12 @@ class BookDetailActivity : AppCompatActivity() {
             return
         }
         Thread {
-            val resultJson = bridge.forceDownloadFromEpub(bookPath, filesDir.absolutePath)
+            val resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
+                bridge.forceDownloadFromEpub(localPath, filesDir.absolutePath)
+            } ?: run {
+                runOnUiThread { showError("Cannot read EPUB from this location") }
+                return@Thread
+            }
             val result = org.json.JSONObject(resultJson)
             runOnUiThread {
                 if (result.optBoolean("ok")) {
@@ -214,14 +224,13 @@ class BookDetailActivity : AppCompatActivity() {
             return
         }
         Thread {
-            val resultJson = bridge.deleteEpub(bookPath)
-            val result = org.json.JSONObject(resultJson)
+            val ok = StorageBridge.deleteEpub(this, bookPath)
             runOnUiThread {
-                if (result.optBoolean("ok")) {
+                if (ok) {
                     setResult(RESULT_OK, Intent().putExtra("deleted", true))
                     finish()
                 } else {
-                    showError("Delete failed: ${result.optString("error") ?: "unknown"}")
+                    showError("Delete failed")
                 }
             }
         }.start()

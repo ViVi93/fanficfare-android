@@ -1,0 +1,84 @@
+package com.example.fanficfare
+
+import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
+import androidx.documentfile.provider.DocumentFile
+import java.io.File
+
+object StorageBridge {
+    fun resolveLocalEpub(context: Context, path: String): Pair<File, Boolean>? {
+        return if (path.startsWith("content://")) {
+            val temp = copyContentUriToTemp(context, Uri.parse(path))
+            if (temp != null) Pair(temp, true) else null
+        } else {
+            val file = File(path)
+            if (file.exists() && file.isFile) Pair(file, false) else null
+        }
+    }
+
+    inline fun <T> withLocalEpub(context: Context, path: String, block: (File) -> T): T? {
+        val resolved = resolveLocalEpub(context, path) ?: return null
+        val (file, isTemp) = resolved
+        return try {
+            block(file)
+        } finally {
+            if (isTemp) {
+                file.delete()
+            }
+        }
+    }
+
+    fun deleteEpub(context: Context, path: String): Boolean {
+        return try {
+            if (path.startsWith("content://")) {
+                val uri = Uri.parse(path)
+                val resolver = context.contentResolver
+                val deleted = resolver.delete(uri, null)
+                try {
+                    DocumentFile.fromSingleUri(context, uri)?.delete()
+                } catch (ignored: Exception) {
+                }
+                deleted > 0
+            } else {
+                File(path).delete()
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun copyContentUriToTemp(context: Context, uri: Uri): File? {
+        val resolver = context.contentResolver
+        val fileName = queryDisplayName(resolver, uri) ?: "imported_${System.currentTimeMillis()}.epub"
+        val tempFile = File(context.filesDir, "tmp_${System.currentTimeMillis()}_$fileName")
+        return try {
+            resolver.openInputStream(uri)?.use { input ->
+                tempFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            tempFile
+        } catch (e: Exception) {
+            tempFile.delete()
+            null
+        }
+    }
+
+    private fun queryDisplayName(resolver: android.content.ContentResolver, uri: Uri): String? {
+        return try {
+            val cursor = resolver.query(
+                uri,
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null,
+                null,
+                null
+            )
+            cursor?.use {
+                if (it.moveToFirst()) it.getString(0) else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+}

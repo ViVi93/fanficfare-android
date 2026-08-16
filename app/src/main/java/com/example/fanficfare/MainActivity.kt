@@ -211,8 +211,12 @@ class MainActivity : AppCompatActivity() {
         }
         setStatus("Updating...")
         Thread {
-            val resultJson = pythonBridge?.updateEpubFromPath(book.uriString, filesDir.absolutePath)
-                ?: """{"ok":false,"error":"bridge missing"}"""
+            val resultJson = StorageBridge.withLocalEpub(this, book.uriString) { localPath ->
+                pythonBridge?.updateEpubFromPath(localPath, filesDir.absolutePath)
+            } ?: run {
+                runOnUiThread { showError("Cannot read EPUB from this location") }
+                return@Thread
+            }
             val result = json(resultJson)
             runOnUiThread {
                 if (result?.optBoolean("ok") == true) {
@@ -232,7 +236,7 @@ class MainActivity : AppCompatActivity() {
                                     lastModified = result.optLong("modified", System.currentTimeMillis()),
                                     sizeBytes = result.optLong("size", 0L),
                                     coverUriString = result.optString("cover", book.coverUriString),
-                                    url = result.optString("url", url),
+                                    url = result.optString("url", book.url),
                                     chapters = result.optInt("chapters", 0)
                                 )
                                 val idx = findBookByIdentity(book)
@@ -245,8 +249,7 @@ class MainActivity : AppCompatActivity() {
                                 persistLibrary()
                             }
                         } catch (e: Exception) {
-                            setStatus("Updated: $title")
-                            persistLibrary()
+                            showError("Update failed: ${e.message}")
                         }
                     } else {
                         setStatus("Updated: $title")
@@ -267,8 +270,12 @@ class MainActivity : AppCompatActivity() {
         }
         setStatus("Force downloading...")
         Thread {
-            val resultJson = pythonBridge?.forceDownloadFromEpub(book.uriString, filesDir.absolutePath)
-                ?: """{"ok":false,"error":"bridge missing"}"""
+            val resultJson = StorageBridge.withLocalEpub(this, book.uriString) { localPath ->
+                pythonBridge?.forceDownloadFromEpub(localPath, filesDir.absolutePath)
+            } ?: run {
+                runOnUiThread { showError("Cannot read EPUB from this location") }
+                return@Thread
+            }
             val result = json(resultJson)
             runOnUiThread {
                 if (result?.optBoolean("ok") == true) {
@@ -288,7 +295,7 @@ class MainActivity : AppCompatActivity() {
                                     lastModified = result.optLong("modified", System.currentTimeMillis()),
                                     sizeBytes = result.optLong("size", 0L),
                                     coverUriString = result.optString("cover", book.coverUriString),
-                                    url = result.optString("url", url),
+                                    url = result.optString("url", book.url),
                                     chapters = result.optInt("chapters", 0)
                                 )
                                 val idx = findBookByIdentity(book)
@@ -301,8 +308,7 @@ class MainActivity : AppCompatActivity() {
                                 persistLibrary()
                             }
                         } catch (e: Exception) {
-                            setStatus("Downloaded: $title")
-                            persistLibrary()
+                            showError("Download failed: ${e.message}")
                         }
                     } else {
                         setStatus("Downloaded: $title")
@@ -324,18 +330,16 @@ class MainActivity : AppCompatActivity() {
             .setMessage("Delete ${book.title.ifBlank { "this book" }}?")
             .setPositiveButton("Delete") { _, _ ->
                 Thread {
-                    val resultJson = pythonBridge?.deleteEpub(book.uriString)
-                        ?: """{"ok":false,"error":"bridge missing"}"""
-                    val result = json(resultJson)
+                    val ok = StorageBridge.deleteEpub(this, book.uriString)
                     runOnUiThread {
-                        if (result?.optBoolean("ok") == true) {
+                        if (ok) {
                             downloads.remove(book)
                             bookAdapter.notifyDataSetChanged()
                             updateEmptyState()
                             setStatus("Deleted")
                             persistLibrary()
                         } else {
-                            showError("Delete failed: ${result?.optString("error") ?: "unknown"}")
+                            showError("Delete failed")
                         }
                     }
                 }.start()
@@ -915,8 +919,13 @@ class MainActivity : AppCompatActivity() {
             var successCount = 0
             var failCount = 0
             for (book in updatable) {
-                val resultJson = pythonBridge?.updateEpubFromPath(book.uriString, filesDir.absolutePath)
-                    ?: """{"ok":false,"error":"bridge missing"}"""
+                val resultJson = StorageBridge.withLocalEpub(this, book.uriString) { localPath ->
+                    pythonBridge?.updateEpubFromPath(localPath, filesDir.absolutePath)
+                }
+                if (resultJson == null) {
+                    failCount++
+                    continue
+                }
                 val result = json(resultJson)
                 if (result?.optBoolean("ok") == true) {
                     successCount++

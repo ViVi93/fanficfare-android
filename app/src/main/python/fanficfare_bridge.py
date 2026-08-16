@@ -84,6 +84,8 @@ def get_metadata(url):
         from fanficfare.configurable import Configuration
         from fanficfare import adapters
         configuration = Configuration(["test1.com"], "epub")
+        configuration.add_section("overrides")
+        configuration.set("overrides", "include_images", "coveronly")
         configuration.addUrlConfigSection(url)
         adapter = adapters.getAdapter(configuration, url)
         adapter.getStoryMetadataOnly()
@@ -104,6 +106,8 @@ def download_story(url, outDir):
         from fanficfare.configurable import Configuration
         from fanficfare import adapters, writers
         configuration = Configuration(["test1.com"], "epub")
+        configuration.add_section("overrides")
+        configuration.set("overrides", "include_images", "coveronly")
         configuration.addUrlConfigSection(url)
         adapter = adapters.getAdapter(configuration, url)
         writer = writers.getWriter("epub", configuration, adapter)

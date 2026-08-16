@@ -74,12 +74,14 @@ class BookDetailActivity : AppCompatActivity() {
                         cover.setImageBitmap(bitmap)
                         cover.visibility = View.VISIBLE
                     } else {
+                        // TEMP DIAGNOSTIC: BitmapFactory returned null
                         cover.visibility = View.GONE
                     }
                 } else {
                     cover.visibility = View.GONE
                 }
             } catch (e: Exception) {
+                android.util.Log.d("FFF-Cover", "decodeByteArray failed: type=" + e.javaClass.simpleName + " msg=" + (e.message ?: ""))
                 cover.visibility = View.GONE
             }
         } else {
@@ -126,6 +128,7 @@ class BookDetailActivity : AppCompatActivity() {
             Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
             return
         }
+        setStatus("Updating...")
         Thread {
             val resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
                 bridge.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
@@ -143,16 +146,21 @@ class BookDetailActivity : AppCompatActivity() {
                         }
                         val title = result.optString("title", bookTitle)
                         val author = result.optString("author", bookAuthor)
-                        val path = result.optString("path", "")
+                        val internalPath = result.optString("path", "")
+                        if (internalPath.isBlank()) {
+                            showError("Update failed: bridge returned empty output path")
+                            return@runOnUiThread
+                        }
                         val outputDir = SettingsActivity.getOutputDir(this)
                         try {
-                            val source = File(path)
-                            if (source.exists() && source.isFile) {
-                                val finalPath = copyToOutputDir(source, outputDir)
-                                finishWithResult(title, author, finalPath, System.currentTimeMillis())
-                            } else {
-                                finishWithResult(title, author, bookPath, System.currentTimeMillis())
+                            val source = File(internalPath)
+                            if (!source.exists() || !source.isFile) {
+                                showError("Update failed: generated file missing at $internalPath")
+                                return@runOnUiThread
                             }
+                            val finalPath = copyToOutputDir(source, outputDir)
+                            Toast.makeText(this, "Updated: $title", Toast.LENGTH_LONG).show()
+                            finishWithResult(title, author, finalPath, System.currentTimeMillis())
                         } catch (e: Exception) {
                             showError("Update failed: ${e.message ?: "copy/output error"}")
                         }
@@ -171,6 +179,7 @@ class BookDetailActivity : AppCompatActivity() {
             Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
             return
         }
+        setStatus("Force downloading...")
         Thread {
             val resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
                 bridge.forceDownloadFromEpub(localPath.absolutePath, filesDir.absolutePath)
@@ -184,18 +193,23 @@ class BookDetailActivity : AppCompatActivity() {
                     if (result.optBoolean("ok")) {
                         val title = result.optString("title", bookTitle)
                         val author = result.optString("author", bookAuthor)
-                        val path = result.optString("path", "")
+                        val internalPath = result.optString("path", "")
+                        if (internalPath.isBlank()) {
+                            showError("Force download failed: bridge returned empty output path")
+                            return@runOnUiThread
+                        }
                         val outputDir = SettingsActivity.getOutputDir(this)
                         try {
-                            val source = File(path)
-                            if (source.exists() && source.isFile) {
-                                val finalPath = copyToOutputDir(source, outputDir)
-                                finishWithResult(title, author, finalPath, System.currentTimeMillis())
-                            } else {
-                                finishWithResult(title, author, bookPath, System.currentTimeMillis())
+                            val source = File(internalPath)
+                            if (!source.exists() || !source.isFile) {
+                                showError("Force download failed: generated file missing at $internalPath")
+                                return@runOnUiThread
                             }
+                            val finalPath = copyToOutputDir(source, outputDir)
+                            Toast.makeText(this, "Force downloaded: $title", Toast.LENGTH_LONG).show()
+                            finishWithResult(title, author, finalPath, System.currentTimeMillis())
                         } catch (e: Exception) {
-                            showError("Download failed: ${e.message ?: "copy/output error"}")
+                            showError("Force download failed: ${e.message ?: "copy/output error"}")
                         }
                     } else {
                         val errorMsg = result.optString("error") ?: "unknown"

@@ -65,7 +65,14 @@ class SettingsActivity : AppCompatActivity() {
     companion object {
         fun getOutputDir(context: Context): String {
             val prefs = context.getSharedPreferences("fanficfare_prefs", Context.MODE_PRIVATE)
-            return prefs.getString("output_dir", context.getExternalFilesDir(null)?.absolutePath ?: context.filesDir.absolutePath) ?: context.filesDir.absolutePath
+            val configured = prefs.getString("output_dir", null)
+            if (!configured.isNullOrBlank()) return configured
+
+            val publicDownloads = android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS
+            )
+            val fallback = java.io.File(publicDownloads, "FanFicFare").absolutePath
+            return fallback
         }
 
         fun getOutputDocumentFile(context: Context): DocumentFile? {

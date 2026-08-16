@@ -42,7 +42,9 @@ class BookAdapter(
                         }
                     }
                 } catch (e: Exception) {
-                    // fallback to hidden
+                    android.util.Log.d("FFF-Cover", "decodeByteArray failed: type=" + e.javaClass.simpleName + " msg=" + (e.message ?: ""))
+                    imageCover.visibility = View.GONE
+                    return
                 }
             }
             imageCover.visibility = View.GONE

@@ -96,9 +96,7 @@ class MainActivity : AppCompatActivity() {
             showDownloadDialog()
         }
         findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fabLoadLibrary).setOnClickListener {
-            ensureStoragePermission {
-                showLoadLibraryDialog()
-            }
+            showLoadLibraryDialog()
         }
 
         updateEmptyState()
@@ -525,34 +523,76 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLoadLibraryDialog() {
-        if (libraryFolderUri != null || !libraryFolderPath.isNullOrBlank()) {
-            setStatus("Scanning saved library folder...")
-            Thread {
-                val epubs = if (libraryFolderUri != null) {
+        val current = when {
+            libraryFolderUri != null -> "SAF: ${libraryFolderUri}"
+            !libraryFolderPath.isNullOrBlank() -> "Path: $libraryFolderPath"
+            else -> "Not configured"
+        }
+        val options = mutableListOf<String>()
+        options.add("Pick Folder...")
+        options.add("Enter Path Manually...")
+        options.add("Current: $current")
+        options.add("Clear Library Folder")
+
+        AlertDialog.Builder(this)
+            .setTitle("EPUB Library")
+            .setItems(options.toTypedArray()) { _, which ->
+                when (options[which]) {
+                    "Pick Folder..." -> {
+                        try {
+                            pickLibraryFolder.launch(null)
+                        } catch (e: Exception) {
+                            showFallbackLibraryDialog()
+                        }
+                    }
+                    "Enter Path Manually..." -> showFallbackLibraryDialog()
+                    "Current: $current" -> {
+                        if (libraryFolderUri != null || !libraryFolderPath.isNullOrBlank()) {
+                            scanSavedLibraryFolder()
+                        } else {
+                            showError("No library folder configured yet")
+                        }
+                    }
+                    "Clear Library Folder" -> {
+                        libraryFolderUri = null
+                        libraryFolderPath = null
+                        saveLibraryLocation()
+                        setStatus("Library folder cleared")
+                    }
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun scanSavedLibraryFolder() {
+        setStatus("Scanning saved library folder...")
+        Thread {
+            val epubs = if (libraryFolderUri != null) {
+                try {
                     discoverEpubsFromTree(libraryFolderUri!!)
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        showError("Cannot access SAF library folder: ${e.message ?: "access denied"}")
+                    }
+                    return@Thread
+                }
+            } else {
+                val folder = java.io.File(libraryFolderPath!!)
+                if (!folder.exists() || !folder.isDirectory) {
+                    runOnUiThread { showError("Saved library folder not found: $libraryFolderPath") }
+                    return@Thread
+                }
+                folder.walkTopDown().filter { it.isFile && it.extension.equals("epub", ignoreCase = true) }.toList()
+            }
+            runOnUiThread {
+                if (epubs.isEmpty()) {
+                    showError("No EPUBs found in saved library folder")
                 } else {
-                    val folder = java.io.File(libraryFolderPath!!)
-                    if (!folder.exists() || !folder.isDirectory) {
-                        runOnUiThread { showError("Saved library folder not found") }
-                        return@Thread
-                    }
-                    folder.walkTopDown().filter { it.isFile && it.extension.equals("epub", ignoreCase = true) }.toList()
+                    scanImportedEpubs(epubs)
                 }
-                runOnUiThread {
-                    if (epubs.isEmpty()) {
-                        showError("No EPUBs found in saved library folder")
-                    } else {
-                        scanImportedEpubs(epubs)
-                    }
-                }
-            }.start()
-            return
-        }
-        try {
-            pickLibraryFolder.launch(null)
-        } catch (e: Exception) {
-            showFallbackLibraryDialog()
-        }
+            }
+        }.start()
     }
 
     private fun showFallbackLibraryDialog() {
@@ -632,47 +672,43 @@ class MainActivity : AppCompatActivity() {
         val resolver = contentResolver
         val picked = mutableListOf<java.io.File>()
         val outDir = java.io.File(filesDir, "imported").apply { mkdirs() }
-        val toVisit = ArrayDeque<android.net.Uri>()
-        toVisit.add(rootUri)
 
-        while (toVisit.isNotEmpty()) {
-            val current = toVisit.removeFirst()
+        val treeDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, rootUri)
+            ?: throw IllegalArgumentException("Cannot resolve tree URI: $rootUri")
+        if (!treeDoc.canRead()) {
+            throw IllegalArgumentException("Tree URI is not readable: $rootUri")
+        }
+
+        val queue = ArrayDeque<androidx.documentfile.provider.DocumentFile>()
+        queue.add(treeDoc)
+
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
             try {
-                val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(
-                    current,
-                    android.provider.DocumentsContract.getTreeDocumentId(current)
-                )
-                val cursor = resolver.query(childrenUri, arrayOf(
-                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
-                ), null, null, null)
-                cursor?.use {
-                    while (it.moveToNext()) {
-                        val name = it.getString(0) ?: continue
-                        val mime = it.getString(1) ?: continue
-                        val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
-                            current,
-                            it.getString(it.getColumnIndexOrThrow(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID))
-                        )
-                        if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
-                            toVisit.add(docUri)
-                        } else if (name.lowercase().endsWith(".epub")) {
-                            val dest = java.io.File(outDir, name)
+                val children = current.listFiles()
+                for (child in children) {
+                    try {
+                        if (child.isDirectory) {
+                            queue.add(child)
+                        } else if (child.name?.lowercase()?.endsWith(".epub") == true) {
+                            val dest = java.io.File(outDir, child.name!!)
                             try {
-                                resolver.openInputStream(docUri)?.use { input ->
+                                resolver.openInputStream(child.uri)?.use { input ->
                                     java.io.FileOutputStream(dest).use { output ->
                                         input.copyTo(output)
                                     }
                                 }
                                 picked.add(dest)
                             } catch (e: Exception) {
-                                // skip unreadable file
+                                // skip unreadable file but continue traversal
                             }
                         }
+                    } catch (e: Exception) {
+                        // skip unreadable tree node but continue traversal
                     }
                 }
             } catch (e: Exception) {
-                // skip unreadable tree node
+                throw IllegalArgumentException("Cannot list children of URI node: ${e.message ?: e}")
             }
         }
         return picked

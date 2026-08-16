@@ -20,7 +20,6 @@ import com.example.fanficfare.model.BookItem
 import com.chaquo.python.Python
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
@@ -753,22 +752,6 @@ class MainActivity : AppCompatActivity() {
         return java.io.File(dir, name).absolutePath
     }
 
-    private fun ensureLocalFile(uriOrPath: String): Pair<File, Boolean> {
-        val file = File(uriOrPath)
-        return if (file.exists() && file.isFile) {
-            Pair(file, false)
-        } else {
-            val uri = Uri.parse(uriOrPath)
-            val tempFile = File(cacheDir, "bridge_src_${System.currentTimeMillis()}.epub")
-            contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
-                }
-            } ?: throw IOException("Cannot open source: $uriOrPath")
-            Pair(tempFile, true)
-        }
-    }
-
     @Throws(IOException::class)
     private fun copyToOutputDir(sourceFile: File, outputDir: String): String {
         return if (outputDir.startsWith("content://")) {
@@ -776,7 +759,7 @@ class MainActivity : AppCompatActivity() {
             val treeDoc = DocumentFile.fromTreeUri(this, treeUri)
                 ?: throw IOException("Invalid output directory")
             val mimeType = "application/epub+zip"
-            val newFile = treeDoc.createFile(mimeType, sourceFile.nameWithoutExtension)
+            val newFile = treeDoc.createFile(mimeType, sourceFile.name)
                 ?: throw IOException("Cannot create file in output directory")
             contentResolver.openOutputStream(newFile.uri)?.use { output ->
                 sourceFile.inputStream().use { input ->

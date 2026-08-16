@@ -111,11 +111,18 @@ def download_story(url, outDir):
         outpath = os.path.join(outDir, os.path.basename(filename))
         with open(outpath, "wb") as out:
             writer.writeStory(outstream=out)
+        stat = os.stat(outpath)
+        meta = _extract_epub_metadata(outpath)
         return json.dumps({
             "ok": True,
-            "title": adapter.story.getMetadata("title") or filename,
-            "author": adapter.story.getMetadata("author") or "",
+            "title": meta.get("title") or adapter.story.getMetadata("title") or filename,
+            "author": meta.get("author") or adapter.story.getMetadata("author") or "",
+            "chapters": meta.get("chapters") or adapter.story.getChapterCount() or 0,
+            "cover": meta.get("cover") or "",
+            "url": meta.get("url") or url,
             "path": outpath,
+            "modified": int(stat.st_mtime * 1000),
+            "size": stat.st_size,
         })
     except Exception as e:
         return json.dumps({"ok": False, "error": str(e)})
@@ -130,54 +137,57 @@ def _extract_epub_metadata(epubPath):
 
     with zipfile.ZipFile(epubPath, "r") as z:
         names = z.namelist()
+        opf_name = None
         for name in names:
             if name.endswith(".opf"):
-                try:
-                    opf = z.read(name).decode("utf-8", errors="ignore")
-                    root = ET.fromstring(opf)
-                    ns = {"dc": "http://purl.org/dc/elements/1.1/"}
-                    title_node = root.find(".//dc:title", ns)
-                    if title_node is not None and title_node.text:
-                        title = title_node.text.strip()
-                    author_node = root.find(".//dc:creator", ns)
-                    if author_node is not None and author_node.text:
-                        author = author_node.text.strip()
-                    for meta in root.findall(".//{http://purl.org/dc/elements/1.1/}meta") + root.findall(".//meta"):
-                        name_attr = meta.get("name", "") or meta.get("{http://purl.org/dc/elements/1.1/}name", "")
-                        content = meta.get("content", "") or ""
-                        if "chaptercount" in name_attr.lower() and content.isdigit():
-                            chapters = content.toInt()
-                        elif name_attr.lower() in {"calibredit", "calibreurl", "calibrecontributor"}:
-                            pass
-                        elif "url" in name_attr.lower() or "source" in name_attr.lower():
-                            if content.startswith("http://") or content.startswith("https://"):
-                                url = content.strip()
-                except Exception:
-                    pass
+                opf_name = name
                 break
+        if opf_name:
+            try:
+                opf = z.read(opf_name).decode("utf-8", errors="ignore")
+                root = ET.fromstring(opf)
+                ns = {"dc": "http://purl.org/dc/elements/1.1/"}
+                title_node = root.find(".//dc:title", ns)
+                if title_node is not None and title_node.text:
+                    title = title_node.text.strip()
+                author_node = root.find(".//dc:creator", ns)
+                if author_node is not None and author_node.text:
+                    author = author_node.text.strip()
+                for meta in root.findall(".//{http://purl.org/dc/elements/1.1/}meta") + root.findall(".//meta"):
+                    name_attr = meta.get("name", "") or meta.get("{http://purl.org/dc/elements/1.1/}name", "")
+                    content = meta.get("content", "") or ""
+                    if "chaptercount" in name_attr.lower() and content.isdigit():
+                        chapters = int(content)
+                    elif name_attr.lower() in {"calibredit", "calibreurl", "calibrecontributor"}:
+                        pass
+                    elif "url" in name_attr.lower() or "source" in name_attr.lower():
+                        if content.startswith("http://") or content.startswith("https://"):
+                            url = content.strip()
+                if not url:
+                    ident = root.find(".//dc:identifier", ns)
+                    if ident is not None and ident.text:
+                        text = ident.text.strip()
+                        if text.startswith("http://") or text.startswith("https://"):
+                            url = text
+                if not url:
+                    source = root.find(".//dc:source", ns)
+                    if source is not None and source.text:
+                        text = source.text.strip()
+                        if text.startswith("http://") or text.startswith("https://"):
+                            url = text
+            except Exception:
+                pass
 
-        for name in names:
-            if name.endswith(".txt") or name.endswith(".ncx") or name.lower().startswith("content/"):
-                try:
-                    content = z.read(name).decode("utf-8", errors="ignore")
-                    for line in content.splitlines():
-                        stripped = line.strip()
-                        if stripped.startswith("http://") or stripped.startswith("https://"):
-                            url = stripped
-                            break
-                    if url:
-                        break
-                except Exception:
-                    pass
-
-        for name in names:
-            if name.lower().endswith(".ncx"):
-                try:
-                    content = z.read(name).decode("utf-8", errors="ignore")
-                    chaptercount = content.lower().split("totalpagecount")[1].split("\"")[1]
-                    chapters = int(chaptercount) if chaptercount.isdigit() else chapters
-                except Exception:
-                    pass
+        if chapters == 0:
+            for name in names:
+                if name.lower().endswith(".ncx"):
+                    try:
+                        content = z.read(name).decode("utf-8", errors="ignore")
+                        count = content.lower().count("<navpoint ")
+                        if count > 0:
+                            chapters = count
+                    except Exception:
+                        pass
 
         for name in names:
             lower = name.lower()
@@ -210,23 +220,24 @@ def _extract_epub_metadata(epubPath):
 def _get_dcsource_chaptercount(epubPath):
     try:
         import re
-        with zipfile.ZipFile(epubPath, "r") as z:
-            for name in z.namelist():
-                if "calibre" in name.lower() or name.endswith(".txt"):
-                    try:
-                        content = z.read(name).decode("utf-8", errors="ignore")
-                        source = None
-                        chaptercount = 0
-                        for line in content.splitlines():
-                            if "DateThis" in line or "chaptercount" in line.lower():
-                                m = re.search(r'chaptercount["\s:=]+(\d+)', line, re.IGNORECASE)
-                                if m:
-                                    chaptercount = int(m.group(1))
-                            if line.startswith("http://") or line.startswith("https://"):
-                                source = line.strip()
-                        return source or "", chaptercount
-                    except Exception:
-                        pass
+        meta = _extract_epub_metadata(epubPath)
+        source = meta.get("url") or ""
+        chaptercount = meta.get("chapters") or 0
+        if not source:
+            with zipfile.ZipFile(epubPath, "r") as z:
+                for name in z.namelist():
+                    if "calibre" in name.lower() or name.endswith(".txt"):
+                        try:
+                            content = z.read(name).decode("utf-8", errors="ignore")
+                            for line in content.splitlines():
+                                if line.startswith("http://") or line.startswith("https://"):
+                                    source = line.strip()
+                                    break
+                            if source:
+                                break
+                        except Exception:
+                            pass
+        return source or "", int(chaptercount)
     except Exception:
         pass
     return "", 0
@@ -261,7 +272,7 @@ def scan_epub_dir(directory):
                     meta = _extract_epub_metadata(path)
                     meta["path"] = path
                     meta["size"] = stat.st_size
-                    meta["modified"] = stat.st_mtime
+                    meta["modified"] = int(stat.st_mtime * 1000)
                     books.append(meta)
         return json.dumps({"ok": True, "books": books})
     except Exception as e:
@@ -305,25 +316,56 @@ def update_epub_from_path(epubPath, outDir):
     if not _import_fanficfare():
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
     try:
-        source, _ = _get_dcsource_chaptercount(epubPath)
-        if not source:
-            return json.dumps({"ok": False, "error": "No story URL found in epub"})
+        from fanficfare.epubutils import get_update_data, get_dcsource_chaptercount
         from fanficfare.configurable import Configuration
         from fanficfare import adapters, writers
-        configuration = Configuration(["test1.com"], "epub")
+        source, chaptercount = get_update_data(epubPath)[0:2]
+        if not source:
+            return json.dumps({"ok": False, "error": "No story URL found in epub"})
+        try:
+            configuration = Configuration(adapters.getConfigSectionsFor(source), "epub")
+        except Exception:
+            configuration = Configuration(["test1.com"], "epub")
         configuration.addUrlConfigSection(source)
         adapter = adapters.getAdapter(configuration, source)
-        writer = writers.getWriter("epub", configuration, adapter)
-        filename = writer.getOutputFileName()
-        outpath = os.path.join(outDir, os.path.basename(filename))
-        with open(outpath, "wb") as out:
-            writer.writeStory(outstream=out, metaonly=False, update=True, oldfile=epubPath)
-        return json.dumps({
-            "ok": True,
-            "title": adapter.story.getMetadata("title") or filename,
-            "author": adapter.story.getMetadata("author") or "",
-            "path": outpath,
-        })
+        url, ch_begin, ch_end = adapters.get_url_chapter_range(source)
+        adapter.setChaptersRange(ch_begin, ch_end)
+        adapter.getStoryMetadataOnly()
+        urlchaptercount = adapter.getStoryMetadataOnly().getChapterCount()
+        if chaptercount == urlchaptercount:
+            return json.dumps({"ok": True, "skipped": True, "reason": "already current", "url": source, "chapters": chaptercount})
+        elif chaptercount > urlchaptercount:
+            return json.dumps({"ok": True, "skipped": True, "reason": "local has more chapters than source", "url": source, "chapters": chaptercount})
+        elif chaptercount == 0:
+            return json.dumps({"ok": False, "error": "existing epub has 0 recognizable chapters"})
+        else:
+            (_,
+             _,
+             adapter.oldchapters,
+             adapter.oldimgs,
+             adapter.oldcover,
+             adapter.calibrebookmark,
+             adapter.logfile,
+             adapter.oldchaptersmap,
+             adapter.oldchaptersdata) = get_update_data(epubPath)[0:9]
+            writer = writers.getWriter("epub", configuration, adapter)
+            filename = writer.getOutputFileName()
+            outpath = os.path.join(outDir, os.path.basename(filename))
+            with open(outpath, "wb") as out:
+                writer.writeStory(outstream=out, metaonly=False)
+            stat = os.stat(outpath)
+            meta = _extract_epub_metadata(outpath)
+            return json.dumps({
+                "ok": True,
+                "title": meta.get("title") or adapter.story.getMetadata("title") or filename,
+                "author": meta.get("author") or adapter.story.getMetadata("author") or "",
+                "chapters": meta.get("chapters") or adapter.story.getChapterCount() or 0,
+                "cover": meta.get("cover") or "",
+                "url": source,
+                "path": outpath,
+                "modified": int(stat.st_mtime * 1000),
+                "size": stat.st_size,
+            })
     except Exception as e:
         return json.dumps({"ok": False, "error": str(e)})
 
@@ -332,10 +374,39 @@ def force_download_from_epub(epubPath, outDir):
     if not _import_fanficfare():
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
     try:
-        source, _ = _get_dcsource_chaptercount(epubPath)
+        from fanficfare.epubutils import get_update_data
+        from fanficfare.configurable import Configuration
+        from fanficfare import adapters, writers
+        source = get_update_data(epubPath)[0]
         if not source:
             return json.dumps({"ok": False, "error": "No story URL found in epub"})
-        return download_story(source, outDir)
+        try:
+            configuration = Configuration(adapters.getConfigSectionsFor(source), "epub")
+        except Exception:
+            configuration = Configuration(["test1.com"], "epub")
+        configuration.addUrlConfigSection(source)
+        adapter = adapters.getAdapter(configuration, source)
+        url, ch_begin, ch_end = adapters.get_url_chapter_range(source)
+        adapter.setChaptersRange(ch_begin, ch_end)
+        adapter.getStoryMetadataOnly()
+        writer = writers.getWriter("epub", configuration, adapter)
+        filename = writer.getOutputFileName()
+        outpath = os.path.join(outDir, os.path.basename(filename))
+        with open(outpath, "wb") as out:
+            writer.writeStory(outstream=out, metaonly=False)
+        stat = os.stat(outpath)
+        meta = _extract_epub_metadata(outpath)
+        return json.dumps({
+            "ok": True,
+            "title": meta.get("title") or adapter.story.getMetadata("title") or filename,
+            "author": meta.get("author") or adapter.story.getMetadata("author") or "",
+            "chapters": meta.get("chapters") or adapter.story.getChapterCount() or 0,
+            "cover": meta.get("cover") or "",
+            "url": source,
+            "path": outpath,
+            "modified": int(stat.st_mtime * 1000),
+            "size": stat.st_size,
+        })
     except Exception as e:
         return json.dumps({"ok": False, "error": str(e)})
 

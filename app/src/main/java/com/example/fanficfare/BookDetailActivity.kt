@@ -99,21 +99,28 @@ class BookDetailActivity : AppCompatActivity() {
     }
 
     private fun openBook() {
-        val uri = Uri.parse(bookPath)
-        val mime = contentResolver.getType(uri) ?: "application/epub+zip"
+        val file = File(bookPath)
+        val uri = when {
+            file.exists() && file.isFile -> FileProvider.getUriForFile(this, "${packageName}.provider", file)
+            else -> Uri.parse(bookPath)
+        }
+        val mime = if (bookPath.startsWith("content://")) contentResolver.getType(uri) ?: "application/epub+zip" else "application/epub+zip"
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mime)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         try {
-            startActivity(intent)
+            startActivity(Intent.createChooser(intent, "Open EPUB"))
         } catch (e: Exception) {
             Toast.makeText(this, "No EPUB reader installed", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun updateBook() {
-        val bridge = PythonBridge(applicationContext)
+        val bridge = (application as com.example.fanficfare.MainActivity).getPythonBridge() ?: run {
+            Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
+            return
+        }
         Thread {
             val resultJson = bridge.updateEpubFromPath(bookPath, filesDir.absolutePath)
             val result = org.json.JSONObject(resultJson)
@@ -142,7 +149,10 @@ class BookDetailActivity : AppCompatActivity() {
     }
 
     private fun forceDownloadBook() {
-        val bridge = PythonBridge(applicationContext)
+        val bridge = (application as com.example.fanficfare.MainActivity).getPythonBridge() ?: run {
+            Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
+            return
+        }
         Thread {
             val resultJson = bridge.forceDownloadFromEpub(bookPath, filesDir.absolutePath)
             val result = org.json.JSONObject(resultJson)
@@ -172,10 +182,9 @@ class BookDetailActivity : AppCompatActivity() {
 
     private fun shareBook() {
         val file = File(bookPath)
-        val uri = if (file.exists() && file.isFile) {
-            FileProvider.getUriForFile(this, "${packageName}.provider", file)
-        } else {
-            Uri.parse(bookPath)
+        val uri = when {
+            file.exists() && file.isFile -> FileProvider.getUriForFile(this, "${packageName}.provider", file)
+            else -> Uri.parse(bookPath)
         }
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/epub+zip"
@@ -191,7 +200,10 @@ class BookDetailActivity : AppCompatActivity() {
     }
 
     private fun deleteBook() {
-        val bridge = PythonBridge(applicationContext)
+        val bridge = (application as com.example.fanficfare.MainActivity).getPythonBridge() ?: run {
+            Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
+            return
+        }
         Thread {
             val resultJson = bridge.deleteEpub(bookPath)
             val result = org.json.JSONObject(resultJson)

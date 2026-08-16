@@ -217,6 +217,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (result?.optBoolean("ok") == true) {
                     val title = result.optString("title", book.title)
+                    val author = result.optString("author", book.author)
                     val internalPath = result.optString("path", "")
                     val outputDir = SettingsActivity.getOutputDir(this@MainActivity)
                     if (internalPath.isNotBlank()) {
@@ -224,17 +225,32 @@ class MainActivity : AppCompatActivity() {
                             val source = File(internalPath)
                             if (source.exists() && source.isFile) {
                                 val finalPath = copyToOutputDir(source, outputDir)
-                                val author = result.optString("author", book.author)
+                                val updated = BookItem(
+                                    title = title,
+                                    author = author,
+                                    uriString = finalPath,
+                                    lastModified = result.optLong("modified", System.currentTimeMillis()),
+                                    sizeBytes = result.optLong("size", 0L),
+                                    coverUriString = result.optString("cover", book.coverUriString),
+                                    url = result.optString("url", url),
+                                    chapters = result.optInt("chapters", 0)
+                                )
+                                val idx = findBookByIdentity(book)
+                                if (idx >= 0) downloads[idx] = updated else downloads.add(0, updated)
+                                bookAdapter.notifyDataSetChanged()
                                 setStatus("Updated: $title")
-                                refreshBookPath(book, title, author, finalPath)
+                                persistLibrary()
                             } else {
                                 setStatus("Updated: $title")
+                                persistLibrary()
                             }
                         } catch (e: Exception) {
                             setStatus("Updated: $title")
+                            persistLibrary()
                         }
                     } else {
                         setStatus("Updated: $title")
+                        persistLibrary()
                     }
                 } else {
                     showError("Update failed: ${result?.optString("error") ?: "unknown"}")
@@ -257,6 +273,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (result?.optBoolean("ok") == true) {
                     val title = result.optString("title", book.title)
+                    val author = result.optString("author", book.author)
                     val internalPath = result.optString("path", "")
                     val outputDir = SettingsActivity.getOutputDir(this@MainActivity)
                     if (internalPath.isNotBlank()) {
@@ -264,17 +281,32 @@ class MainActivity : AppCompatActivity() {
                             val source = File(internalPath)
                             if (source.exists() && source.isFile) {
                                 val finalPath = copyToOutputDir(source, outputDir)
-                                val author = result.optString("author", book.author)
+                                val updated = BookItem(
+                                    title = title,
+                                    author = author,
+                                    uriString = finalPath,
+                                    lastModified = result.optLong("modified", System.currentTimeMillis()),
+                                    sizeBytes = result.optLong("size", 0L),
+                                    coverUriString = result.optString("cover", book.coverUriString),
+                                    url = result.optString("url", url),
+                                    chapters = result.optInt("chapters", 0)
+                                )
+                                val idx = findBookByIdentity(book)
+                                if (idx >= 0) downloads[idx] = updated else downloads.add(0, updated)
+                                bookAdapter.notifyDataSetChanged()
                                 setStatus("Downloaded: $title")
-                                refreshBookPath(book, title, author, finalPath)
+                                persistLibrary()
                             } else {
                                 setStatus("Downloaded: $title")
+                                persistLibrary()
                             }
                         } catch (e: Exception) {
                             setStatus("Downloaded: $title")
+                            persistLibrary()
                         }
                     } else {
                         setStatus("Downloaded: $title")
+                        persistLibrary()
                     }
                 } else {
                     val errorMsg = result?.optString("error") ?: "unknown"
@@ -367,7 +399,12 @@ class MainActivity : AppCompatActivity() {
                             val finalPath = copyToOutputDir(source, outputDir)
                             setStatus("Saved: $title")
                             val author = result.optString("author", "")
-                            val newBook = BookItem(title, author, finalPath, System.currentTimeMillis(), 0)
+                            val url = result.optString("url", "")
+                            val chapters = result.optInt("chapters", 0)
+                            val cover = result.optString("cover", "")
+                            val size = result.optLong("size", 0L)
+                            val modified = result.optLong("modified", 0L)
+                            val newBook = BookItem(title, author, finalPath, modified, size, cover, url, chapters)
                             val existing = findBookByIdentity(newBook)
                             if (existing >= 0) {
                                 downloads[existing] = newBook
@@ -454,6 +491,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLoadLibraryDialog() {
+        if (libraryFolderUri != null) {
+            setStatus("Scanning saved folder...")
+            Thread {
+                val epubs = discoverEpubsFromTree(libraryFolderUri!!)
+                runOnUiThread {
+                    if (epubs.isEmpty()) {
+                        showError("No EPUBs found in saved folder")
+                    } else {
+                        scanImportedEpubs(epubs)
+                    }
+                }
+            }.start()
+            return
+        }
         val intent = Intent("android.provider.action.OPEN_DOCUMENT_TREE")
         try {
             startActivityForResult(intent, REQUEST_SAF_FOLDER)

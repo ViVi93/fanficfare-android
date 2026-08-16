@@ -81,12 +81,11 @@ def get_metadata(url):
     if not _import_fanficfare():
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
     try:
-        from fanficfare.configurable import Configuration, Configurable
+        from fanficfare.configurable import Configuration
         from fanficfare import adapters
         configuration = Configuration(["test1.com"], "epub")
-        configurable = Configurable(configuration)
         configuration.addUrlConfigSection(url)
-        adapter = adapters.getAdapter(configurable, url)
+        adapter = adapters.getAdapter(configuration, url)
         adapter.getStoryMetadataOnly()
         return json.dumps({
             "ok": True,
@@ -102,12 +101,11 @@ def download_story(url, outDir):
     if not _import_fanficfare():
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
     try:
-        from fanficfare.configurable import Configuration, Configurable
+        from fanficfare.configurable import Configuration
         from fanficfare import adapters, writers
         configuration = Configuration(["test1.com"], "epub")
-        configurable = Configurable(configuration)
         configuration.addUrlConfigSection(url)
-        adapter = adapters.getAdapter(configurable, url)
+        adapter = adapters.getAdapter(configuration, url)
         writer = writers.getWriter("epub", configuration, adapter)
         filename = writer.getOutputFileName()
         outpath = os.path.join(outDir, os.path.basename(filename))
@@ -309,12 +307,11 @@ def update_epub_from_path(epubPath, outDir):
         source, _ = _get_dcsource_chaptercount(epubPath)
         if not source:
             return json.dumps({"ok": False, "error": "No story URL found in epub"})
-        from fanficfare.configurable import Configuration, Configurable
+        from fanficfare.configurable import Configuration
         from fanficfare import adapters, writers
         configuration = Configuration(["test1.com"], "epub")
-        configurable = Configurable(configuration)
         configuration.addUrlConfigSection(source)
-        adapter = adapters.getAdapter(configurable, source)
+        adapter = adapters.getAdapter(configuration, source)
         writer = writers.getWriter("epub", configuration, adapter)
         filename = writer.getOutputFileName()
         outpath = os.path.join(outDir, os.path.basename(filename))

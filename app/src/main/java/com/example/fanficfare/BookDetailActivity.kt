@@ -21,6 +21,7 @@ class BookDetailActivity : AppCompatActivity() {
     private lateinit var bookTitle: String
     private lateinit var bookAuthor: String
     private lateinit var bookPath: String
+    private var bookSource: String? = null
     private var bookModified: Long = 0
     private var bookSize: Long = 0
     private var bookChapters: Int = 0
@@ -34,6 +35,7 @@ class BookDetailActivity : AppCompatActivity() {
         bookTitle = intent.getStringExtra("title") ?: ""
         bookAuthor = intent.getStringExtra("author") ?: ""
         bookPath = intent.getStringExtra("path") ?: ""
+        bookSource = intent.getStringExtra("source")
         bookModified = intent.getLongExtra("modified", 0L)
         bookSize = intent.getLongExtra("size", 0L)
         bookChapters = intent.getIntExtra("chapters", 0)
@@ -53,7 +55,8 @@ class BookDetailActivity : AppCompatActivity() {
         author.text = bookAuthor.ifBlank { "Unknown author" }
         chapters.text = if (bookChapters > 0) "$bookChapters chapters" else ""
         url.text = bookUrl.ifBlank { "" }
-        path.text = bookPath
+        val displayPath = if (!bookSource.isNullOrBlank() && bookSource != bookPath) bookSource else bookPath
+        path.text = displayPath
         size.text = formatSize(bookSize)
         modified.text = if (bookModified > 0) {
             DateFormat.format("yyyy-MM-dd HH:mm", bookModified).toString()
@@ -125,22 +128,45 @@ class BookDetailActivity : AppCompatActivity() {
 
     private fun updateBook() {
         val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
+            DiagnosticLog.append(this, "Detail.Update", "bridge_unavailable")
             Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
             return
         }
+        DiagnosticLog.append(this, "Detail.Update", "button_pressed title=$bookTitle url=$bookUrl path=$bookPath source=$bookSource")
+        val url = bookUrl
+        if (url.isBlank()) {
+            DiagnosticLog.append(this, "Detail.Update", "validation_failed reason=blank_url")
+            showError("No URL found for this book")
+            return
+        }
+        DiagnosticLog.append(this, "Detail.Update", "validation_passed url=$url")
         setStatus("Updating...")
+        DiagnosticLog.append(this, "Detail.Update", "starting")
         Thread {
-            val resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
-                bridge.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
+            val resultJson = try {
+                DiagnosticLog.append(this, "Detail.Update", "bridge_start")
+                val raw = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
+                    DiagnosticLog.append(this, "Detail.Update", "bridge_input=${localPath.absolutePath}")
+                    bridge.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
+                }
+                DiagnosticLog.append(this, "Detail.Update", "bridge_returned=${raw != null}")
+                raw
+            } catch (e: Exception) {
+                DiagnosticLog.appendException(this, "Detail.Update", "storage_bridge_exception", e)
+                runOnUiThread { showError("Cannot read EPUB from this location: ${e.message ?: e.javaClass.simpleName}") }
+                return@Thread
             } ?: run {
+                DiagnosticLog.append(this, "Detail.Update", "bridge_null")
                 runOnUiThread { showError("Cannot read EPUB from this location") }
                 return@Thread
             }
             runOnUiThread {
                 try {
                     val result = org.json.JSONObject(resultJson)
+                    DiagnosticLog.append(this, "Detail.Update", "parsed ok=${result.optBoolean("ok")} skipped=${result.optBoolean("skipped")}")
                     if (result.optBoolean("ok")) {
                         if (result.optBoolean("skipped")) {
+                            DiagnosticLog.append(this, "Detail.Update", "result=SKIPPED reason=${result.optString("reason", "already current")}")
                             showError("Update skipped: ${result.optString("reason", "already current")}")
                             return@runOnUiThread
                         }
@@ -148,6 +174,7 @@ class BookDetailActivity : AppCompatActivity() {
                         val author = result.optString("author", bookAuthor)
                         val internalPath = result.optString("path", "")
                         if (internalPath.isBlank()) {
+                            DiagnosticLog.append(this, "Detail.Update", "result=FAILED empty_output_path")
                             showError("Update failed: bridge returned empty output path")
                             return@runOnUiThread
                         }
@@ -155,19 +182,29 @@ class BookDetailActivity : AppCompatActivity() {
                         try {
                             val source = File(internalPath)
                             if (!source.exists() || !source.isFile) {
+                                DiagnosticLog.append(this, "Detail.Update", "result=FAILED generated_file_missing=$internalPath")
                                 showError("Update failed: generated file missing at $internalPath")
                                 return@runOnUiThread
                             }
                             val finalPath = copyToOutputDir(source, outputDir)
-                            Toast.makeText(this, "Updated: $title", Toast.LENGTH_LONG).show()
-                            finishWithResult(title, author, finalPath, System.currentTimeMillis())
+                            DiagnosticLog.append(this, "Detail.Update", "copied finalPath=$finalPath")
+                            Toast.makeText(applicationContext, "Updated: $title", Toast.LENGTH_LONG).show()
+                            if (!isFinishing && !isDestroyed) {
+                                window?.decorView?.postDelayed({
+                                    if (!isFinishing && !isDestroyed) finishWithResult(title, author, finalPath, System.currentTimeMillis(), null)
+                                }, 150)
+                            }
+                            DiagnosticLog.append(this, "Detail.Update", "result=SUCCESS title=$title path=$finalPath lifecycle_finishing=$isFinishing destroyed=$isDestroyed")
                         } catch (e: Exception) {
+                            DiagnosticLog.appendException(this, "Detail.Update", "copy_output_exception", e)
                             showError("Update failed: ${e.message ?: "copy/output error"}")
                         }
                     } else {
+                        DiagnosticLog.append(this, "Detail.Update", "result=FAILED error=${result.optString("error") ?: "unknown"}")
                         showError("Update failed: ${result.optString("error") ?: "unknown"}")
                     }
                 } catch (e: Exception) {
+                    DiagnosticLog.appendException(this, "Detail.Update", "result_parse_exception", e)
                     showError("Update failed: invalid response from bridge")
                 }
             }
@@ -176,48 +213,81 @@ class BookDetailActivity : AppCompatActivity() {
 
     private fun forceDownloadBook() {
         val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
+            DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_unavailable")
             Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
             return
         }
+        DiagnosticLog.append(this, "Detail.ForceDownload", "button_pressed title=$bookTitle url=$bookUrl path=$bookPath source=$bookSource")
+        val url = bookUrl
+        if (url.isBlank()) {
+            DiagnosticLog.append(this, "Detail.ForceDownload", "validation_failed reason=blank_url")
+            showError("No URL found for this book")
+            return
+        }
+        DiagnosticLog.append(this, "Detail.ForceDownload", "validation_passed url=$url")
         setStatus("Force downloading...")
+        DiagnosticLog.append(this, "Detail.ForceDownload", "starting")
         Thread {
-            val resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
-                bridge.forceDownloadFromEpub(localPath.absolutePath, filesDir.absolutePath)
+            val resultJson = try {
+                DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_start")
+                val raw = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
+                    DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_input=${localPath.absolutePath}")
+                    bridge.forceDownloadFromEpub(localPath.absolutePath, filesDir.absolutePath)
+                }
+                DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_returned=${raw != null}")
+                raw
+            } catch (e: Exception) {
+                DiagnosticLog.appendException(this, "Detail.ForceDownload", "storage_bridge_exception", e)
+                runOnUiThread { showError("Cannot read EPUB from this location: ${e.message ?: e.javaClass.simpleName}") }
+                return@Thread
             } ?: run {
+                DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_null")
                 runOnUiThread { showError("Cannot read EPUB from this location") }
                 return@Thread
             }
             runOnUiThread {
                 try {
                     val result = org.json.JSONObject(resultJson)
+                    DiagnosticLog.append(this, "Detail.ForceDownload", "parsed ok=${result.optBoolean("ok")}")
                     if (result.optBoolean("ok")) {
                         val title = result.optString("title", bookTitle)
                         val author = result.optString("author", bookAuthor)
                         val internalPath = result.optString("path", "")
-                        if (internalPath.isBlank()) {
-                            showError("Force download failed: bridge returned empty output path")
-                            return@runOnUiThread
-                        }
                         val outputDir = SettingsActivity.getOutputDir(this)
-                        try {
-                            val source = File(internalPath)
-                            if (!source.exists() || !source.isFile) {
-                                showError("Force download failed: generated file missing at $internalPath")
-                                return@runOnUiThread
+                        if (internalPath.isNotBlank()) {
+                            try {
+                                val source = File(internalPath)
+                                if (source.exists() && source.isFile) {
+                                    val finalPath = copyToOutputDir(source, outputDir)
+                                    DiagnosticLog.append(this, "Detail.ForceDownload", "copied finalPath=$finalPath")
+                                    Toast.makeText(applicationContext, "Force downloaded: $title", Toast.LENGTH_LONG).show()
+                                    if (!isFinishing && !isDestroyed) {
+                                        window?.decorView?.postDelayed({
+                                            if (!isFinishing && !isDestroyed) finishWithResult(title, author, finalPath, System.currentTimeMillis(), null)
+                                        }, 150)
+                                    }
+                                    DiagnosticLog.append(this, "Detail.ForceDownload", "result=SUCCESS title=$title path=$finalPath lifecycle_finishing=$isFinishing destroyed=$isDestroyed")
+                                } else {
+                                    DiagnosticLog.append(this, "Detail.ForceDownload", "result=SUCCESS missing_source_file=$internalPath")
+                                    showError("Force downloaded: $title")
+                                }
+                            } catch (e: Exception) {
+                                DiagnosticLog.appendException(this, "Detail.ForceDownload", "copy_output_exception", e)
+                                showError("Force download failed: ${e.message ?: "copy/output error"}")
                             }
-                            val finalPath = copyToOutputDir(source, outputDir)
-                            Toast.makeText(this, "Force downloaded: $title", Toast.LENGTH_LONG).show()
-                            finishWithResult(title, author, finalPath, System.currentTimeMillis())
-                        } catch (e: Exception) {
-                            showError("Force download failed: ${e.message ?: "copy/output error"}")
+                        } else {
+                            DiagnosticLog.append(this, "Detail.ForceDownload", "result=SUCCESS empty_internal_path")
+                            showError("Force downloaded: $title")
                         }
                     } else {
                         val errorMsg = result.optString("error") ?: "unknown"
                         val detail = result.optString("detail")
                         val fullMsg = if (!detail.isNullOrBlank()) "$errorMsg\n$detail" else errorMsg
+                        DiagnosticLog.append(this, "Detail.ForceDownload", "result=FAILED $fullMsg")
                         showError("Force download failed: $fullMsg")
                     }
                 } catch (e: Exception) {
+                    DiagnosticLog.appendException(this, "Detail.ForceDownload", "result_parse_exception", e)
                     showError("Force download failed: invalid response from bridge")
                 }
             }
@@ -257,12 +327,18 @@ class BookDetailActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun finishWithResult(title: String, author: String, path: String, modified: Long) {
+    private fun finishWithResult(title: String, author: String, path: String, modified: Long, source: String?) {
+        val blocked = isFinishing || isDestroyed
+        if (blocked) {
+            DiagnosticLog.append(this, "Detail.Update", "finishWithResult blocked isFinishing=$isFinishing isDestroyed=$isDestroyed")
+        }
+        if (isFinishing || isDestroyed) return
         val data = Intent().apply {
             putExtra("title", title)
             putExtra("author", author)
             putExtra("path", path)
             putExtra("modified", modified)
+            if (!source.isNullOrBlank()) putExtra("source", source)
         }
         setResult(RESULT_OK, data)
         finish()

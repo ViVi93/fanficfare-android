@@ -22,6 +22,10 @@
         android:title="Refresh All"
         app:showAsAction="never" />
     <item
+        android:id="@+id/action_diagnostics"
+        android:title="Diagnostics"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_sort"
         android:title="Sort"
         app:showAsAction="never" />

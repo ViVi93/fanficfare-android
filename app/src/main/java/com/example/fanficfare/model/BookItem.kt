@@ -8,5 +8,6 @@ data class BookItem(
     val sizeBytes: Long,
     val coverUriString: String? = null,
     val url: String = "",
-    val chapters: Int = 0
+    val chapters: Int = 0,
+    val sourceUriString: String? = null
 )

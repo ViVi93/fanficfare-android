@@ -19,8 +19,7 @@
         android:theme="@style/Theme.FanficFare"
         tools:targetApi="31">
 
-        <activity
-            android:name=".MainActivity"
+        <activity android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -29,6 +28,7 @@
         </activity>
         <activity android:name=".BookDetailActivity" />
         <activity android:name=".SettingsActivity" />
+        <activity android:name=".DiagnosticsActivity" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

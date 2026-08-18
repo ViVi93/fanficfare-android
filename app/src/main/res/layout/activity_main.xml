@@ -28,39 +28,10 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
-        android:text="No downloads yet.\nUse the menu or + to download a story."
+        android:text="No downloads yet.\nUse the menu or Download to get started."
         android:textAlignment="center"
         android:textSize="15sp"
         android:visibility="gone"
         app:layout_behavior="com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior" />
-
-    <TextView
-        android:id="@+id/textStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="#66000000"
-        android:padding="10dp"
-        android:textColor="#FFFFFF"
-        android:textSize="13sp"
-        app:layout_behavior="com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior" />
-
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fabPickFolder"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="16dp"
-        android:text="+" />
-
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fabLoadLibrary"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:layout_margin="16dp"
-        android:src="@android:drawable/ic_menu_agenda"
-        app:backgroundTint="?attr/colorPrimaryVariant"
-        android:contentDescription="Load Library" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

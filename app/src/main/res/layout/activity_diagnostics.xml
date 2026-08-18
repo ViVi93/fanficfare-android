@@ -14,6 +14,16 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content" />
 
+    <TextView
+        android:id="@+id/textImportDiagnostics"
+        android:text=""
+        android:textSize="12sp"
+        android:background="#22000000"
+        android:padding="8dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
+
     <LinearLayout
         android:orientation="horizontal"
         android:layout_width="match_parent"
@@ -40,6 +50,13 @@
             android:layout_weight="1"
             android:layout_height="wrap_content" />
     </LinearLayout>
+
+    <Button
+        android:id="@+id/buttonRunImportDiagnostics"
+        android:text="Run FanFicFare Import Diagnostics"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" />
 
     <ScrollView
         android:layout_width="match_parent"

@@ -231,7 +231,7 @@ def download_story(url, outDir):
         from fanficfare import adapters, writers
         _download_debug_write("download_story configuration_start")
         t0 = time.time()
-        configuration = build_configuration(url, "epub")
+        configuration = build_configuration(url, "epub", overrides={"include_images": "coveronly"})
         _download_debug_write("download_story configuration_ready elapsed={:.3f}s".format(time.time() - t0))
         try:
             cfg = configuration.get("defaults", "is_adult")
@@ -534,7 +534,7 @@ def update_epub_from_path(epubPath, outDir):
         source, chaptercount = get_update_data(epubPath)[0:2]
         if not source:
             return json.dumps({"ok": False, "error": "No story URL found in epub"})
-        configuration = build_configuration(source, "epub")
+        configuration = build_configuration(source, "epub", overrides={"include_images": "coveronly"})
         adapter = adapters.getAdapter(configuration, source)
         url, ch_begin, ch_end = adapters.get_url_chapter_range(source)
         adapter.setChaptersRange(ch_begin, ch_end)
@@ -588,7 +588,7 @@ def force_download_from_epub(epubPath, outDir):
         source = get_update_data(epubPath)[0]
         if not source:
             return json.dumps({"ok": False, "error": "No story URL found in epub"})
-        configuration = build_configuration(source, "epub")
+        configuration = build_configuration(source, "epub", overrides={"include_images": "coveronly"})
         adapter = adapters.getAdapter(configuration, source)
         url, ch_begin, ch_end = adapters.get_url_chapter_range(source)
         adapter.setChaptersRange(ch_begin, ch_end)

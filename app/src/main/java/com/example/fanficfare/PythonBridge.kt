@@ -28,6 +28,12 @@ class PythonBridge(private val context: Context) {
     fun fanficfareListSites(): String =
         safeCall("list_sites")
 
+    fun fanficfareLoginStatus(url: String): String =
+        safeCall("get_login_status", url)
+
+    fun fanficfareLiteroticaConfigStatus(url: String): String =
+        safeCall("get_literotica_config_status", url)
+
     fun scanEpubDir(directory: String): String =
         safeCall("scan_epub_dir", directory)
 
@@ -49,6 +55,15 @@ class PythonBridge(private val context: Context) {
     fun forceDownloadFromEpub(epubPath: String, outDir: String): String =
         safeCall("force_download_from_epub", epubPath, outDir)
 
+    fun readDownloadDebug(): String =
+        safeCall("read_download_debug")
+
+    fun runDnsDiagnostics(): String =
+        safeCall("run_dns_diagnostics")
+
+    fun clearDownloadDebug(): String =
+        safeCall("clear_download_debug")
+
     fun getInitError(): String? = initError
 
     fun getFanFicFareError(): String? {
@@ -62,6 +77,15 @@ class PythonBridge(private val context: Context) {
 
     fun diagnoseFanFicFareImports(): String =
         safeCall("diagnose_fanficfare_imports")
+
+    fun getConfigStatus(): JSONObject {
+        val raw = try { safeCall("get_config_status") } catch (e: Exception) { null }
+        return try {
+            org.json.JSONObject(raw ?: "{}")
+        } catch (e: Exception) {
+            org.json.JSONObject().put("exists", false).put("parse_error", "${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
 
     private fun safeCall(method: String, vararg args: Any): String {
         val mod = module

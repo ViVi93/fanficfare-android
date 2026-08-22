@@ -28,6 +28,15 @@ from functools import partial
 import traceback
 import copy
 
+from requests.exceptions import ChunkedEncodingError
+from urllib3.exceptions import ProtocolError, IncompleteRead
+
+try:
+    from fanficfare_bridge import _download_debug_write
+except Exception:
+    def _download_debug_write(line):
+        pass
+
 from bs4 import BeautifulSoup, Tag
 
 
@@ -220,12 +229,17 @@ class BaseSiteAdapter(Requestable):
 
     # Does the download the first time it's called.
     def getStory(self, notification=lambda x,y:x):
+        _download_debug_write("adapter.getStory START")
         if not self.storyDone:
+            _download_debug_write("adapter.getStory metadata_start")
             self.getStoryMetadataOnly(get_cover=True)
+            _download_debug_write("adapter.getStory metadata_done")
 
             ## one-off step to normalize old chapter URLs if present.
             if self.oldchaptersmap:
+                _download_debug_write("adapter.getStory normalize_start")
                 self.oldchaptersmap = dict((self.normalize_chapterurl(key), value) for (key, value) in self.oldchaptersmap.items())
+                _download_debug_write("adapter.getStory normalize_done")
 
             percent = 0.0
             per_step = 1.0/self.story.getChapterCount()
@@ -367,12 +381,15 @@ try to download.</p>
         return self.story
 
     def getStoryMetadataOnly(self,get_cover=True):
+        _download_debug_write("adapter.getStoryMetadataOnly START")
         if not self.metadataDone:
             try:
                 ## virtually all adapters were catching 404s during
                 ## metdata fetch and raising StoryDoesNotExist.
                 ## Consolidate in one place.
+                _download_debug_write("adapter.getStoryMetadataOnly extract_start")
                 self.doExtractChapterUrlsAndMetadata(get_cover=get_cover)
+                _download_debug_write("adapter.getStoryMetadataOnly extract_done")
             except HTTPErrorFFF as e:
                 if e.status_code in (404, 410) :
                     raise StoryDoesNotExist(self.url)
@@ -482,6 +499,7 @@ try to download.</p>
         404s and 410s caught from doExtractChapterUrlsAndMetadata will
         be changed to StoryDoesNotExist.
         '''
+        _download_debug_write("base_adapter.doExtractChapterUrlsAndMetadata START")
         return self.extractChapterUrlsAndMetadata()
 
     def extractChapterUrlsAndMetadata(self):
@@ -489,7 +507,10 @@ try to download.</p>
 
     def getChapterTextNum(self, url, index):
         "For adapters that also want to know the chapter index number."
-        return self.getChapterText(url)
+        try:
+            return self.getChapterText(url)
+        except (ChunkedEncodingError, ProtocolError, IncompleteRead):
+            return self.getChapterText(url)
 
     def getChapterText(self, url):
         "Needs to be overriden in each adapter class."

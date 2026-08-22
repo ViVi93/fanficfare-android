@@ -140,7 +140,6 @@ class BookDetailActivity : AppCompatActivity() {
             return
         }
         DiagnosticLog.append(this, "Detail.Update", "validation_passed url=$url")
-        setStatus("Updating...")
         DiagnosticLog.append(this, "Detail.Update", "starting")
         Thread {
             val resultJson = try {
@@ -225,7 +224,6 @@ class BookDetailActivity : AppCompatActivity() {
             return
         }
         DiagnosticLog.append(this, "Detail.ForceDownload", "validation_passed url=$url")
-        setStatus("Force downloading...")
         DiagnosticLog.append(this, "Detail.ForceDownload", "starting")
         Thread {
             val resultJson = try {
@@ -361,12 +359,6 @@ class BookDetailActivity : AppCompatActivity() {
             val outFile = File(destDir, sourceFile.name)
             sourceFile.copyTo(outFile, overwrite = true)
             outFile.absolutePath
-        }
-    }
-
-    private fun setStatus(text: String) {
-        runOnUiThread {
-            findViewById<TextView>(R.id.textStatus).text = text
         }
     }
 

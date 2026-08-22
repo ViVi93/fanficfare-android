@@ -337,14 +337,20 @@ class MainActivity : AppCompatActivity() {
                                         url = result.optString("url", book.url ?: ""),
                                         chapters = result.optInt("chapters", 0)
                                     )
+                                    val fileObj = result.optJSONObject("file")
+                                    val fileLog = if (fileObj != null) {
+                                        "exists_before=${fileObj.optBoolean("exists_before")} size_before=${fileObj.optString("size_before", "<null>")} mtime_before=${fileObj.optString("mtime_before", "<null>")} exists_after=${fileObj.optBoolean("exists_after")} size_after=${fileObj.optString("size_after", "<null>")} mtime_after=${fileObj.optString("mtime_after", "<null>")} changed=${fileObj.optBoolean("changed")}"
+                                    } else {
+                                        "file_state=missing"
+                                    }
                                     val idx = findBookByIdentity(book)
-                                    DiagnosticLog.append(this, "Main.ForceDownload", "list_update idx=$idx finalPath=$finalPath")
+                                    DiagnosticLog.append(this, "Main.ForceDownload", "list_update idx=$idx finalPath=$finalPath $fileLog")
                                     if (idx >= 0) downloads[idx] = updated else downloads.add(0, updated)
                                     bookAdapter.notifyDataSetChanged()
                                     toast("Downloaded: $title")
                                     toast("Downloaded: $title")
                                     persistLibrary()
-                                    DiagnosticLog.append(this, "Main.ForceDownload", "result=SUCCESS title=$title path=$finalPath")
+                                    DiagnosticLog.append(this, "Main.ForceDownload", "result=SUCCESS title=$title path=$finalPath $fileLog")
                                 } else {
                                     DiagnosticLog.append(this, "Main.ForceDownload", "result=SUCCESS missing_source_file=$internalPath")
                                     toast("Downloaded: $title")
@@ -422,10 +428,30 @@ class MainActivity : AppCompatActivity() {
             if (url.isBlank()) return@setOnClickListener
             toast("Downloading...")
             Thread {
+                DiagnosticLog.append(this, "Main.Download", "START url=$url")
+                val startMs = System.currentTimeMillis()
+                val watchdog = android.os.Handler(mainLooper)
+                val watchdogRunnable = object : Runnable {
+                    override fun run() {
+                        val elapsed = (System.currentTimeMillis() - startMs) / 1000
+                        DiagnosticLog.append(this@MainActivity, "Main.Download", "RUNNING elapsed=${elapsed}s")
+                        watchdog.postDelayed(this, 15000)
+                    }
+                }
+                watchdog.postDelayed(watchdogRunnable, 15000)
                 val resultJson = try {
-                    pythonBridge?.fanficfareDownload(url, filesDir.absolutePath)
+                    DiagnosticLog.append(this, "Main.Download", "bridge_call method=fanficfareDownload url=$url outDir=${filesDir.absolutePath}")
+                    val callStart = System.currentTimeMillis()
+                    val raw = pythonBridge?.fanficfareDownload(url, filesDir.absolutePath)
                         ?: """{"ok":false,"error":"bridge missing"}"""
+                    val elapsedCall = System.currentTimeMillis() - callStart
+                    watchdog.removeCallbacksAndMessages(null)
+                    DiagnosticLog.append(this, "Main.Download", "bridge_returned=${raw != null} elapsed=${elapsedCall}ms")
+                    DiagnosticLog.append(this, "Main.Download", "Python.debug=${pythonBridge?.readDownloadDebug()?.replace("\n", " ") ?: "<null>"}")
+                    raw
                 } catch (e: Exception) {
+                    watchdog.removeCallbacksAndMessages(null)
+                    DiagnosticLog.appendException(this, "Main.Download", "bridge_exception", e)
                     """{"ok":false,"error":${JSONObject().put("msg", e.message).toString()}}"""
                 }
                 val result = json(resultJson)
@@ -463,15 +489,19 @@ class MainActivity : AppCompatActivity() {
                             bookAdapter.notifyDataSetChanged()
                             updateEmptyState()
                             persistLibrary()
+                            DiagnosticLog.append(this, "Main.Download", "result=SUCCESS")
                         } catch (e: Exception) {
+                            DiagnosticLog.appendException(this, "Main.Download", "copy_output_exception", e)
                             showError("Download failed: ${e.message}")
                         }
                     } else {
                         val errorMsg = result?.optString("error") ?: "unknown"
                         val detail = result?.optString("detail")
                         val fullMsg = if (!detail.isNullOrBlank()) "$errorMsg\n$detail" else errorMsg
+                        DiagnosticLog.append(this, "Main.Download", "result=FAILED $fullMsg")
                         showError("Download failed: $fullMsg")
                     }
+                    DiagnosticLog.append(this, "Main.Download", "END")
                 }
             }.start()
         }
@@ -480,19 +510,30 @@ class MainActivity : AppCompatActivity() {
             if (url.isBlank()) return@setOnClickListener
             toast("Updating...")
             Thread {
+                DiagnosticLog.append(this, "Main.Update", "START url=$url")
                 val resultJson = try {
-                    pythonBridge?.fanficfareMetadata(url)
+                    DiagnosticLog.append(this, "Main.Update", "bridge_start")
+                    val raw = pythonBridge?.fanficfareMetadata(url)
                         ?: """{"ok":false,"error":"bridge missing"}"""
+                    DiagnosticLog.append(this, "Main.Update", "bridge_returned=${raw != null}")
+                    raw
                 } catch (e: Exception) {
+                    DiagnosticLog.appendException(this, "Main.Update", "bridge_exception", e)
                     """{"ok":false,"error":${JSONObject().put("msg", e.message).toString()}}"""
                 }
                 val result = json(resultJson)
                 runOnUiThread {
                     if (result?.optBoolean("ok") == true) {
                         toast("Metadata fetched")
+                        DiagnosticLog.append(this, "Main.Update", "result=SUCCESS")
                     } else {
-                        showError("Update check failed: ${result?.optString("error") ?: "unknown"}")
+                        val errorMsg = result?.optString("error") ?: "unknown"
+                        val detail = result?.optString("detail")
+                        val fullMsg = if (!detail.isNullOrBlank()) "$errorMsg\n$detail" else errorMsg
+                        DiagnosticLog.append(this, "Main.Update", "result=FAILED $fullMsg")
+                        showError("Update check failed: $fullMsg")
                     }
+                    DiagnosticLog.append(this, "Main.Update", "END")
                 }
             }.start()
         }

@@ -76,6 +76,76 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this, "Debug log cleared", Toast.LENGTH_SHORT).show()
         }
 
+        findViewById<Button>(R.id.buttonRunDnsDiagnostics).setOnClickListener {
+            val bridge = try { PythonBridge(this) } catch (e: Exception) { null }
+            val textView = findViewById<TextView>(R.id.textDnsDiagnostics)
+            textView.text = "Running..."
+            DiagnosticLog.append(this, "Settings.DnsDiagnostics", "button_clicked")
+            Thread {
+                var display = "DNS diagnostics unavailable"
+                val startedMs = System.currentTimeMillis()
+                try {
+                    DiagnosticLog.append(this, "Settings.DnsDiagnostics", "thread_start")
+                    val raw = try { bridge?.runDnsDiagnostics() } catch (e: Exception) { null }
+                    DiagnosticLog.append(this, "Settings.DnsDiagnostics", "bridge_returned raw=${raw != null}")
+                    if (raw == null) {
+                        display = "DNS diagnostics failed: bridge returned null"
+                        DiagnosticLog.append(this, "Settings.DnsDiagnostics", "result=null")
+                    } else {
+                        val obj = org.json.JSONObject(raw)
+                        if (obj.optBoolean("ok")) {
+                            val sb = StringBuilder()
+                            val target = obj.optJSONObject("target")
+                            val comparison = obj.optJSONObject("comparison")
+                            sb.append("Target: ").append(target?.optString("host") ?: "<null>").append('\n')
+                            sb.append("Repeated 5 attempts:\n")
+                            val targetResults = target?.optJSONArray("repeated_5") ?: org.json.JSONArray()
+                            var targetSuccess = 0
+                            var targetFail = 0
+                            for (i in 0 until targetResults.length()) {
+                                val r = targetResults.getJSONObject(i)
+                                if (r.optBoolean("success")) targetSuccess++ else targetFail++
+                            }
+                            sb.append("  success=").append(targetSuccess).append(" fail=").append(targetFail).append('\n')
+                            sb.append("Comparison: ").append(comparison?.optString("host") ?: "<null>").append('\n')
+                            sb.append("Repeated 5 attempts:\n")
+                            val compResults = comparison?.optJSONArray("repeated_5") ?: org.json.JSONArray()
+                            var compSuccess = 0
+                            var compFail = 0
+                            for (i in 0 until compResults.length()) {
+                                val r = compResults.getJSONObject(i)
+                                if (r.optBoolean("success")) compSuccess++ else compFail++
+                            }
+                            sb.append("  success=").append(compSuccess).append(" fail=").append(compFail).append('\n')
+                            val firstFail = targetResults.optJSONObject(targetResults.length() - 1)
+                            if (firstFail != null && !firstFail.optBoolean("success")) {
+                                sb.append("Last failure:\n")
+                                sb.append("  exception=").append(firstFail.optString("exception", "<null>")).append('\n')
+                                sb.append("  errno=").append(firstFail.optInt("errno")).append('\n')
+                                sb.append("  msg=").append(firstFail.optString("msg", "<null>")).append('\n')
+                            }
+                            display = sb.toString()
+                            DiagnosticLog.append(this, "Settings.DnsDiagnostics", "result=ok targetSuccess=${targetSuccess} targetFail=${targetFail}")
+                        } else {
+                            display = "DNS diagnostics failed: ${obj.optString("error", "<null>")}"
+                            DiagnosticLog.append(this, "Settings.DnsDiagnostics", "result=error")
+                        }
+                    }
+                } catch (e: Exception) {
+                    display = "DNS diagnostics unavailable: ${e.javaClass.simpleName}: ${e.message}"
+                    DiagnosticLog.appendException(this, "Settings.DnsDiagnostics", "ui_exception", e)
+                } finally {
+                    val elapsedMs = System.currentTimeMillis() - startedMs
+                    DiagnosticLog.append(this, "Settings.DnsDiagnostics", "thread_end elapsedMs=${elapsedMs}")
+                }
+                val finalDisplay = display
+                runOnUiThread {
+                    textView.text = finalDisplay
+                    DiagnosticLog.append(this, "Settings.DnsDiagnostics", "ui_updated")
+                }
+            }.start()
+        }
+
         refreshPythonDebugLog()
         updateConfigStatus()
     }

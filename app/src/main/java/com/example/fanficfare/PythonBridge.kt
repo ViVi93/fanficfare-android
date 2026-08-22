@@ -58,6 +58,9 @@ class PythonBridge(private val context: Context) {
     fun readDownloadDebug(): String =
         safeCall("read_download_debug")
 
+    fun runDnsDiagnostics(): String =
+        safeCall("run_dns_diagnostics")
+
     fun clearDownloadDebug(): String =
         safeCall("clear_download_debug")
 

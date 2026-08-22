@@ -347,13 +347,14 @@ def _extract_epub_metadata(epubPath):
                 pass
 
         if chapters == 0:
+            has_title_page = any(name.lower().endswith("/title_page.xhtml") or name.lower() == "oebps/title_page.xhtml" for name in names)
             for name in names:
                 if name.lower().endswith(".ncx"):
                     try:
                         content = z.read(name).decode("utf-8", errors="ignore")
                         count = content.lower().count("<navpoint ")
                         if count > 0:
-                            chapters = count
+                            chapters = max(0, count - 1) if has_title_page else count
                     except Exception:
                         pass
 
@@ -671,3 +672,16 @@ def clear_download_debug():
 def read_download_debug():
     text = _download_debug_read()
     return json.dumps({"ok": True, "log": text})
+
+
+def run_dns_diagnostics():
+    print("[fanficfare_bridge] run_dns_diagnostics ENTER")
+    try:
+        from dns_diagnostic import run_dns_diagnostics
+        result = run_dns_diagnostics()
+        print("[fanficfare_bridge] run_dns_diagnostics RETURN len={}".format(len(result) if result else 0))
+        return result
+    except Exception as e:
+        msg = "{}: {}".format(type(e).__name__, e)
+        print("[fanficfare_bridge] run_dns_diagnostics ERROR {}".format(msg))
+        return json.dumps({"ok": False, "error": msg})

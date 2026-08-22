@@ -28,6 +28,9 @@ from functools import partial
 import traceback
 import copy
 
+from requests.exceptions import ChunkedEncodingError
+from urllib3.exceptions import ProtocolError, IncompleteRead
+
 try:
     from fanficfare_bridge import _download_debug_write
 except Exception:
@@ -504,7 +507,10 @@ try to download.</p>
 
     def getChapterTextNum(self, url, index):
         "For adapters that also want to know the chapter index number."
-        return self.getChapterText(url)
+        try:
+            return self.getChapterText(url)
+        except (ChunkedEncodingError, ProtocolError, IncompleteRead):
+            return self.getChapterText(url)
 
     def getChapterText(self, url):
         "Needs to be overriden in each adapter class."

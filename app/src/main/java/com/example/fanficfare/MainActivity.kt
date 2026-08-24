@@ -191,7 +191,6 @@ class MainActivity : AppCompatActivity() {
             .putExtra("path", book.uriString)
             .putExtra("modified", book.lastModified)
             .putExtra("size", book.sizeBytes)
-            .putExtra("cover", book.coverUriString)
             .putExtra("url", book.url)
             .putExtra("chapters", book.chapters)
         startActivityForResult(intent, REQUEST_BOOK_DETAIL)

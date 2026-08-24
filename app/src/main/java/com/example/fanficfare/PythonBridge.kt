@@ -55,6 +55,9 @@ class PythonBridge(private val context: Context) {
     fun forceDownloadFromEpub(epubPath: String, outDir: String): String =
         safeCall("force_download_from_epub", epubPath, outDir)
 
+    fun getCoverFromEpub(epubPath: String): String =
+        safeCall("get_cover_from_epub", epubPath)
+
     fun readDownloadDebug(): String =
         safeCall("read_download_debug")
 

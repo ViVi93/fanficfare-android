@@ -231,7 +231,7 @@ def download_story(url, outDir):
         from fanficfare import adapters, writers
         _download_debug_write("download_story configuration_start")
         t0 = time.time()
-        configuration = build_configuration(url, "epub", overrides={"include_images": "coveronly"})
+        configuration = build_configuration(url, "epub", overrides={"include_images": "true"})
         _download_debug_write("download_story configuration_ready elapsed={:.3f}s".format(time.time() - t0))
         try:
             cfg = configuration.get("defaults", "is_adult")
@@ -455,16 +455,31 @@ def _get_dcsource_chaptercount(epubPath):
     return "", 0
 
 
+def get_cover_from_epub(epubPath):
+    try:
+        mime, data = _get_cover_img(epubPath)
+        if data is None:
+            return json.dumps({"ok": True, "cover": ""})
+        encoded = __import__("base64").b64encode(data).decode("ascii")
+        return json.dumps({
+            "ok": True,
+            "cover": "data:%s;base64,%s" % (mime, encoded),
+            "original_bytes": len(data),
+            "jpeg_bytes": len(data),
+        })
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e), "cover": ""})
+
+
 def _get_cover_img(epubPath):
     try:
         with zipfile.ZipFile(epubPath, "r") as z:
             for name in z.namelist():
-                if "/cover" in name.lower() or name.lower().endswith("/cover.jpg") or name.lower().endswith("/cover.png"):
+                lower = name.lower()
+                if lower.endswith((".jpg", ".jpeg", ".png")) and ("/cover" in lower or lower.endswith("/cover.jpg") or lower.endswith("/cover.png")):
                     try:
                         data = z.read(name)
-                        mime = "image/jpeg"
-                        if name.lower().endswith(".png"):
-                            mime = "image/png"
+                        mime = "image/png" if lower.endswith(".png") else "image/jpeg"
                         return mime, data
                     except Exception:
                         pass

@@ -247,6 +247,12 @@ class SettingsActivity : AppCompatActivity() {
         sb.append("Credentials present: ").append(status?.optBoolean("credentials_present") ?: false).append('\n')
         sb.append("Configuration valid: ").append(status?.optBoolean("configuration_valid") ?: false).append('\n')
         sb.append("FanFicFare version: ").append(if (status?.has("fanficfare_version") == true) status.optString("fanficfare_version", "<NULL>") else "<NULL>").append('\n')
+        val diag = status?.optJSONObject("fanficfare_version_diag")
+        if (diag != null) {
+            sb.append("Version diag raw: ").append(diag.optString("raw", "<NULL>")).append('\n')
+            sb.append("Version diag src_dir: ").append(diag.optString("src_dir", "<NULL>")).append('\n')
+            sb.append("Version diag cli_py exists: ").append(diag.optJSONObject("exists")?.optBoolean("cli_py", false) ?: false).append('\n')
+        }
 
         statusText.text = sb.toString().trimEnd()
         buttonRemove.isEnabled = exists

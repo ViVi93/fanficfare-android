@@ -151,12 +151,7 @@ def get_config_status():
         except Exception:
             fanficfare_version = None
 
-        try:
-            _version_diag = _get_fanficfare_version_diag()
-        except Exception:
-            _version_diag = {"ok": False, "error": "diag_exception"}
-
-        status = {
+status = {
             "ok": True,
             "initialized": initialized,
             "config_dir": config_dir,
@@ -171,9 +166,6 @@ def get_config_status():
             "credentials_present": credentials_present,
             "configuration_valid": configuration_valid,
             "fanficfare_version": fanficfare_version,
-            "fanficfare_version_diag": _version_diag,
-            "phase2_marker": "Phase2-version-fix-f05c28b",
-            "status_ts": __import__("time").time(),
         }
         return json.dumps(status)
     except Exception as e:
@@ -298,45 +290,6 @@ def _get_fanficfare_version():
     except Exception:
         pass
     return None
-
-
-def _get_fanficfare_version_diag():
-    try:
-        try:
-            import fanficfare.cli as cli_mod
-            cli_file = getattr(cli_mod, "__file__", None)
-            raw = getattr(cli_mod, "version", None)
-            pkg_dir = None
-            import_error = None
-        except Exception as e:
-            cli_file = None
-            raw = None
-            import_error = "{}: {}".format(type(e).__name__, e)
-        if raw is None:
-            try:
-                import fanficfare as _ff_pkg
-                raw = getattr(_ff_pkg, "version", None) or getattr(_ff_pkg, "__version__", None)
-                pkg_dir = os.path.dirname(getattr(_ff_pkg, "__file__", "") or "")
-            except Exception:
-                pass
-        paths = {
-            "cli_file": cli_file or "",
-            "pkg_dir": pkg_dir or "",
-            "import_error": import_error or "",
-            "detected": raw or "",
-        }
-        exists = {
-            "cli_file": bool(cli_file and os.path.isfile(cli_file)),
-            "detected": bool(raw),
-        }
-        return {
-            "ok": True,
-            "paths": paths,
-            "exists": exists,
-            "raw": raw or "",
-        }
-    except Exception as e:
-        return {"ok": False, "error": "{}: {}".format(type(e).__name__, e)}
 
 
 def _import_fanficfare():

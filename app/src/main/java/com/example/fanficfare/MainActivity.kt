@@ -82,6 +82,7 @@ class MainActivity : AppCompatActivity() {
         pythonBridge?.getFanFicFareError()?.let { error ->
             toast("FanFicFare init failed: $error")
         }
+        pythonBridge?.initialize(SettingsActivity.getConfigDir(this).absolutePath)
 
         bookAdapter = BookAdapter(downloads) { book ->
             selectedBook = book

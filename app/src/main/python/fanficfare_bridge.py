@@ -11,7 +11,15 @@ SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from fanficfare_config import get_config_status, get_personal_ini_path, get_bundled_defaults_path
+from fanficfare_config import (
+    get_config_status,
+    get_personal_ini_path,
+    get_bundled_defaults_path,
+    build_configuration,
+    set_config_dir as _cfg_set_config_dir,
+    test_configuration as _cfg_test_configuration,
+    _get_fanficfare_version as _cfg_get_fanficfare_version,
+)
 
 _FANFICFARE_AVAILABLE = None
 _FANFICFARE_ERROR = None
@@ -93,75 +101,91 @@ def diagnose_fanficfare_imports():
     return json.dumps({"ok": True, "results": results})
 
 
+def get_fanficfare_version():
+    try:
+        return _cfg_get_fanficfare_version() or ""
+    except Exception:
+        return ""
+
+
+def set_config_dir(path):
+    try:
+        _cfg_set_config_dir(path)
+    except Exception:
+        pass
+
+
+def test_configuration(url):
+    try:
+        return _cfg_test_configuration(url)
+    except Exception as e:
+        return json.dumps({
+            "ok": False,
+            "error_code": "UNKNOWN",
+            "message": str(e),
+            "detail": "{}: {}".format(type(e).__name__, e),
+        })
+
+
 def get_login_status(url):
     try:
         from fanficfare import adapters
         sections = adapters.getConfigSectionsFor(url)
-        personal = get_personal_ini_path()
+        configuration = build_configuration(url, "epub")
+        username_present = False
+        password_present = False
+        matched_section = None
+        login_keys = []
+        always_login = None
+        for section in sections:
+            try:
+                if configuration.has_section(section):
+                    matched_section = section
+                    options = configuration.options(section)
+                    for key in options:
+                        lowered = key.lower()
+                        login_keys.append(key)
+                        if lowered == "username":
+                            username_present = bool(configuration.get(section, key, fallback=None))
+                        elif lowered == "password":
+                            password_present = bool(configuration.get(section, key, fallback=None))
+                if username_present and password_present:
+                    break
+            except Exception:
+                pass
         try:
-            from fanficfare.configurable import Configuration
-            cfg = Configuration(sections, "epub")
-            bundled = get_bundled_defaults_path()
-            if bundled and os.path.isfile(bundled):
-                cfg.read(bundled)
-            if personal and os.path.isfile(personal):
-                cfg.read(personal)
-            cfg.addUrlConfigSection(url)
-            username_present = False
-            password_present = False
-            matched_section = None
-            login_keys = []
-            always_login = None
-            for section in sections:
-                try:
-                    if cfg.has_section(section):
-                        matched_section = section
-                        options = cfg.options(section) if hasattr(cfg, "options") else []
-                        for key in options:
-                            lowered = key.lower()
-                            login_keys.append(key)
-                            if lowered == "username":
-                                username_present = bool(cfg.get(section, key, fallback=None))
-                            elif lowered == "password":
-                                password_present = bool(cfg.get(section, key, fallback=None))
-                except Exception:
-                    pass
-            try:
-                always_login = cfg.get("defaults", "always_login", fallback=None)
-            except Exception:
-                pass
-            site = None
-            try:
-                found = adapters._get_class_for(url)
-                if found and found[0]:
-                    site = found[0].getSiteDomain()
-            except Exception:
-                pass
-            return json.dumps({
-                "ok": True,
-                "site": site,
-                "sections": sections,
-                "matched_section": matched_section,
-                "username_present": username_present,
-                "password_present": password_present,
-                "always_login": always_login,
-                "login_keys": login_keys,
-            })
-        except Exception as e:
-            return json.dumps({
-                "ok": False,
-                "error": "{}: {}".format(type(e).__name__, e),
-                "sections": sections,
-                "personal_exists": os.path.isfile(personal) if personal else False,
-            })
+            always_login = configuration.get("defaults", "always_login", fallback=None)
+        except Exception:
+            pass
+        site = None
+        try:
+            found = adapters._get_class_for(url)
+            if found and found[0]:
+                site = found[0].getSiteDomain()
+        except Exception:
+            pass
+        return json.dumps({
+            "ok": True,
+            "site": site,
+            "sections": sections,
+            "matched_section": matched_section,
+            "username_present": username_present,
+            "password_present": password_present,
+            "always_login": always_login,
+            "login_keys": login_keys,
+        })
     except Exception as e:
-        return json.dumps({"ok": False, "error": "{}: {}".format(type(e).__name__, e)})
+        return json.dumps({
+            "ok": False,
+            "error": "{}: {}".format(type(e).__name__, e),
+            "sections": [],
+            "personal_exists": os.path.isfile(get_personal_ini_path()) if get_personal_ini_path() else False,
+        })
 
 
 def get_literotica_config_status(url):
     try:
         from fanficfare import adapters
-        from fanficfare_config import build_configuration
         sections = adapters.getConfigSectionsFor(url)
         configuration = build_configuration(url, "epub")
         adapter = adapters.getAdapter(configuration, url)
@@ -206,7 +230,6 @@ def get_metadata(url):
     if not _import_fanficfare():
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
     try:
-        from fanficfare_config import build_configuration
         configuration = build_configuration(url, "epub", overrides={"include_images": "coveronly"})
         from fanficfare import adapters
         adapter = adapters.getAdapter(configuration, url)
@@ -227,7 +250,6 @@ def download_story(url, outDir):
     _download_debug_clear()
     try:
         _download_debug_write("download_story ENTER url={}".format(url))
-        from fanficfare_config import build_configuration
         from fanficfare import adapters, writers
         _download_debug_write("download_story configuration_start")
         t0 = time.time()
@@ -275,8 +297,6 @@ def download_story(url, outDir):
             "exception_type": type(e).__name__,
             "detail": traceback.format_exc(),
         })
-
-
 def _extract_epub_metadata(epubPath):
     title = os.path.basename(epubPath).replace(".epub", "").replace("_", " ")
     author = ""

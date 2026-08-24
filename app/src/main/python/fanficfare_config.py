@@ -151,6 +151,11 @@ def get_config_status():
         except Exception:
             fanficfare_version = None
 
+        try:
+            _version_diag = _get_fanficfare_version_diag()
+        except Exception:
+            _version_diag = {"ok": False, "error": "diag_exception"}
+
         status = {
             "ok": True,
             "initialized": initialized,
@@ -166,6 +171,7 @@ def get_config_status():
             "credentials_present": credentials_present,
             "configuration_valid": configuration_valid,
             "fanficfare_version": fanficfare_version,
+            "fanficfare_version_diag": _version_diag,
         }
         return json.dumps(status)
     except Exception as e:
@@ -301,6 +307,38 @@ def _get_fanficfare_version():
     except Exception:
         pass
     return None
+
+
+def _get_fanficfare_version_diag():
+    try:
+        paths = {
+            "src_dir": SRC_DIR,
+            "cli_py": os.path.join(SRC_DIR, "fanficfare", "cli.py"),
+            "version_py": os.path.join(SRC_DIR, "fanficfare", "version.py"),
+        }
+        exists = {}
+        for k in ("cli_py", "version_py"):
+            try:
+                exists[k] = os.path.isfile(paths[k])
+            except Exception:
+                exists[k] = None
+        raw = None
+        cli_path = paths.get("cli_py")
+        if cli_path and exists.get("cli_py"):
+            with open(cli_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("version="):
+                    raw = stripped.split("=", 1)[1].strip().strip('"').strip("'") or raw
+        return {
+            "ok": True,
+            "paths": paths,
+            "exists": exists,
+            "raw": raw or "",
+        }
+    except Exception as e:
+        return {"ok": False, "error": "{}: {}".format(type(e).__name__, e)}
 
 
 def _import_fanficfare():

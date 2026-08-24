@@ -172,7 +172,7 @@ def get_config_status():
             "configuration_valid": configuration_valid,
             "fanficfare_version": fanficfare_version,
             "fanficfare_version_diag": _version_diag,
-            "phase2_marker": "Phase2-version-fix-0a030c8",
+            "phase2_marker": "Phase2-version-fix-8239ba0",
             "status_ts": __import__("time").time(),
         }
         return json.dumps(status)
@@ -282,10 +282,17 @@ def test_configuration(url):
 
 def _get_fanficfare_version():
     try:
-        # Prefer the actual imported module path; this works in Chaquopy
-        # where __file__-relative heuristics can fail.
         import fanficfare.cli as cli_mod
         cli_file = getattr(cli_mod, "__file__", None)
+        if not cli_file:
+            try:
+                import fanficfare as _ff_pkg
+                pkg_dir = os.path.dirname(getattr(_ff_pkg, "__file__", "") or "")
+                candidate = os.path.join(pkg_dir, "cli.py")
+                if candidate and os.path.isfile(candidate):
+                    cli_file = candidate
+            except Exception:
+                pass
         if cli_file and os.path.isfile(cli_file):
             with open(cli_file, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -312,6 +319,15 @@ def _get_fanficfare_version_diag():
         except Exception as e:
             cli_file = None
             import_error = "{}: {}".format(type(e).__name__, e)
+        if not cli_file:
+            try:
+                import fanficfare as _ff_pkg
+                pkg_dir = os.path.dirname(getattr(_ff_pkg, "__file__", "") or "")
+                candidate = os.path.join(pkg_dir, "cli.py")
+                if candidate and os.path.isfile(candidate):
+                    cli_file = candidate
+            except Exception:
+                pass
         paths = {
             "module": "fanficfare.cli",
             "cli_file": cli_file or "",

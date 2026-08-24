@@ -288,12 +288,16 @@ def _get_fanficfare_version():
         cli_file = os.path.join(SRC_DIR, "fanficfare", "cli.py")
         if cli_file and os.path.isfile(cli_file):
             with open(cli_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    stripped = line.strip()
-                    if stripped.startswith("version="):
-                        val = stripped.split("=", 1)[1].strip().strip('"').strip("'")
-                        if val:
-                            return val
+                content = f.read()
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("version="):
+                    raw = stripped.split("=", 1)[1].strip()
+                    for quote in ('"', "'"):
+                        if raw.startswith(quote) and raw.endswith(quote):
+                            raw = raw[1:-1]
+                    if raw:
+                        return raw
     except Exception:
         pass
     return None

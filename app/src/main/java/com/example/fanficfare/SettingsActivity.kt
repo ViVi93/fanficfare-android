@@ -253,6 +253,10 @@ class SettingsActivity : AppCompatActivity() {
             sb.append("Version diag module: ").append(diag.optString("module", "<NULL>")).append('\n')
             sb.append("Version diag cli_file: ").append(diag.optString("cli_file", "<NULL>")).append('\n')
             sb.append("Version diag cli_file exists: ").append(diag.optJSONObject("exists")?.optBoolean("cli_file", false) ?: false).append('\n')
+            val importErr = diag.optString("import_error", "")
+            if (importErr.isNotBlank()) {
+                sb.append("Version diag import_error: ").append(importErr).append('\n')
+            }
         }
 
         sb.append("Phase2 marker: ").append(status?.optString("phase2_marker", "<NULL>")).append('\n')

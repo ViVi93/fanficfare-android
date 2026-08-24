@@ -172,7 +172,7 @@ def get_config_status():
             "configuration_valid": configuration_valid,
             "fanficfare_version": fanficfare_version,
             "fanficfare_version_diag": _version_diag,
-            "phase2_marker": "Phase2-version-fix-6f029b7",
+            "phase2_marker": "Phase2-version-fix-f05c28b",
             "status_ts": __import__("time").time(),
         }
         return json.dumps(status)

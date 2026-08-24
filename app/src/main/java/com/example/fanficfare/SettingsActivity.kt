@@ -255,6 +255,8 @@ class SettingsActivity : AppCompatActivity() {
             sb.append("Version diag cli_file exists: ").append(diag.optJSONObject("exists")?.optBoolean("cli_file", false) ?: false).append('\n')
         }
 
+        sb.append("Phase2 marker: ").append(status?.optString("phase2_marker", "<NULL>")).append('\n')
+        sb.append("Status timestamp: ").append(status?.optDouble("status_ts", 0.0) ?: 0.0).append('\n')
         statusText.text = sb.toString().trimEnd()
         buttonRemove.isEnabled = exists
     }

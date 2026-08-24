@@ -172,6 +172,8 @@ def get_config_status():
             "configuration_valid": configuration_valid,
             "fanficfare_version": fanficfare_version,
             "fanficfare_version_diag": _version_diag,
+            "phase2_marker": "Phase2-version-fix-37180f0",
+            "status_ts": __import__("time").time(),
         }
         return json.dumps(status)
     except Exception as e:
@@ -303,11 +305,17 @@ def _get_fanficfare_version():
 
 def _get_fanficfare_version_diag():
     try:
-        import fanficfare.cli as cli_mod
-        cli_file = getattr(cli_mod, "__file__", None)
+        try:
+            import fanficfare.cli as cli_mod
+            cli_file = getattr(cli_mod, "__file__", None)
+            import_error = None
+        except Exception as e:
+            cli_file = None
+            import_error = "{}: {}".format(type(e).__name__, e)
         paths = {
-            "module": getattr(cli_mod, "__name__", None),
+            "module": "fanficfare.cli",
             "cli_file": cli_file or "",
+            "import_error": import_error or "",
         }
         exists = {"cli_file": bool(cli_file and os.path.isfile(cli_file))}
         raw = None

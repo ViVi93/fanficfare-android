@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from __future__ import absolute_import
 
 import os.path
 import datetime
@@ -22,8 +23,8 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import logging
 
 # py2 vs py3 transition
-from ..ensure import ensure_text
-from ..ensure import ensure_binary
+from ..six import ensure_text
+from ..six import ensure_binary
 from io import BytesIO
 
 from ..requestable import Requestable

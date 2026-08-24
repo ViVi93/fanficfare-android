@@ -14,8 +14,9 @@
 #
 
 ## not compatibly with py2, SortKey not available.
+import sys
 DO_PROFILING = False
-if DO_PROFILING:
+if DO_PROFILING and sys.version_info >= (3, 7):
     from io import StringIO
     import cProfile, pstats
     from pstats import SortKey

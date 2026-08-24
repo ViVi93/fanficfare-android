@@ -15,14 +15,15 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import logging, time
 logger = logging.getLogger(__name__)
 import re, json
 
 from .. import exceptions as exceptions
 
-
-from http import cookiejar as cl
+# py2 vs py3 transition
+from ..six.moves import http_cookiejar as cl
 
 from .base_adapter import BaseSiteAdapter, makeDate
 

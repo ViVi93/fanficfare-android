@@ -23,6 +23,7 @@
 ###     Fixed the removal of the extra tags from some of the stories and
 ###         removed the attributes from the paragraph and span tags
 ###########################################################################
+from __future__ import absolute_import
 '''
 This works, but some of the stories have abysmal formatting, so it would
 probably need to be edited for reading.
@@ -54,8 +55,9 @@ from bs4 import Comment
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-
-from urllib import parse as urlparse
+# py2 vs py3 transition
+from ..six import text_type as unicode
+from ..six.moves.urllib import parse as urlparse
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -138,16 +140,16 @@ class BDSMLibraryComSiteAdapter(BaseSiteAdapter):
 
         for td in soup.find_all('td'):
             if len(td.text)>0:
-                if 'Added on:' in td.text and '<table' not in str(td):
+                if 'Added on:' in td.text and '<table' not in unicode(td):
                     value = td.text.replace('Added on:','').strip()
                     self.story.setMetadata('datePublished', makeDate(stripHTML(value), self.dateformat))
-                elif 'Synopsis:' in td.text and '<table' not in str(td):
+                elif 'Synopsis:' in td.text and '<table' not in unicode(td):
                     value = td.text.replace('\n','').replace('Synopsis:','').strip()
                     self.setDescription(self.url,stripHTML(value))
-                elif 'Size:' in td.text and '<table' not in str(td):
+                elif 'Size:' in td.text and '<table' not in unicode(td):
                     value = td.text.replace('\n','').replace('Size:','').strip()
                     self.story.setMetadata('size',stripHTML(value))
-                elif 'Comments:' in td.text and '<table' not in str(td):
+                elif 'Comments:' in td.text and '<table' not in unicode(td):
                     value = td.text.replace('\n','').replace('Comments:','').strip()
                     self.story.setMetadata('comments',stripHTML(value))
 

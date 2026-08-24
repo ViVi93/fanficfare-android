@@ -274,15 +274,26 @@ def test_configuration(url):
 
 def _get_fanficfare_version():
     try:
+        # version.py (if present)
         version_file = os.path.join(SRC_DIR, "fanficfare", "version.py")
-        if not os.path.isfile(version_file):
-            return None
-        ns = {}
-        with open(version_file, "r", encoding="utf-8") as f:
-            exec(f.read(), ns)
-        for key in ("version", "__version__", "VERSION"):
-            if key in ns and ns[key]:
-                return str(ns[key])
+        if version_file and os.path.isfile(version_file):
+            ns = {}
+            with open(version_file, "r", encoding="utf-8") as f:
+                exec(f.read(), ns)
+            for key in ("version", "__version__", "VERSION"):
+                if key in ns and ns[key]:
+                    return str(ns[key])
+
+        # cli.py fallback: version="X.Y.Z"
+        cli_file = os.path.join(SRC_DIR, "fanficfare", "cli.py")
+        if cli_file and os.path.isfile(cli_file):
+            with open(cli_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if stripped.startswith("version="):
+                        val = stripped.split("=", 1)[1].strip().strip('"').strip("'")
+                        if val:
+                            return val
     except Exception:
         pass
     return None

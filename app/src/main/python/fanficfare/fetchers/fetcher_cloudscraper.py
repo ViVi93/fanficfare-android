@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ import cloudscraper
 from cloudscraper.exceptions import CloudflareException
 
 # py2 vs py3 transition
+from ..six import text_type as unicode
 from .. import exceptions
 
 from .fetcher_requests import RequestsFetcher
@@ -75,6 +77,6 @@ class CloudScraperFetcher(RequestsFetcher):
         except CloudflareException as cfe:
             ## cloudscraper exception messages can appear to
             ## come from FFF and cause confusion.
-            msg = str(cfe).replace(' in the opensource (free) version','...')
+            msg = unicode(cfe).replace(' in the opensource (free) version','...')
             raise exceptions.FailedToDownload('cloudscraper reports: (%s) \nSee https://github.com/JimmXinu/FanFicFare/wiki/BrowserCacheFeature for a possible workaround.'%msg)
 

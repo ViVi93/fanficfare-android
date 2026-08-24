@@ -19,9 +19,10 @@
 ### Tested with Calibre
 ####################################################################################################
 
+from __future__ import absolute_import
 import logging
 import re
-
+# py2 vs py3 transition
 
 from .base_adapter import BaseSiteAdapter, makeDate
 

@@ -15,13 +15,14 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 
 import threading
 import traceback
 import time
-from urllib.parse import urlparse
+from ..six.moves.urllib.parse import urlparse
 
 from .. import exceptions
 

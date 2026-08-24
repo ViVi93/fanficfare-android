@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import os, re, sys
 from collections import defaultdict, OrderedDict
 import string
@@ -26,8 +27,12 @@ import uuid
 import logging
 logger = logging.getLogger(__name__)
 
-from urllib.parse import (urlparse, urljoin)
-from .ensure import ensure_binary, ensure_str
+# py2 vs py3 transition
+from . import six
+from .six.moves.urllib.parse import (urlparse, urljoin)
+from .six import text_type as unicode
+from .six import string_types as basestring
+from .six import ensure_binary, ensure_str
 
 import bs4
 
@@ -101,7 +106,7 @@ try:
             export = True
 
         if removetrans and image_has_transparent_pixels(img):
-            canvas = Canvas(img.size().width(), img.size().height(), str(background))
+            canvas = Canvas(img.size().width(), img.size().height(), unicode(background))
             canvas.compose(img)
             img = canvas.img
             export = True
@@ -124,7 +129,7 @@ except:
     # No calibre routines, try for Pillow for CLI.
     try:
         from PIL import Image
-        from io import BytesIO
+        from .six import BytesIO
         convtype = {'jpg':'JPEG', 'png':'PNG'}
 
         def get_image_size(data):
@@ -204,7 +209,7 @@ def no_convert_image(url,data):
         if ext not in imagetypes:
             try:
                 from PIL import Image
-                from io import BytesIO
+                from .six import BytesIO
                 ext = Image.open(BytesIO(data)).format.lower()
                 logger.info("no_convert_image url:%s - from bits got '%s'" % (url, ext))
             except (IOError, TypeError):
@@ -582,7 +587,7 @@ def make_chapter_text_replacements(replace):
 ## can all use so our uuids always match.
 IMG_NS = uuid.UUID('5d976d9e-7d55-4e9e-975a-8cec6c69f98e')
 def url2uuid(url):
-    return str(uuid.uuid5(IMG_NS,ensure_str(url)))
+    return unicode(uuid.uuid5(IMG_NS,ensure_str(url)))
 
 class ImageStore:
     def __init__(self,dedup=False):
@@ -888,7 +893,7 @@ class Story(Requestable):
         self.chapter_last=last
 
     def join_list(self, key, vallist):
-        return self.getConfig("join_string_"+key,u", ").replace(SPACE_REPLACE,' ').join([ str(x) for x in vallist if x is not None ])
+        return self.getConfig("join_string_"+key,u", ").replace(SPACE_REPLACE,' ').join([ unicode(x) for x in vallist if x is not None ])
 
     def setMetadata(self, key, value, condremoveentities=True):
 
@@ -898,7 +903,7 @@ class Story(Requestable):
         # Fixing everything downstream to handle bool primatives is a
         # pain.
         if isinstance(value,bool):
-            value = str(value)
+            value = unicode(value)
         # keep as list type, but set as only value.
         if self.isList(key):
             self.addToList(key,value,condremoveentities=condremoveentities,clear=True)
@@ -959,7 +964,7 @@ class Story(Requestable):
                         #         match,value,cond_match,condval,keyfound,found))
                     keyfound |= keyfndnow
                     if keyfndnow:
-                        found = isinstance(value,str) and match.is_match(value)
+                        found = isinstance(value,basestring) and match.is_match(value)
                     if found:
                         # print("match:%s %s\n\tkeyfndnow:%s\n\tfound:%s"%(
                         #         match,value,keyfndnow,found))
@@ -985,7 +990,7 @@ class Story(Requestable):
             # logger.debug("key:%s value:%s"%(key,value))
             # logger.debug("value class:%s"%value.__class__.__name__)
             if (metakeys == None or key in metakeys) \
-                    and isinstance(value,str) \
+                    and isinstance(value,basestring) \
                     and regexp.search(value):
                 # recursion on pattern, bail -- Compare by original text
                 # line because I saw an issue with duplicate lines in a
@@ -1044,7 +1049,7 @@ class Story(Requestable):
     # for saving an html-ified copy of metadata.
     def dump_html_metadata(self):
         lines=[]
-        for k,v in sorted(iter(self.metadata.items())):
+        for k,v in sorted(six.iteritems(self.metadata)):
             #logger.debug("k:%s v:%s"%(k,v))
             classes=['metadata']
             if isinstance(v, (datetime.date, datetime.datetime, datetime.time)):
@@ -1096,16 +1101,16 @@ class Story(Requestable):
                     # keeps &amp; but removes <li></li> because BS4
                     # halps by converting NavigableString to string
                     # (losing entities)
-                    val.append(str(i)[4:-5])
+                    val.append(unicode(i)[4:-5])
             elif 'int' in tag['class']:
                 # Python reports true when asked isinstance(<bool>, (int))
-                # bools now converted to str when set.
+                # bools now converted to unicode when set.
                 if tag.string in ('True','False'):
                     val = tag.string
                 else:
                     val = int(tag.string)
             else:
-                val = str("\n".join([ str(c) for c in tag.contents ]))
+                val = unicode("\n".join([ unicode(c) for c in tag.contents ]))
 
             #logger.debug("key(%s)=val(%s)"%(tag['id'],val))
             if val != None:
@@ -1159,7 +1164,7 @@ class Story(Requestable):
             if value:
                 if key in ["numWords","numChapters"]+self.getConfigList("comma_entries",[]):
                     try:
-                        value = commaGroups(str(value))
+                        value = commaGroups(unicode(value))
                     except Exception as e:
                         logger.warning("Failed to add commas to %s value:(%s) exception(%s)"%(key,value,e))
                 if key in ("dateCreated"):
@@ -1497,7 +1502,7 @@ class Story(Requestable):
 
     def addChapter(self, chap, newchap=False):
         # logger.debug("addChapter(%s,%s)"%(chap,newchap))
-        chapter = defaultdict(str,chap) # default unknown to empty string
+        chapter = defaultdict(unicode,chap) # default unknown to empty string
         chapter['html'] = removeEntities(chapter['html'])
         if self.getConfig('strip_chapter_numbers') and \
                 self.getConfig('chapter_title_strip_pattern'):
@@ -1515,7 +1520,7 @@ class Story(Requestable):
         self.chapters.append(chapter)
 
     def getChapters(self,fortoc=False):
-        "Chapters will be defaultdicts(str)"
+        "Chapters will be defaultdicts(unicode)"
         retval = []
 
         ## only add numbers if more than one chapter.  Ditto (new) marks.
@@ -1556,7 +1561,7 @@ class Story(Requestable):
             else:
                 usetempl = templ
             # logger.debug("chap(%s)"%chap)
-            chapter = defaultdict(str,chap)
+            chapter = defaultdict(unicode,chap)
             ## Due to poor planning on my part,
             ## chapter_title_*_pattern expect index==1 not
             ## index=0001 like output settings.  index04 is now
@@ -1857,7 +1862,7 @@ class Story(Requestable):
         return retlist
 
     def __str__(self):
-        return "Metadata: " +str(self.metadata)
+        return "Metadata: " +unicode(self.metadata)
 
 def commaGroups(s):
     groups = []

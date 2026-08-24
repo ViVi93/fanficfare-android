@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import logging
 import string
 from textwrap import wrap
@@ -25,11 +26,11 @@ logger = logging.getLogger(__name__)
 
 from html2text import html2text
 
-## In BaseStoryWriter, we define _write to encode <str> objects
+## In BaseStoryWriter, we define _write to encode <unicode> objects
 ## back into <string> for true output.  But txt needs to write the
 ## title page and TOC to a buffer first to wordwrap.  And StringIO
-## gets pissy about str bytes in its buflist.  This decodes the
-## str containing <string> object passed in back to a <str>
+## gets pissy about unicode bytes in its buflist.  This decodes the
+## unicode containing <string> object passed in back to a <unicode>
 ## object so they join up properly.  Could override _write to not
 ## encode and do out.write(whatever.encode('utf8') instead.  Honestly
 ## not sure which is uglier.

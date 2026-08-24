@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import re
 
 from .base_xenforo2forum_adapter import BaseXenForo2ForumAdapter

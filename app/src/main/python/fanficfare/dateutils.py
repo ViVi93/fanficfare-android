@@ -15,11 +15,13 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 
 from datetime import datetime, timedelta
 import re
 
 # py2 vs py3 transition
+from .six import text_type as unicode
 
 import logging
 logger = logging.getLogger(__name__)
@@ -92,10 +94,10 @@ def parse_relative_date_string(reldatein):
         ## I'm not going to worry very much about accuracy for a site
         ## that considers '2 years ago' an acceptable time stamp.
         if "year" in unit_string or unit and ('year' in unit):
-            value = str(int(value)*365)
+            value = unicode(int(value)*365)
             unit = 'days'
         elif "month" in unit_string or unit and ('month' in unit):
-            value = str(int(value)*31)
+            value = unicode(int(value)*31)
             unit = 'days'
         logger.debug("val:%s unit_string:%s unit:%s"%(value, unit_string, unit))
         if unit:

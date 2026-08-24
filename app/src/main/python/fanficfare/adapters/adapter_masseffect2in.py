@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import, unicode_literals
 import bs4
 import datetime
 import logging
@@ -23,6 +24,9 @@ from itertools import takewhile
 
 from ..htmlcleanup import removeEntities, stripHTML
 from .. import exceptions as exceptions
+# py2 vs py3 transition
+from ..six import text_type as unicode
+from ..six.moves import zip as izip
 
 from .base_adapter import BaseSiteAdapter, makeDate
 
@@ -199,7 +203,7 @@ class MassEffect2InAdapter(BaseSiteAdapter):
         self.story.setMetadata('status', 'In-Progress' if storyInProgress else 'Completed')
         self.story.setMetadata('datePublished', datePublished)
         self.story.setMetadata('dateUpdated', dateUpdated)
-        self.story.setMetadata('numWords', str(wordCount))
+        self.story.setMetadata('numWords', unicode(wordCount))
 
         # Site-specific metadata.
         self.story.setMetadata('language', self.SITE_LANGUAGE)
@@ -695,4 +699,4 @@ def _getLargestCommonPrefix(*args):
     """
     toLower = lambda xs: [ x.lower() for x in xs ]
     allSame = lambda xs: len(set(toLower(xs))) == 1
-    return u''.join([i[0] for i in takewhile(allSame, zip(*args))])
+    return u''.join([i[0] for i in takewhile(allSame, izip(*args))])

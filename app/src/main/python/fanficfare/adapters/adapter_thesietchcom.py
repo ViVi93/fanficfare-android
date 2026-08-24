@@ -15,10 +15,12 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 
-
+# py2 vs py3 transition
+from ..six import text_type as unicode
 
 from .base_xenforo2forum_adapter import BaseXenForo2ForumAdapter
 
@@ -50,6 +52,6 @@ class TheSietchComAdapter(BaseXenForo2ForumAdapter):
         # https://www.the-sietch.com/index.php?threads/shattered-sphere-the-arcadian-free-march.3243/reader/page-2
         # discard tmcat_num -- the-sietch.com doesn't have multiple
         # threadmark categories yet.
-        return self.story.getMetadata('storyUrl')+'reader/page-'+str(reader_page_num)
+        return self.story.getMetadata('storyUrl')+'reader/page-'+unicode(reader_page_num)
 
 # XXX different threadmarks categories

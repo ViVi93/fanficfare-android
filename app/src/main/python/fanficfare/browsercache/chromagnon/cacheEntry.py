@@ -32,6 +32,7 @@ See http://www.chromium.org/developers/design-documents/network-stack/disk-cache
 for design details
 """
 
+from __future__ import absolute_import
 import datetime
 import struct
 import os
@@ -39,6 +40,7 @@ import re
 
 from . import cacheAddress
 from . import cacheData
+from six.moves import range
 
 from ..share_open import share_open
 

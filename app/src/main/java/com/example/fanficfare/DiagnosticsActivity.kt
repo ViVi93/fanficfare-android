@@ -73,7 +73,8 @@ class DiagnosticsActivity : AppCompatActivity() {
         val python = if (Python.isStarted()) Python.getInstance() else null
         val bridge = if (python != null) PythonBridge(applicationContext) else null
         if (bridge == null || bridge.getInitError() != null) {
-            importText.text = "Diagnostics unavailable: bridge not available"
+            val err = bridge?.getInitError() ?: "null_bridge"
+            importText.text = "Diagnostics unavailable: bridge not available\nInit error: ${err}"
             importText.visibility = android.view.View.VISIBLE
             return
         }

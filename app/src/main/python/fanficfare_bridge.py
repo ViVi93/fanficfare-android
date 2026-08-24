@@ -108,33 +108,6 @@ def get_fanficfare_version():
         return ""
 
 
-def diagnose_fanficfare_version():
-    try:
-        paths = {
-            "src_dir": SRC_DIR,
-            "cli_py": os.path.join(SRC_DIR, "fanficfare", "cli.py"),
-            "version_py": os.path.join(SRC_DIR, "fanficfare", "version.py"),
-        }
-        exists = {k: os.path.isfile(v) for k, v in paths.items() if k not in ("src_dir",)}
-        raw = None
-        cli_path = paths.get("cli_py")
-        if cli_path and exists.get("cli_py"):
-            with open(cli_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            for line in content.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("version="):
-                    raw = stripped.split("=", 1)[1].strip().strip('"').strip("\'") or raw
-        return json.dumps({
-            "ok": True,
-            "paths": paths,
-            "exists": exists,
-            "raw": raw or "",
-        })
-    except Exception as e:
-        return json.dumps({"ok": False, "error": "{}: {}".format(type(e).__name__, e)})
-
-
 def set_config_dir(path):
     try:
         _cfg_set_config_dir(path)

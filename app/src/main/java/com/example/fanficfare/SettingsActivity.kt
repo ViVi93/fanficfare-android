@@ -250,8 +250,9 @@ class SettingsActivity : AppCompatActivity() {
         val diag = status?.optJSONObject("fanficfare_version_diag")
         if (diag != null) {
             sb.append("Version diag raw: ").append(diag.optString("raw", "<NULL>")).append('\n')
-            sb.append("Version diag src_dir: ").append(diag.optString("src_dir", "<NULL>")).append('\n')
-            sb.append("Version diag cli_py exists: ").append(diag.optJSONObject("exists")?.optBoolean("cli_py", false) ?: false).append('\n')
+            sb.append("Version diag module: ").append(diag.optString("module", "<NULL>")).append('\n')
+            sb.append("Version diag cli_file: ").append(diag.optString("cli_file", "<NULL>")).append('\n')
+            sb.append("Version diag cli_file exists: ").append(diag.optJSONObject("exists")?.optBoolean("cli_file", false) ?: false).append('\n')
         }
 
         statusText.text = sb.toString().trimEnd()

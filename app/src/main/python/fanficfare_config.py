@@ -280,18 +280,10 @@ def test_configuration(url):
 
 def _get_fanficfare_version():
     try:
-        # version.py (if present)
-        version_file = os.path.join(SRC_DIR, "fanficfare", "version.py")
-        if version_file and os.path.isfile(version_file):
-            ns = {}
-            with open(version_file, "r", encoding="utf-8") as f:
-                exec(f.read(), ns)
-            for key in ("version", "__version__", "VERSION"):
-                if key in ns and ns[key]:
-                    return str(ns[key])
-
-        # cli.py fallback: version="X.Y.Z"
-        cli_file = os.path.join(SRC_DIR, "fanficfare", "cli.py")
+        # Prefer the actual imported module path; this works in Chaquopy
+        # where __file__-relative heuristics can fail.
+        import fanficfare.cli as cli_mod
+        cli_file = getattr(cli_mod, "__file__", None)
         if cli_file and os.path.isfile(cli_file):
             with open(cli_file, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -311,21 +303,16 @@ def _get_fanficfare_version():
 
 def _get_fanficfare_version_diag():
     try:
+        import fanficfare.cli as cli_mod
+        cli_file = getattr(cli_mod, "__file__", None)
         paths = {
-            "src_dir": SRC_DIR,
-            "cli_py": os.path.join(SRC_DIR, "fanficfare", "cli.py"),
-            "version_py": os.path.join(SRC_DIR, "fanficfare", "version.py"),
+            "module": getattr(cli_mod, "__name__", None),
+            "cli_file": cli_file or "",
         }
-        exists = {}
-        for k in ("cli_py", "version_py"):
-            try:
-                exists[k] = os.path.isfile(paths[k])
-            except Exception:
-                exists[k] = None
+        exists = {"cli_file": bool(cli_file and os.path.isfile(cli_file))}
         raw = None
-        cli_path = paths.get("cli_py")
-        if cli_path and exists.get("cli_py"):
-            with open(cli_path, "r", encoding="utf-8") as f:
+        if exists.get("cli_file"):
+            with open(cli_file, "r", encoding="utf-8") as f:
                 content = f.read()
             for line in content.splitlines():
                 stripped = line.strip()

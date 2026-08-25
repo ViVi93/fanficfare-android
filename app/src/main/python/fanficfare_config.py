@@ -112,79 +112,61 @@ def _detect_credentials(config):
 
 
 def get_config_status():
-    try:
-        path = get_personal_ini_path()
-        exists = bool(path and os.path.isfile(path))
-        size = 0
-        modified = 0
-        parse_error = None
-        sections = 0
-        credentials_present = False
-        configuration_valid = False
-        fanficfare_version = None
-        initialized = _ANDROID_CONFIG_DIR is not None
-        config_dir = _ANDROID_CONFIG_DIR or ""
+    path = get_personal_ini_path()
+    exists = bool(path and os.path.isfile(path))
+    size = 0
+    modified = 0
+    parse_error = None
+    sections = 0
+    credentials_present = False
+    configuration_valid = False
+    fanficfare_version = None
+    initialized = _ANDROID_CONFIG_DIR is not None
+    config_dir = _ANDROID_CONFIG_DIR or ""
 
-        if exists:
-            try:
-                size = os.path.getsize(path)
-                st = os.stat(path)
-                modified = int(st.st_mtime * 1000)
-            except Exception:
-                pass
-
-            try:
-                cfg = build_configuration("https://test1.com", "epub")
-                sections = _count_sections(cfg)
-                credentials_present = _detect_credentials(cfg)
-                configuration_valid = True
-                parse_error = None
-            except Exception as e:
-                configuration_valid = False
-                parse_error = "{}: {}".format(type(e).__name__, e)
-        else:
-            configuration_valid = False
-            parse_error = None
+    if exists:
+        try:
+            size = os.path.getsize(path)
+            st = os.stat(path)
+            modified = int(st.st_mtime * 1000)
+        except Exception:
+            pass
 
         try:
-            fanficfare_version = _get_fanficfare_version()
-        except Exception:
-            fanficfare_version = None
+            cfg = build_configuration("https://test1.com", "epub")
+            sections = _count_sections(cfg)
+            credentials_present = _detect_credentials(cfg)
+            configuration_valid = True
+            parse_error = None
+        except Exception as e:
+            configuration_valid = False
+            parse_error = "{}: {}".format(type(e).__name__, e)
+    else:
+        configuration_valid = False
+        parse_error = None
 
-status = {
-            "ok": True,
-            "initialized": initialized,
-            "config_dir": config_dir,
-            "personal_ini_path": path or "",
-            "exists": exists,
-            "is_file": exists,
-            "size": size,
-            "modified": modified,
-            "imported": exists,
-            "parse_error": parse_error,
-            "sections": sections,
-            "credentials_present": credentials_present,
-            "configuration_valid": configuration_valid,
-            "fanficfare_version": fanficfare_version,
-        }
-        return json.dumps(status)
-    except Exception as e:
-        return json.dumps({
-            "ok": False,
-            "initialized": _ANDROID_CONFIG_DIR is not None,
-            "config_dir": _ANDROID_CONFIG_DIR or "",
-            "personal_ini_path": get_personal_ini_path() or "",
-            "exists": False,
-            "is_file": False,
-            "size": 0,
-            "modified": 0,
-            "imported": False,
-            "parse_error": "{}: {}".format(type(e).__name__, e),
-            "sections": 0,
-            "credentials_present": False,
-            "configuration_valid": False,
-            "fanficfare_version": None,
-        })
+    try:
+        fanficfare_version = _get_fanficfare_version()
+    except Exception:
+        fanficfare_version = None
+
+    status = {
+        "ok": True,
+        "initialized": initialized,
+        "config_dir": config_dir,
+        "personal_ini_path": path or "",
+        "exists": exists,
+        "is_file": exists,
+        "size": size,
+        "modified": modified,
+        "imported": exists,
+        "parse_error": parse_error,
+        "sections": sections,
+        "credentials_present": credentials_present,
+        "configuration_valid": configuration_valid,
+        "fanficfare_version": fanficfare_version,
+    }
+    return json.dumps(status)
 
 
 def test_configuration(url):

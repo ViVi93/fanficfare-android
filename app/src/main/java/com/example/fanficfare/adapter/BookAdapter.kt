@@ -12,8 +12,13 @@ import com.example.fanficfare.model.BookItem
 
 class BookAdapter(
     private val books: List<BookItem>,
-    private val onBookClicked: (BookItem) -> Unit
+    private val onBookClicked: (BookItem) -> Unit,
+    private val onBookLongClicked: (BookItem) -> Unit
 ) : RecyclerView.Adapter<BookAdapter.BookViewHolder>() {
+
+    private val selectedIds = mutableSetOf<String>()
+    var selectionMode = false
+        private set
 
     inner class BookViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val textTitle: TextView = itemView.findViewById(R.id.textTitle)
@@ -25,7 +30,29 @@ class BookAdapter(
             textTitle.text = book.title.ifBlank { "Untitled" }
             textAuthor.text = book.author.ifBlank { "Unknown author" }
             textChapters.text = if (book.chapters > 0) "${book.chapters} chapters" else ""
-            itemView.setOnClickListener { onBookClicked(book) }
+            val selected = selectedIds.contains(book.uriString)
+            itemView.isSelected = selected
+            val card = itemView as com.google.android.material.card.MaterialCardView
+            val res = card.context.resources
+            val strokeColor = if (selected) {
+                androidx.core.content.ContextCompat.getColor(card.context, android.R.color.holo_green_light)
+            } else {
+                androidx.core.content.ContextCompat.getColor(card.context, android.R.color.transparent)
+            }
+            val strokeWidth = if (selected) res.getDimensionPixelSize(R.dimen.selection_stroke) else 0
+            card.strokeColor = strokeColor
+            card.strokeWidth = strokeWidth
+            itemView.setOnClickListener {
+                if (selectionMode) {
+                    toggleSelection(book)
+                } else {
+                    onBookClicked(book)
+                }
+            }
+            itemView.setOnLongClickListener {
+                onBookLongClicked(book)
+                true
+            }
 
             val cover = book.coverUriString
             if (cover?.isNotBlank() == true && cover.startsWith("data:")) {
@@ -50,6 +77,35 @@ class BookAdapter(
             imageCover.visibility = View.GONE
         }
     }
+
+    fun isSelectionMode(): Boolean = selectionMode
+
+    fun enterSelectionMode(book: BookItem) {
+        selectionMode = true
+        selectedIds.clear()
+        selectedIds.add(book.uriString)
+        notifyDataSetChanged()
+    }
+
+    fun toggleSelection(book: BookItem) {
+        if (selectedIds.contains(book.uriString)) {
+            selectedIds.remove(book.uriString)
+        } else {
+            selectedIds.add(book.uriString)
+        }
+        if (selectedIds.isEmpty()) {
+            selectionMode = false
+        }
+        notifyDataSetChanged()
+    }
+
+    fun clearSelection() {
+        selectionMode = false
+        selectedIds.clear()
+        notifyDataSetChanged()
+    }
+
+    fun getSelectedBooks(): List<BookItem> = books.filter { selectedIds.contains(it.uriString) }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BookViewHolder {
         val view = LayoutInflater.from(parent.context)

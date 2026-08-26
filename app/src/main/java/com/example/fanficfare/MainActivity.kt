@@ -2,10 +2,9 @@ package com.example.fanficfare
 
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.widget.EditText
@@ -13,18 +12,13 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.work.Constraints
-import androidx.work.NetworkType
 import com.example.fanficfare.adapter.BookAdapter
 import com.example.fanficfare.model.BookItem
 import com.chaquo.python.Python
 import org.json.JSONObject
 import java.io.File
-import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
 
@@ -37,6 +31,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewModel: LibraryViewModel
     private var libraryFolderPath: String? = null
     private var lastTerminalToastJobId: Long? = null
+    private var selectionMenu: Menu? = null
+    private var baseMenu: Menu? = null
+
     private val statusProgress get() = findViewById<android.widget.ProgressBar>(R.id.status_progress)
     private val statusText get() = findViewById<TextView>(R.id.status_text)
     private val statusContainer get() = findViewById<android.view.ViewGroup>(R.id.status_container)
@@ -46,6 +43,7 @@ class MainActivity : AppCompatActivity() {
             val t0 = System.currentTimeMillis()
             super.onCreate(savedInstanceState)
             setContentView(R.layout.activity_main)
+            supportActionBar?.hide()
             DiagnosticLog.append(this, "Main.Startup", "begin elapsed=${System.currentTimeMillis() - t0}")
 
             toast("startup:onCreate_begin")
@@ -74,10 +72,20 @@ class MainActivity : AppCompatActivity() {
             DiagnosticLog.append(this, "Main.Startup", "viewmodel_ready elapsed=${System.currentTimeMillis() - t0}")
             toast("startup:viewmodel_ready")
 
-            bookAdapter = BookAdapter(viewModel.getBooksSnapshot()) { book ->
+            bookAdapter = BookAdapter(viewModel.getBooksSnapshot(), { book ->
                 selectedBook = book
-                showBookOptionsDialog(book)
-            }
+                if (bookAdapter.isSelectionMode()) {
+                    bookAdapter.toggleSelection(book)
+                    updateSelectionUi()
+                } else {
+                    showBookOptionsDialog(book)
+                }
+            }, { book ->
+                if (!bookAdapter.isSelectionMode()) {
+                    bookAdapter.enterSelectionMode(book)
+                    updateSelectionUi()
+                }
+            })
             findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).layoutManager = LinearLayoutManager(this)
             findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
 
@@ -134,10 +142,15 @@ class MainActivity : AppCompatActivity() {
 
             val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
             toolbar.inflateMenu(R.menu.main_menu)
+            baseMenu = toolbar.menu
             toolbar.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     R.id.action_download -> {
                         showDownloadDialog()
+                        true
+                    }
+                    R.id.action_select -> {
+                        enterSelectionMode()
                         true
                     }
                     R.id.action_load_library -> {
@@ -164,6 +177,14 @@ class MainActivity : AppCompatActivity() {
                         showSearchDialog()
                         true
                     }
+                    R.id.action_update_selected -> {
+                        updateSelectedBooks()
+                        true
+                    }
+                    R.id.action_cancel_selection -> {
+                        clearSelectionMode()
+                        true
+                    }
                     else -> false
                 }
             }
@@ -177,6 +198,11 @@ class MainActivity : AppCompatActivity() {
                     .show()
             }
         }
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
     }
 
     private fun toast(text: String) {
@@ -202,11 +228,6 @@ class MainActivity : AppCompatActivity() {
         toast(message)
     }
 
-    private fun chooseCover(existing: String?, returned: String?): String {
-        val newCover = returned?.trim().orEmpty()
-        return if (newCover.isNotEmpty()) newCover else existing?.trim().orEmpty()
-    }
-
     private fun getPythonBridge(): PythonBridge? = pythonBridge
 
     private fun updateEmptyState() {
@@ -215,12 +236,73 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun syncBooks(books: List<BookItem>) {
-        bookAdapter = BookAdapter(books) { book ->
+        bookAdapter = BookAdapter(books, { book ->
             selectedBook = book
-            showBookOptionsDialog(book)
-        }
+            if (bookAdapter.isSelectionMode()) {
+                bookAdapter.toggleSelection(book)
+                updateSelectionUi()
+            } else {
+                showBookOptionsDialog(book)
+            }
+        }, { book ->
+            if (!bookAdapter.isSelectionMode()) {
+                bookAdapter.enterSelectionMode(book)
+                updateSelectionUi()
+            }
+        })
         findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
         updateEmptyState()
+    }
+
+    private fun enterSelectionMode() {
+        bookAdapter.enterSelectionMode(viewModel.getBooksSnapshot().firstOrNull() ?: return)
+        updateSelectionUi()
+        swapMenu(true)
+    }
+
+    private fun updateSelectionUi() {
+        val count = bookAdapter.getSelectedBooks().size
+        if (count == 0 || !bookAdapter.isSelectionMode()) {
+            clearSelectionMode()
+            return
+        }
+        statusContainer?.visibility = android.view.View.VISIBLE
+        statusProgress?.visibility = android.view.View.GONE
+        statusText?.text = "$count selected"
+    }
+
+    private fun clearSelectionMode() {
+        bookAdapter.clearSelection()
+        statusContainer?.visibility = android.view.View.GONE
+        swapMenu(false)
+    }
+
+    private fun updateSelectedBooks() {
+        val selected = bookAdapter.getSelectedBooks().filter { it.url.isNotBlank() }
+        if (selected.isEmpty()) {
+            toast("No updatable books selected")
+            return
+        }
+        toast("Updating ${selected.size} books...")
+        for (book in selected) {
+            viewModel.enqueueUpdate(0, book.uriString)
+        }
+        clearSelectionMode()
+    }
+
+    private fun swapMenu(selecting: Boolean) {
+        val menu = if (selecting) R.menu.selection_menu else R.menu.main_menu
+        val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+        toolbar.menu.clear()
+        toolbar.inflateMenu(menu)
+    }
+
+    override fun onBackPressed() {
+        if (bookAdapter.isSelectionMode()) {
+            clearSelectionMode()
+            return
+        }
+        super.onBackPressed()
     }
 
     private fun showBookOptionsDialog(book: BookItem) {
@@ -340,14 +422,12 @@ class MainActivity : AppCompatActivity() {
             DiagnosticLog.append(this, "Main.Update", "enqueued_metadata url=$url")
         }
         AlertDialog.Builder(this)
-            .setTitle("FanFicFare")
             .setView(view)
             .setNegativeButton("Close", null)
             .show()
     }
 
     private fun showLoadLibraryDialog() {
-        val current = if (!libraryFolderPath.isNullOrBlank()) "Path: $libraryFolderPath" else "Not configured"
         val options = mutableListOf<String>()
         options.add("Current")
         options.add("Change Folder...")
@@ -544,9 +624,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSortDialog() {
         val options = arrayOf("Date Added", "Title", "Author", "Chapters", "Size")
+        val currentSort = viewModel.getCurrentSort()
+        val checked = when (currentSort) {
+            "title" -> 1
+            "author" -> 2
+            "chapters" -> 3
+            "size" -> 4
+            else -> 0
+        }
         AlertDialog.Builder(this)
             .setTitle("Sort By")
-            .setItems(options) { _, which ->
+            .setSingleChoiceItems(options, checked) { _, which ->
                 val sort = when (which) {
                     1 -> "title"
                     2 -> "author"
@@ -557,6 +645,7 @@ class MainActivity : AppCompatActivity() {
                 viewModel.setSort(sort)
                 syncBooks(viewModel.getBooksSnapshot())
             }
+            .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
             .show()
     }
 

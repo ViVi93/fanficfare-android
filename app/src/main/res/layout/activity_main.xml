@@ -12,34 +12,13 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            app:title="FanFicFare"
-            app:popupTheme="@style/ThemeOverlay.AppCompat.Light" />
+            app:popupTheme="@style/ThemeOverlay.AppCompat.Light"
+            app:contentInsetStart="0dp"
+            app:contentInsetLeft="0dp">
 
-        <LinearLayout
-            android:id="@+id/status_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:padding="8dp"
-            android:gravity="center_vertical"
-            android:visibility="gone">
+            <include layout="@layout/status_ui" />
 
-            <ProgressBar
-                android:id="@+id/status_progress"
-                style="?android:attr/progressBarStyleSmall"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center_vertical" />
-
-            <TextView
-                android:id="@+id/status_text"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:textAppearance="@style/TextAppearance.AppCompat.Small" />
-
-        </LinearLayout>
+        </androidx.appcompat.widget.Toolbar>
 
     </com.google.android.material.appbar.AppBarLayout>
 

@@ -2,10 +2,12 @@ package com.example.fanficfare
 
 import android.content.ClipData
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.text.format.DateFormat
+import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.ImageView
@@ -17,6 +19,10 @@ import org.json.JSONObject
 import java.io.File
 
 class BookDetailActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "BookDetailDiag"
+    }
 
     private lateinit var bookTitle: String
     private lateinit var bookAuthor: String
@@ -31,6 +37,7 @@ class BookDetailActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_book_detail)
+        Log.d(TAG, "BOOK_DETAILS ENTER")
 
         bookTitle = intent.getStringExtra("title") ?: ""
         bookAuthor = intent.getStringExtra("author") ?: ""
@@ -39,9 +46,19 @@ class BookDetailActivity : AppCompatActivity() {
         bookModified = intent.getLongExtra("modified", 0L)
         bookSize = intent.getLongExtra("size", 0L)
         bookChapters = intent.getIntExtra("chapters", 0)
-        bookCover = intent.getStringExtra("cover")
         bookUrl = intent.getStringExtra("url") ?: ""
+        Log.d(TAG, "intent_extras_read")
 
+        val coverFile = File(bookPath)
+        val fileSize = if (coverFile.exists()) coverFile.length() else -1
+        Log.d(
+            TAG,
+            "metadata_fields_assigned title_len=${bookTitle.length} author_len=${bookAuthor.length} " +
+                "path=$bookPath source=${bookSource ?: "<null>"} modified=$bookModified size=$fileSize " +
+                "chapters=$bookChapters url=$bookUrl"
+        )
+
+        Log.d(TAG, "layout_inflated")
         val cover = findViewById<ImageView>(R.id.imageCover)
         val title = findViewById<TextView>(R.id.textTitle)
         val author = findViewById<TextView>(R.id.textAuthor)
@@ -61,35 +78,11 @@ class BookDetailActivity : AppCompatActivity() {
         modified.text = if (bookModified > 0) {
             DateFormat.format("yyyy-MM-dd HH:mm", bookModified).toString()
         } else {
-            val file = File(bookPath)
-            if (file.exists()) DateFormat.format("yyyy-MM-dd HH:mm", file.lastModified()).toString() else "Unknown date"
+            if (coverFile.exists()) DateFormat.format("yyyy-MM-dd HH:mm", coverFile.lastModified()).toString() else "Unknown date"
         }
 
-        val coverData = bookCover
-        if (!coverData.isNullOrBlank() && coverData.startsWith("data:")) {
-            try {
-                val comma = coverData.indexOf(",")
-                if (comma > 0) {
-                    val base64 = coverData.substring(comma + 1)
-                    val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    if (bitmap != null) {
-                        cover.setImageBitmap(bitmap)
-                        cover.visibility = View.VISIBLE
-                    } else {
-                        // TEMP DIAGNOSTIC: BitmapFactory returned null
-                        cover.visibility = View.GONE
-                    }
-                } else {
-                    cover.visibility = View.GONE
-                }
-            } catch (e: Exception) {
-                android.util.Log.d("FFF-Cover", "decodeByteArray failed: type=" + e.javaClass.simpleName + " msg=" + (e.message ?: ""))
-                cover.visibility = View.GONE
-            }
-        } else {
-            cover.visibility = View.GONE
-        }
+        Log.d(TAG, "ui_population_complete")
+        loadCoverFromEpub(coverFile, cover)
 
         val buttonUrl = findViewById<Button>(R.id.buttonUrl)
         if (bookUrl.isBlank()) {
@@ -106,6 +99,54 @@ class BookDetailActivity : AppCompatActivity() {
         findViewById<Button>(R.id.buttonForce).setOnClickListener { forceDownloadBook() }
         findViewById<Button>(R.id.buttonShare).setOnClickListener { shareBook() }
         findViewById<Button>(R.id.buttonDelete).setOnClickListener { deleteBook() }
+    }
+
+    private fun loadCoverFromEpub(epubFile: File, coverView: ImageView) {
+        Log.d(TAG, "cover_processing_start path=${epubFile.absolutePath} exists=${epubFile.exists()}")
+        if (!epubFile.exists() || !epubFile.isFile) {
+            coverView.visibility = View.GONE
+            Log.d(TAG, "cover_processing_complete result=missing_file")
+            return
+        }
+        val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
+            coverView.visibility = View.GONE
+            Log.d(TAG, "cover_processing_complete result=bridge_unavailable")
+            return
+        }
+        try {
+            val raw = bridge.getCoverFromEpub(epubFile.absolutePath)
+            Log.d(TAG, "cover_bridge_returned=${!raw.isNullOrBlank()}")
+            val result = org.json.JSONObject(raw ?: "{}")
+            val coverData = result.optString("cover", "")
+            if (coverData.isBlank() || !coverData.startsWith("data:")) {
+                coverView.visibility = View.GONE
+                Log.d(TAG, "cover_processing_complete result=no_cover_data")
+                return
+            }
+            val comma = coverData.indexOf(",")
+            if (comma <= 0) {
+                coverView.visibility = View.GONE
+                Log.d(TAG, "cover_processing_complete result=missing_comma")
+                return
+            }
+            val base64 = coverData.substring(comma + 1)
+            val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
+            val bitmap = decodeSampledBitmap(bytes, 160)
+            if (bitmap != null) {
+                coverView.setImageBitmap(bitmap)
+                coverView.visibility = View.VISIBLE
+                Log.d(
+                    TAG,
+                    "cover_processing_complete result=bitmap width=${bitmap.width} height=${bitmap.height} bytes=${bytes.size} original=${result.optInt("original_bytes", 0)} jpeg=${result.optInt("jpeg_bytes", 0)}"
+                )
+            } else {
+                coverView.visibility = View.GONE
+                Log.d(TAG, "cover_processing_complete result=null_bitmap bytes=${bytes.size}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "cover_processing_failed type=${e.javaClass.simpleName} msg=${e.message ?: ""}")
+            coverView.visibility = View.GONE
+        }
     }
 
     private fun openBook() {
@@ -140,7 +181,6 @@ class BookDetailActivity : AppCompatActivity() {
             return
         }
         DiagnosticLog.append(this, "Detail.Update", "validation_passed url=$url")
-        setStatus("Updating...")
         DiagnosticLog.append(this, "Detail.Update", "starting")
         Thread {
             val resultJson = try {
@@ -225,7 +265,6 @@ class BookDetailActivity : AppCompatActivity() {
             return
         }
         DiagnosticLog.append(this, "Detail.ForceDownload", "validation_passed url=$url")
-        setStatus("Force downloading...")
         DiagnosticLog.append(this, "Detail.ForceDownload", "starting")
         Thread {
             val resultJson = try {
@@ -364,10 +403,28 @@ class BookDetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun setStatus(text: String) {
-        runOnUiThread {
-            findViewById<TextView>(R.id.textStatus).text = text
+    private fun decodeSampledBitmap(data: ByteArray, maxDim: Int): Bitmap? {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(data, 0, data.size, opts)
+        val scale = calculateInSampleSize(opts, maxDim, maxDim)
+        return BitmapFactory.Options().apply {
+            inJustDecodeBounds = false
+            inSampleSize = scale
+        }.let { BitmapFactory.decodeByteArray(data, 0, data.size, it) }
+    }
+
+    private fun calculateInSampleSize(opts: BitmapFactory.Options, reqW: Int, reqH: Int): Int {
+        var h = opts.outHeight
+        var w = opts.outWidth
+        var inSampleSize = 1
+        if (h > reqH || w > reqW) {
+            val halfH = h / 2
+            val halfW = w / 2
+            while (halfH / inSampleSize >= reqH && halfW / inSampleSize >= reqW) {
+                inSampleSize *= 2
+            }
         }
+        return inSampleSize
     }
 
     private fun showError(message: String) {

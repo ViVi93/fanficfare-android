@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.MenuItem
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
@@ -58,7 +59,7 @@ class MainActivity : AppCompatActivity() {
             action()
         } else {
             requestStoragePermission {
-                if (hasStoragePermission()) action() else setStatus("Storage permission denied")
+                if (hasStoragePermission()) action() else toast("Storage permission denied")
             }
         }
     }
@@ -71,15 +72,15 @@ class MainActivity : AppCompatActivity() {
             try {
                 Python.start(com.chaquo.python.android.AndroidPlatform(this))
             } catch (e: Exception) {
-                setStatus("Python init failed: ${e.message}")
+                toast("Python init failed: ${e.message}")
             }
         }
         pythonBridge = PythonBridge(this)
         pythonBridge?.getInitError()?.let { error ->
-            setStatus("Bridge init failed: $error")
+            toast("Bridge init failed: $error")
         }
         pythonBridge?.getFanFicFareError()?.let { error ->
-            setStatus("FanFicFare init failed: $error")
+            toast("FanFicFare init failed: $error")
         }
 
         bookAdapter = BookAdapter(downloads) { book ->
@@ -89,17 +90,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).layoutManager = LinearLayoutManager(this)
         findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
 
-        findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fabPickFolder).setOnClickListener {
-            showDownloadDialog()
-        }
-        findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fabLoadLibrary).setOnClickListener {
-            showLoadLibraryDialog()
-        }
-
         updateEmptyState()
         loadPersistedLibrary()
 
-        findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar).setOnMenuItemClickListener { item ->
+        val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+        toolbar.inflateMenu(R.menu.main_menu)
+        toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_download -> {
                     showDownloadDialog()
@@ -114,7 +110,7 @@ class MainActivity : AppCompatActivity() {
                     true
                 }
                 R.id.action_diagnostics -> {
-                    startActivity(android.content.Intent(this, DiagnosticsActivity::class.java))
+                    startActivity(Intent(this, DiagnosticsActivity::class.java))
                     true
                 }
                 R.id.action_refresh_all -> {
@@ -134,20 +130,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setStatus(text: String) {
-        findViewById<TextView>(R.id.textStatus).text = text
-    }
-
     private fun toast(text: String) {
         android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show()
     }
 
     private fun showError(message: String) {
-        setStatus(message)
         toast(message)
     }
 
-    fun getPythonBridge(): PythonBridge? = pythonBridge
+    private fun chooseCover(existing: String?, returned: String?): String {
+        val newCover = returned?.trim().orEmpty()
+        return if (newCover.isNotEmpty()) newCover else existing?.trim().orEmpty()
+    }
+
+    private fun getPythonBridge(): PythonBridge? = pythonBridge
 
     private fun findBookByIdentity(book: BookItem): Int {
         val byUrl = downloads.indexOfFirst { it.url.isNotBlank() && it.url == book.url }
@@ -172,7 +168,6 @@ class MainActivity : AppCompatActivity() {
         }
         options.add("Details")
         options.add("Delete")
-        options.add("Show Path")
 
         AlertDialog.Builder(this)
             .setTitle(book.title.ifBlank { "Book" })
@@ -183,7 +178,6 @@ class MainActivity : AppCompatActivity() {
                     "Force Download" -> forceDownloadBook(book)
                     "Details" -> openBookDetail(book)
                     "Delete" -> deleteBook(book)
-                    "Show Path" -> showPath(book)
                 }
             }
             .setNegativeButton("Close", null)
@@ -197,7 +191,6 @@ class MainActivity : AppCompatActivity() {
             .putExtra("path", book.uriString)
             .putExtra("modified", book.lastModified)
             .putExtra("size", book.sizeBytes)
-            .putExtra("cover", book.coverUriString)
             .putExtra("url", book.url)
             .putExtra("chapters", book.chapters)
         startActivityForResult(intent, REQUEST_BOOK_DETAIL)
@@ -208,10 +201,10 @@ class MainActivity : AppCompatActivity() {
         val url = book.url
         if (url.isBlank()) {
             DiagnosticLog.append(this, "Main.Update", "validation_failed=blank_url")
-            setStatus("No URL found for this book")
+            toast("No URL found for this book")
             return
         }
-        setStatus("Updating...")
+        toast("Updating...")
         DiagnosticLog.append(this, "Main.Update", "starting")
         Thread {
             val resultJson = try {
@@ -272,7 +265,7 @@ class MainActivity : AppCompatActivity() {
                             DiagnosticLog.append(this, "Main.Update", "list_update idx=$idx finalPath=$finalPath")
                             if (idx >= 0) downloads[idx] = updated else downloads.add(0, updated)
                             bookAdapter.notifyDataSetChanged()
-                            setStatus("Updated: $title")
+                            toast("Updated: $title")
                             persistLibrary()
                             DiagnosticLog.append(this, "Main.Update", "result=SUCCESS title=$title path=$finalPath")
                         } catch (e: Exception) {
@@ -296,10 +289,10 @@ class MainActivity : AppCompatActivity() {
         val url = book.url
         if (url.isBlank()) {
             DiagnosticLog.append(this, "Main.ForceDownload", "validation_failed=blank_url")
-            setStatus("No URL found for this book")
+            toast("No URL found for this book")
             return
         }
-        setStatus("Force downloading...")
+        toast("Force downloading...")
         DiagnosticLog.append(this, "Main.ForceDownload", "starting")
         Thread {
             val resultJson = try {
@@ -339,21 +332,27 @@ class MainActivity : AppCompatActivity() {
                                         uriString = finalPath,
                                         lastModified = result.optLong("modified", System.currentTimeMillis()),
                                         sizeBytes = result.optLong("size", 0L),
-                                        coverUriString = result.optString("cover", book.coverUriString ?: ""),
+                                        coverUriString = chooseCover(book.coverUriString, result.optString("cover")),
                                         url = result.optString("url", book.url ?: ""),
                                         chapters = result.optInt("chapters", 0)
                                     )
+                                    val fileObj = result.optJSONObject("file")
+                                    val fileLog = if (fileObj != null) {
+                                        "exists_before=${fileObj.optBoolean("exists_before")} size_before=${fileObj.optString("size_before", "<null>")} mtime_before=${fileObj.optString("mtime_before", "<null>")} exists_after=${fileObj.optBoolean("exists_after")} size_after=${fileObj.optString("size_after", "<null>")} mtime_after=${fileObj.optString("mtime_after", "<null>")} changed=${fileObj.optBoolean("changed")}"
+                                    } else {
+                                        "file_state=missing"
+                                    }
                                     val idx = findBookByIdentity(book)
-                                    DiagnosticLog.append(this, "Main.ForceDownload", "list_update idx=$idx finalPath=$finalPath")
+                                    DiagnosticLog.append(this, "Main.ForceDownload", "list_update idx=$idx finalPath=$finalPath $fileLog")
                                     if (idx >= 0) downloads[idx] = updated else downloads.add(0, updated)
                                     bookAdapter.notifyDataSetChanged()
-                                    setStatus("Downloaded: $title")
+                                    toast("Downloaded: $title")
                                     toast("Downloaded: $title")
                                     persistLibrary()
-                                    DiagnosticLog.append(this, "Main.ForceDownload", "result=SUCCESS title=$title path=$finalPath")
+                                    DiagnosticLog.append(this, "Main.ForceDownload", "result=SUCCESS title=$title path=$finalPath $fileLog")
                                 } else {
                                     DiagnosticLog.append(this, "Main.ForceDownload", "result=SUCCESS missing_source_file=$internalPath")
-                                    setStatus("Downloaded: $title")
+                                    toast("Downloaded: $title")
                                     toast("Downloaded: $title")
                                     persistLibrary()
                                 }
@@ -363,7 +362,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         } else {
                             DiagnosticLog.append(this, "Main.ForceDownload", "result=SUCCESS empty_internal_path")
-                            setStatus("Downloaded: $title")
+                            toast("Downloaded: $title")
                             toast("Downloaded: $title")
                             persistLibrary()
                         }
@@ -394,7 +393,7 @@ class MainActivity : AppCompatActivity() {
                             downloads.remove(book)
                             bookAdapter.notifyDataSetChanged()
                             updateEmptyState()
-                            setStatus("Deleted")
+                            toast("Deleted")
                             persistLibrary()
                         } else {
                             showError("Delete failed")
@@ -403,14 +402,6 @@ class MainActivity : AppCompatActivity() {
                 }.start()
             }
             .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun showPath(book: BookItem) {
-        AlertDialog.Builder(this)
-            .setTitle("Path")
-            .setMessage(book.uriString)
-            .setPositiveButton("OK", null)
             .show()
     }
 
@@ -434,12 +425,32 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<android.widget.Button>(R.id.buttonDownload).setOnClickListener {
             val url = input.text.toString().trim()
             if (url.isBlank()) return@setOnClickListener
-            setStatus("Downloading...")
+            toast("Downloading...")
             Thread {
+                DiagnosticLog.append(this, "Main.Download", "START url=$url")
+                val startMs = System.currentTimeMillis()
+                val watchdog = android.os.Handler(mainLooper)
+                val watchdogRunnable = object : Runnable {
+                    override fun run() {
+                        val elapsed = (System.currentTimeMillis() - startMs) / 1000
+                        DiagnosticLog.append(this@MainActivity, "Main.Download", "RUNNING elapsed=${elapsed}s")
+                        watchdog.postDelayed(this, 15000)
+                    }
+                }
+                watchdog.postDelayed(watchdogRunnable, 15000)
                 val resultJson = try {
-                    pythonBridge?.fanficfareDownload(url, filesDir.absolutePath)
+                    DiagnosticLog.append(this, "Main.Download", "bridge_call method=fanficfareDownload url=$url outDir=${filesDir.absolutePath}")
+                    val callStart = System.currentTimeMillis()
+                    val raw = pythonBridge?.fanficfareDownload(url, filesDir.absolutePath)
                         ?: """{"ok":false,"error":"bridge missing"}"""
+                    val elapsedCall = System.currentTimeMillis() - callStart
+                    watchdog.removeCallbacksAndMessages(null)
+                    DiagnosticLog.append(this, "Main.Download", "bridge_returned=${raw != null} elapsed=${elapsedCall}ms")
+                    DiagnosticLog.append(this, "Main.Download", "Python.debug=${pythonBridge?.readDownloadDebug()?.replace("\n", " ") ?: "<null>"}")
+                    raw
                 } catch (e: Exception) {
+                    watchdog.removeCallbacksAndMessages(null)
+                    DiagnosticLog.appendException(this, "Main.Download", "bridge_exception", e)
                     """{"ok":false,"error":${JSONObject().put("msg", e.message).toString()}}"""
                 }
                 val result = json(resultJson)
@@ -459,7 +470,8 @@ class MainActivity : AppCompatActivity() {
                                 return@runOnUiThread
                             }
                             val finalPath = copyToOutputDir(source, outputDir)
-                            setStatus("Saved: $title")
+                            toast("Downloaded: $title")
+                            toast("Downloaded: $title")
                             val author = result.optString("author", "")
                             val url = result.optString("url", "")
                             val chapters = result.optInt("chapters", 0)
@@ -476,36 +488,51 @@ class MainActivity : AppCompatActivity() {
                             bookAdapter.notifyDataSetChanged()
                             updateEmptyState()
                             persistLibrary()
+                            DiagnosticLog.append(this, "Main.Download", "result=SUCCESS")
                         } catch (e: Exception) {
+                            DiagnosticLog.appendException(this, "Main.Download", "copy_output_exception", e)
                             showError("Download failed: ${e.message}")
                         }
                     } else {
                         val errorMsg = result?.optString("error") ?: "unknown"
                         val detail = result?.optString("detail")
                         val fullMsg = if (!detail.isNullOrBlank()) "$errorMsg\n$detail" else errorMsg
+                        DiagnosticLog.append(this, "Main.Download", "result=FAILED $fullMsg")
                         showError("Download failed: $fullMsg")
                     }
+                    DiagnosticLog.append(this, "Main.Download", "END")
                 }
             }.start()
         }
         view.findViewById<android.widget.Button>(R.id.buttonUpdate).setOnClickListener {
             val url = input.text.toString().trim()
             if (url.isBlank()) return@setOnClickListener
-            setStatus("Updating...")
+            toast("Updating...")
             Thread {
+                DiagnosticLog.append(this, "Main.Update", "START url=$url")
                 val resultJson = try {
-                    pythonBridge?.fanficfareMetadata(url)
+                    DiagnosticLog.append(this, "Main.Update", "bridge_start")
+                    val raw = pythonBridge?.fanficfareMetadata(url)
                         ?: """{"ok":false,"error":"bridge missing"}"""
+                    DiagnosticLog.append(this, "Main.Update", "bridge_returned=${raw != null}")
+                    raw
                 } catch (e: Exception) {
+                    DiagnosticLog.appendException(this, "Main.Update", "bridge_exception", e)
                     """{"ok":false,"error":${JSONObject().put("msg", e.message).toString()}}"""
                 }
                 val result = json(resultJson)
                 runOnUiThread {
                     if (result?.optBoolean("ok") == true) {
-                        setStatus("Metadata fetched")
+                        toast("Metadata fetched")
+                        DiagnosticLog.append(this, "Main.Update", "result=SUCCESS")
                     } else {
-                        showError("Update check failed: ${result?.optString("error") ?: "unknown"}")
+                        val errorMsg = result?.optString("error") ?: "unknown"
+                        val detail = result?.optString("detail")
+                        val fullMsg = if (!detail.isNullOrBlank()) "$errorMsg\n$detail" else errorMsg
+                        DiagnosticLog.append(this, "Main.Update", "result=FAILED $fullMsg")
+                        showError("Update check failed: $fullMsg")
                     }
+                    DiagnosticLog.append(this, "Main.Update", "END")
                 }
             }.start()
         }
@@ -514,56 +541,6 @@ class MainActivity : AppCompatActivity() {
             .setView(view)
             .setNegativeButton("Close", null)
             .show()
-        view.findViewById<android.widget.Button>(R.id.buttonDiagnose).setOnClickListener {
-            setStatus("Diagnosing...")
-            Thread {
-                val resultJson = pythonBridge?.diagnoseFanFicFareImports()
-                    ?: """{"ok":false,"error":"bridge missing"}"""
-                val result = json(resultJson)
-                runOnUiThread {
-                    val sb = StringBuilder()
-                    sb.append("Diagnostics:\n")
-                    val arr = result?.optJSONArray("results")
-                    if (arr != null) {
-                        for (i in 0 until arr.length()) {
-                            val r = arr.getJSONObject(i)
-                            val test = r.optString("test")
-                            sb.append(if (r.optBoolean("ok")) "[OK] " else "[FAIL] ")
-                            sb.append(test)
-                            if (!r.optBoolean("ok")) {
-                                sb.append("\n  ")
-                                sb.append(r.optString("error_type", "Error"))
-                                sb.append(": ")
-                                sb.append(r.optString("error", ""))
-                                val tb = r.optString("traceback")
-                                if (!tb.isNullOrBlank()) {
-                                    sb.append("\n")
-                                    sb.append(tb)
-                                }
-                            }
-                            sb.append("\n")
-                        }
-                    }
-                    val diag = sb.toString().trim()
-                    val log = DiagnosticLog.getText(this)
-                    val summary = StringBuilder()
-                    summary.append(diag)
-                    summary.append("\n\nLog summary: ")
-                    summary.append(log.lines().size)
-                    summary.append(" lines\nLast events:\n")
-                    log.lines().takeLast(20).forEach { summary.append(it).append("\n") }
-                    setStatus(summary.toString().trim())
-                    AlertDialog.Builder(this)
-                        .setTitle("FanFicFare Diagnostics")
-                        .setMessage(summary.toString().trim())
-                        .setPositiveButton("Open Full Diagnostics") { _, _ ->
-                            startActivity(Intent(this, DiagnosticsActivity::class.java))
-                        }
-                        .setNegativeButton("Close", null)
-                        .show()
-                }
-            }.start()
-        }
     }
 
     private fun showLoadLibraryDialog() {
@@ -591,7 +568,7 @@ class MainActivity : AppCompatActivity() {
                         downloads.clear()
                         bookAdapter.notifyDataSetChanged()
                         updateEmptyState()
-                        setStatus("Library folder cleared")
+                        toast("Library folder cleared")
                     }
                 }
             }
@@ -624,7 +601,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scanSavedLibraryFolder() {
-        setStatus("Scanning saved library folder...")
+        toast("Scanning saved library folder...")
         val path = libraryFolderPath
         if (path.isNullOrBlank()) {
             showError("No saved library folder path")
@@ -639,7 +616,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scanManualEpubDir(folder: java.io.File) {
-        setStatus("Scanning ${folder.absolutePath}...")
+        toast("Scanning ${folder.absolutePath}...")
         Thread {
             val resultJson = pythonBridge?.scanEpubDir(folder.absolutePath)
                 ?: """{"ok":false,"error":"bridge missing"}"""
@@ -669,7 +646,7 @@ class MainActivity : AppCompatActivity() {
                     downloads.sortByDescending { it.lastModified }
                     bookAdapter.notifyDataSetChanged()
                     updateEmptyState()
-                    setStatus("Loaded ${downloads.size} EPUBs")
+                    toast("Loaded ${downloads.size} EPUBs")
                     persistLibrary()
                 } else {
                     showError("Scan failed: ${result?.optString("error") ?: "unknown"}")
@@ -734,7 +711,7 @@ class MainActivity : AppCompatActivity() {
                 ?: """{"ok":false,"error":"bridge missing"}"""
             val result = json(resultJson)
             if (result?.optBoolean("ok") != true) {
-                runOnUiThread { setStatus("Save index failed") }
+                runOnUiThread { toast("Save index failed") }
             }
         }.start()
     }
@@ -890,10 +867,10 @@ class MainActivity : AppCompatActivity() {
     private fun refreshAllBooks() {
         val updatable = downloads.filter { it.url.isNotBlank() }
         if (updatable.isEmpty()) {
-            setStatus("No updatable books")
+            toast("No updatable books")
             return
         }
-        setStatus("Refreshing ${updatable.size} books...")
+        toast("Refreshing ${updatable.size} books...")
         Thread {
             var successCount = 0
             var failCount = 0
@@ -928,7 +905,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             runOnUiThread {
-                setStatus("Refresh complete. Updated: $successCount, Failed: $failCount")
+                toast("Refresh complete. Updated: $successCount, Failed: $failCount")
                 persistLibrary()
             }
         }.start()

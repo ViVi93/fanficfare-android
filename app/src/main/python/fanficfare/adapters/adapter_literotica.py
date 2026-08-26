@@ -29,6 +29,12 @@ from urllib import parse as urlparse
 
 from .base_adapter import BaseSiteAdapter, makeDate
 
+try:
+    from fanficfare_bridge import _download_debug_write
+except Exception:
+    def _download_debug_write(line):
+        pass
+
 LANG_LIST = ('www', 'spanish', 'german', 'french', 'dutch', 'italian',
              'romanian', 'portuguese', 'afrikaans', 'bengali', 'chinese', 'danish',
              'esperanto', 'finnish', 'japanese', 'norwegian', 'polish', 'russian',
@@ -161,12 +167,17 @@ class LiteroticaSiteAdapter(BaseSiteAdapter):
         So /series/se/ will be the story URL for multi chapters but
         keep individual 'chapter' URL for one-shots.
         """
+        _download_debug_write("literotica.extractChapterUrlsAndMetadata START url={}".format(self.url))
         logger.debug("Chapter/Story URL: <%s> " % self.url)
+        _download_debug_write("literotica.effective_is_adult=%s" % (self.is_adult or self.getConfig("is_adult")))
 
         if not (self.is_adult or self.getConfig("is_adult")):
+            _download_debug_write("literotica.extractChapterUrlsAndMetadata adult_check_failed")
             raise exceptions.AdultCheckRequired(self.url)
 
+        _download_debug_write("literotica.extractChapterUrlsAndMetadata request_start")
         (data,rurl) = self.get_request_redirected(self.url)
+        _download_debug_write("literotica.extractChapterUrlsAndMetadata request_returned status={}".format("ok" if data else "empty"))
         # logger.debug(data)
         ## for language domains
         logger.debug("set opened url:%s"%rurl)

@@ -13,7 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
 
 import logging
 logger = logging.getLogger(__name__)
@@ -47,15 +46,18 @@ class RequestsFetcher(Fetcher):
             self.requests_session.cookies = self.cookiejar
 
     def make_retries(self):
-        return Retry(total=4,
+        return Retry(total=5,
                      other=0, # rather fail SSL errors/etc quick
-                     backoff_factor=2,# factor 2=4,8,16sec
+                     backoff_factor=1,# factor 1=2,4,8,16sec
                      allowed_methods={'GET','POST'},
                      status_forcelist={413, 429, 500, 502, 503, 504},
                      raise_on_status=False) # to match w/o retries behavior
 
     def make_sesssion(self):
-        return requests.Session()
+        session = requests.Session()
+        if not session.headers.get('User-Agent'):
+            session.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        return session
 
     def do_mounts(self,session):
         if self.getConfig('use_ssl_default_seclevelone',False):

@@ -1,6 +1,8 @@
 import json
 import os
 import sys
+import tempfile
+import time
 import traceback
 import zipfile
 import xml.etree.ElementTree as ET
@@ -9,9 +11,36 @@ SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
+from fanficfare_config import get_config_status, get_personal_ini_path, get_bundled_defaults_path
+
 _FANFICFARE_AVAILABLE = None
 _FANFICFARE_ERROR = None
 _FANFICFARE_TRACEBACK = None
+_DOWNLOAD_DEBUG_PATH = os.path.join(tempfile.gettempdir(), "fanficfare_download_debug.log")
+
+
+def _download_debug_write(line):
+    try:
+        with open(_DOWNLOAD_DEBUG_PATH, "a", encoding="utf-8") as f:
+            f.write("[{}] {}\n".format(time.strftime("%H:%M:%S"), line))
+    except Exception:
+        pass
+
+
+def _download_debug_clear():
+    try:
+        with open(_DOWNLOAD_DEBUG_PATH, "w", encoding="utf-8") as f:
+            f.write("")
+    except Exception:
+        pass
+
+
+def _download_debug_read():
+    try:
+        with open(_DOWNLOAD_DEBUG_PATH, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return ""
 
 
 def _import_fanficfare():
@@ -64,6 +93,102 @@ def diagnose_fanficfare_imports():
     return json.dumps({"ok": True, "results": results})
 
 
+def get_login_status(url):
+    try:
+        from fanficfare import adapters
+        sections = adapters.getConfigSectionsFor(url)
+        personal = get_personal_ini_path()
+        try:
+            from fanficfare.configurable import Configuration
+            cfg = Configuration(sections, "epub")
+            bundled = get_bundled_defaults_path()
+            if bundled and os.path.isfile(bundled):
+                cfg.read(bundled)
+            if personal and os.path.isfile(personal):
+                cfg.read(personal)
+            cfg.addUrlConfigSection(url)
+            username_present = False
+            password_present = False
+            matched_section = None
+            login_keys = []
+            always_login = None
+            for section in sections:
+                try:
+                    if cfg.has_section(section):
+                        matched_section = section
+                        options = cfg.options(section) if hasattr(cfg, "options") else []
+                        for key in options:
+                            lowered = key.lower()
+                            login_keys.append(key)
+                            if lowered == "username":
+                                username_present = bool(cfg.get(section, key, fallback=None))
+                            elif lowered == "password":
+                                password_present = bool(cfg.get(section, key, fallback=None))
+                except Exception:
+                    pass
+            try:
+                always_login = cfg.get("defaults", "always_login", fallback=None)
+            except Exception:
+                pass
+            site = None
+            try:
+                found = adapters._get_class_for(url)
+                if found and found[0]:
+                    site = found[0].getSiteDomain()
+            except Exception:
+                pass
+            return json.dumps({
+                "ok": True,
+                "site": site,
+                "sections": sections,
+                "matched_section": matched_section,
+                "username_present": username_present,
+                "password_present": password_present,
+                "always_login": always_login,
+                "login_keys": login_keys,
+            })
+        except Exception as e:
+            return json.dumps({
+                "ok": False,
+                "error": "{}: {}".format(type(e).__name__, e),
+                "sections": sections,
+                "personal_exists": os.path.isfile(personal) if personal else False,
+            })
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "{}: {}".format(type(e).__name__, e)})
+
+
+def get_literotica_config_status(url):
+    try:
+        from fanficfare import adapters
+        from fanficfare_config import build_configuration
+        sections = adapters.getConfigSectionsFor(url)
+        configuration = build_configuration(url, "epub")
+        adapter = adapters.getAdapter(configuration, url)
+        cfg_value = adapter.getConfig("is_adult", default=False)
+        raw_value = None
+        matched_section = None
+        for section in sections:
+            try:
+                if configuration.has_section(section):
+                    raw_value = configuration.get(section, "is_adult", fallback=None)
+                    matched_section = section
+                    break
+            except Exception:
+                continue
+        return json.dumps({
+            "ok": True,
+            "sections": sections,
+            "matched_section": matched_section,
+            "key": "is_adult",
+            "raw_present": raw_value is not None,
+            "raw_value": raw_value,
+            "configuration_value": cfg_value,
+        })
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "{}: {}".format(type(e).__name__, e)})
+
+
 def list_sites():
     if not _import_fanficfare():
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
@@ -81,12 +206,9 @@ def get_metadata(url):
     if not _import_fanficfare():
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
     try:
-        from fanficfare.configurable import Configuration
+        from fanficfare_config import build_configuration
+        configuration = build_configuration(url, "epub", overrides={"include_images": "coveronly"})
         from fanficfare import adapters
-        configuration = Configuration(["test1.com"], "epub")
-        configuration.add_section("overrides")
-        configuration.set("overrides", "include_images", "coveronly")
-        configuration.addUrlConfigSection(url)
         adapter = adapters.getAdapter(configuration, url)
         adapter.getStoryMetadataOnly()
         return json.dumps({
@@ -96,27 +218,44 @@ def get_metadata(url):
             "chapters": adapter.story.getChapterCount(),
         })
     except Exception as e:
-        return json.dumps({"ok": False, "error": "{}: {}".format(type(e).__name__, e), "exception_type": type(e).__name__, "detail": traceback.format_exc()})
+        return json.dumps({"ok": False, "error": str(e), "exception_type": type(e).__name__, "detail": traceback.format_exc()})
 
 
 def download_story(url, outDir):
     if not _import_fanficfare():
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
+    _download_debug_clear()
     try:
-        from fanficfare.configurable import Configuration
+        _download_debug_write("download_story ENTER url={}".format(url))
+        from fanficfare_config import build_configuration
         from fanficfare import adapters, writers
-        configuration = Configuration(["test1.com"], "epub")
-        configuration.add_section("overrides")
-        configuration.set("overrides", "include_images", "coveronly")
-        configuration.addUrlConfigSection(url)
+        _download_debug_write("download_story configuration_start")
+        t0 = time.time()
+        configuration = build_configuration(url, "epub", overrides={"include_images": "true"})
+        _download_debug_write("download_story configuration_ready elapsed={:.3f}s".format(time.time() - t0))
+        try:
+            cfg = configuration.get("defaults", "is_adult")
+        except Exception:
+            cfg = None
+        _download_debug_write("download_story configuration_is_adult={}".format(cfg))
+        t0 = time.time()
+        _download_debug_write("download_story adapter_start")
         adapter = adapters.getAdapter(configuration, url)
+        _download_debug_write("download_story adapter_ready elapsed={:.3f}s".format(time.time() - t0))
+        _download_debug_write("download_story writer_start")
+        t0 = time.time()
         writer = writers.getWriter("epub", configuration, adapter)
+        _download_debug_write("download_story writer_ready elapsed={:.3f}s".format(time.time() - t0))
         filename = writer.getOutputFileName()
         outpath = os.path.join(outDir, os.path.basename(filename))
+        _download_debug_write("download_story fanficfare_call_start")
+        t0 = time.time()
         with open(outpath, "wb") as out:
             writer.writeStory(outstream=out)
+        _download_debug_write("download_story fanficfare_call_returned elapsed={:.3f}s".format(time.time() - t0))
         stat = os.stat(outpath)
         meta = _extract_epub_metadata(outpath)
+        _download_debug_write("download_story RETURN")
         return json.dumps({
             "ok": True,
             "title": meta.get("title") or adapter.story.getMetadata("title") or filename,
@@ -129,7 +268,13 @@ def download_story(url, outDir):
             "size": stat.st_size,
         })
     except Exception as e:
-        return json.dumps({"ok": False, "error": str(e)})
+        _download_debug_write("download_story EXCEPTION type={} msg={}".format(type(e).__name__, e))
+        return json.dumps({
+            "ok": False,
+            "error": str(e),
+            "exception_type": type(e).__name__,
+            "detail": traceback.format_exc(),
+        })
 
 
 def _extract_epub_metadata(epubPath):
@@ -202,13 +347,14 @@ def _extract_epub_metadata(epubPath):
                 pass
 
         if chapters == 0:
+            has_title_page = any(name.lower().endswith("/title_page.xhtml") or name.lower() == "oebps/title_page.xhtml" for name in names)
             for name in names:
                 if name.lower().endswith(".ncx"):
                     try:
                         content = z.read(name).decode("utf-8", errors="ignore")
                         count = content.lower().count("<navpoint ")
                         if count > 0:
-                            chapters = count
+                            chapters = max(0, count - 1) if has_title_page else count
                     except Exception:
                         pass
 
@@ -309,16 +455,31 @@ def _get_dcsource_chaptercount(epubPath):
     return "", 0
 
 
+def get_cover_from_epub(epubPath):
+    try:
+        mime, data = _get_cover_img(epubPath)
+        if data is None:
+            return json.dumps({"ok": True, "cover": ""})
+        encoded = __import__("base64").b64encode(data).decode("ascii")
+        return json.dumps({
+            "ok": True,
+            "cover": "data:%s;base64,%s" % (mime, encoded),
+            "original_bytes": len(data),
+            "jpeg_bytes": len(data),
+        })
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e), "cover": ""})
+
+
 def _get_cover_img(epubPath):
     try:
         with zipfile.ZipFile(epubPath, "r") as z:
             for name in z.namelist():
-                if "/cover" in name.lower() or name.lower().endswith("/cover.jpg") or name.lower().endswith("/cover.png"):
+                lower = name.lower()
+                if lower.endswith((".jpg", ".jpeg", ".png")) and ("/cover" in lower or lower.endswith("/cover.jpg") or lower.endswith("/cover.png")):
                     try:
                         data = z.read(name)
-                        mime = "image/jpeg"
-                        if name.lower().endswith(".png"):
-                            mime = "image/png"
+                        mime = "image/png" if lower.endswith(".png") else "image/jpeg"
                         return mime, data
                     except Exception:
                         pass
@@ -383,16 +544,12 @@ def update_epub_from_path(epubPath, outDir):
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
     try:
         from fanficfare.epubutils import get_update_data, get_dcsource_chaptercount
-        from fanficfare.configurable import Configuration
         from fanficfare import adapters, writers
+        from fanficfare_config import build_configuration
         source, chaptercount = get_update_data(epubPath)[0:2]
         if not source:
             return json.dumps({"ok": False, "error": "No story URL found in epub"})
-        try:
-            configuration = Configuration(adapters.getConfigSectionsFor(source), "epub")
-        except Exception:
-            configuration = Configuration(["test1.com"], "epub")
-        configuration.addUrlConfigSection(source)
+        configuration = build_configuration(source, "epub", overrides={"include_images": "coveronly"})
         adapter = adapters.getAdapter(configuration, source)
         url, ch_begin, ch_end = adapters.get_url_chapter_range(source)
         adapter.setChaptersRange(ch_begin, ch_end)
@@ -441,16 +598,12 @@ def force_download_from_epub(epubPath, outDir):
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
     try:
         from fanficfare.epubutils import get_update_data
-        from fanficfare.configurable import Configuration
         from fanficfare import adapters, writers
+        from fanficfare_config import build_configuration
         source = get_update_data(epubPath)[0]
         if not source:
             return json.dumps({"ok": False, "error": "No story URL found in epub"})
-        try:
-            configuration = Configuration(adapters.getConfigSectionsFor(source), "epub")
-        except Exception:
-            configuration = Configuration(["test1.com"], "epub")
-        configuration.addUrlConfigSection(source)
+        configuration = build_configuration(source, "epub", overrides={"include_images": "coveronly"})
         adapter = adapters.getAdapter(configuration, source)
         url, ch_begin, ch_end = adapters.get_url_chapter_range(source)
         adapter.setChaptersRange(ch_begin, ch_end)
@@ -458,10 +611,24 @@ def force_download_from_epub(epubPath, outDir):
         writer = writers.getWriter("epub", configuration, adapter)
         filename = writer.getOutputFileName()
         outpath = os.path.join(outDir, os.path.basename(filename))
+        out_exists_before = False
+        out_size_before = None
+        out_mtime_before = None
+        try:
+            if os.path.exists(outpath):
+                st = os.stat(outpath)
+                out_exists_before = True
+                out_size_before = st.st_size
+                out_mtime_before = int(st.st_mtime * 1000)
+        except Exception:
+            pass
         with open(outpath, "wb") as out:
             writer.writeStory(outstream=out, metaonly=False)
         stat = os.stat(outpath)
         meta = _extract_epub_metadata(outpath)
+        out_exists_after = os.path.exists(outpath)
+        out_size_after = stat.st_size
+        out_mtime_after = int(stat.st_mtime * 1000)
         return json.dumps({
             "ok": True,
             "title": meta.get("title") or adapter.story.getMetadata("title") or filename,
@@ -470,8 +637,17 @@ def force_download_from_epub(epubPath, outDir):
             "cover": meta.get("cover") or "",
             "url": source,
             "path": outpath,
-            "modified": int(stat.st_mtime * 1000),
-            "size": stat.st_size,
+            "modified": out_mtime_after,
+            "size": out_size_after,
+            "file": {
+                "exists_before": out_exists_before,
+                "size_before": out_size_before,
+                "mtime_before": out_mtime_before,
+                "exists_after": out_exists_after,
+                "size_after": out_size_after,
+                "mtime_after": out_mtime_after,
+                "changed": out_exists_before and (out_size_before != out_size_after or out_mtime_before != out_mtime_after),
+            },
         })
     except Exception as e:
         return json.dumps({"ok": False, "error": str(e)})
@@ -501,3 +677,26 @@ def get_fanficfare_error():
     if _FANFICFARE_ERROR is None:
         return ""
     return str(_FANFICFARE_ERROR)
+
+
+def clear_download_debug():
+    _download_debug_clear()
+    return json.dumps({"ok": True})
+
+
+def read_download_debug():
+    text = _download_debug_read()
+    return json.dumps({"ok": True, "log": text})
+
+
+def run_dns_diagnostics():
+    print("[fanficfare_bridge] run_dns_diagnostics ENTER")
+    try:
+        from dns_diagnostic import run_dns_diagnostics
+        result = run_dns_diagnostics()
+        print("[fanficfare_bridge] run_dns_diagnostics RETURN len={}".format(len(result) if result else 0))
+        return result
+    except Exception as e:
+        msg = "{}: {}".format(type(e).__name__, e)
+        print("[fanficfare_bridge] run_dns_diagnostics ERROR {}".format(msg))
+        return json.dumps({"ok": False, "error": msg})

@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import re
 
 # .? for AO3's ']' in param names.

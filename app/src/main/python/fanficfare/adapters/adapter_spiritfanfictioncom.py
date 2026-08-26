@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 import re
@@ -5,6 +6,9 @@ import re
 from bs4 import BeautifulSoup
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
+
+# py2 vs py3 transition
+from ..six import PY3, text_type as unicode
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -17,7 +21,7 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
         BaseSiteAdapter.__init__(self, config, url)
 
         # get storyId from url--url validation guarantees query is only sid=1234
-        self.storyId = str(self.getStoryId(url))
+        self.storyId = unicode(self.getStoryId(url))
         self.story.setMetadata('storyId', self.storyId)
 
         # normalized story URL
@@ -28,7 +32,15 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
 
         # The date format will vary from site to site.
         # http://docs.python.org/library/datetime.html#strftime-strptime-behavior
-        self.dateformat = "%Y-%m-%dT%H:%M:%S%z"
+        if PY3:
+            self.dateformat = "%Y-%m-%dT%H:%M:%S%z"
+            self.datelength = len("2015-04-15T22:16:15-03:00")
+        else:
+            ## python 2 had really poor timezone support and doesn't
+            ## recognize %z.  This is a somewhat cheesy way to ignore
+            ## the -/+dddd timezone when under py2.
+            self.dateformat = "%Y-%m-%dT%H:%M:%S"
+            self.datelength = len("2015-04-15T22:16:15")
 
         self.chapter_photoUrl = {}
 
@@ -149,7 +161,7 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
 
                 # Datetime
                 date = a.find_next('time')['datetime']
-                chapterDate = makeDate(date, self.dateformat).date()
+                chapterDate = makeDate(date[:self.datelength], self.dateformat).date()
 
                 chapter_title = stripHTML(a.find('strong'))
 
@@ -174,7 +186,7 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
             email_text = a_tag.string
             a_tag.replace_with(email_text)
 
-        full_text = str(summary)
+        full_text = unicode(summary)
         self.story.setMetadata('description', full_text)
 
 
@@ -203,7 +215,7 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
                     if element.contents[0].name == 'strong':
                         self.story.addToList(attribute, stripHTML(element.contents[0]))
                 elif element.name == 'time':
-                    self.story.setMetadata(attribute, makeDate(element['datetime'], self.dateformat))
+                    self.story.setMetadata(attribute, makeDate(element['datetime'][:self.datelength], self.dateformat))
             return next_index
 
         # Informações Gerais
@@ -307,12 +319,12 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
 
         for tag in chapter_text.find_all('h2'):
             if tag.string.startswith('Notas do Autor'):
-                chaphead = self.make_soup(str(tag.find_next_sibling('div', {'class': 'texto texto-capitulo-notas'})))
+                chaphead = self.make_soup(unicode(tag.find_next_sibling('div', {'class': 'texto texto-capitulo-notas'})))
             elif tag.string.startswith('Notas Finais'):
-                chapfoot = self.make_soup(str(tag.find_next_sibling('div', {'class': 'texto texto-capitulo-notas'})))
+                chapfoot = self.make_soup(unicode(tag.find_next_sibling('div', {'class': 'texto texto-capitulo-notas'})))
             else:
                 # Apparently, not all chapters have the "Capítulo" text anymore, but it's the only other h2 in there
-                chaptext = self.make_soup(str(tag.find_next_sibling('div', {'class': 'texto'})))
+                chaptext = self.make_soup(unicode(tag.find_next_sibling('div', {'class': 'texto'})))
                 # Decode emails
                 self.decode_emails(chaptext)
                 if chapimg != None:
@@ -369,7 +381,7 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
                 decoded_email = decode_email(encoded_email)
                 # Replace the obfuscated email with the decoded email
                 element.string = decoded_email
-        return str(html_text)
+        return unicode(html_text)
 
 
     def before_get_urls_from_page(self,url,normalize):

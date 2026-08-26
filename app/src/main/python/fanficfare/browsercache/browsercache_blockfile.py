@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import os
 import struct
 import time, datetime
@@ -27,7 +28,8 @@ from .chromagnon.cacheBlock import CacheBlock
 from .chromagnon.cacheData import CacheData
 from .chromagnon.cacheEntry import CacheEntry
 from .chromagnon.cacheParse import parse
-from ..ensure import ensure_text
+from ..six.moves import range
+from ..six import ensure_text
 
 from .base_chromium import BaseChromiumCache
 

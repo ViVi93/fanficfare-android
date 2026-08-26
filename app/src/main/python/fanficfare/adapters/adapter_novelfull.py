@@ -1,8 +1,9 @@
+from __future__ import absolute_import
 import logging
 import re
 
-
-from urllib import parse as urlparse
+# py2 vs py3 transition
+from ..six.moves.urllib import parse as urlparse
 
 from .base_adapter import BaseSiteAdapter
 

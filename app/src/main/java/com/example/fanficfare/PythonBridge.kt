@@ -90,6 +90,32 @@ class PythonBridge(private val context: Context) {
         }
     }
 
+    fun testConfiguration(url: String): JSONObject {
+        val raw = try { safeCall("test_configuration", url) } catch (e: Exception) { null }
+        return try {
+            org.json.JSONObject(raw ?: "{}")
+        } catch (e: Exception) {
+            org.json.JSONObject().put("ok", false).put("error", "${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    fun getFanFicFareVersion(): String {
+        return try {
+            val raw = safeCall("get_fanficfare_version")
+            if (raw.isBlank() || raw == "None") "" else raw
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    fun initialize(configDir: String) {
+        try {
+            safeCall("set_config_dir", configDir)
+        } catch (e: Exception) {
+            // non-fatal; config dir will fall back to default behavior
+        }
+    }
+
     private fun safeCall(method: String, vararg args: Any): String {
         val mod = module
         if (mod == null) {

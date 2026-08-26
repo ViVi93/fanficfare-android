@@ -15,14 +15,16 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import re
 import datetime
 import logging
 logger = logging.getLogger(__name__)
 
 from .. import exceptions
-
-from urllib import parse as urlparse
+# py2 vs py3 transition
+from ..six import text_type as unicode
+from ..six.moves.urllib import parse as urlparse
 
 from .base_adapter import BaseSiteAdapter
 from ..htmlcleanup import stripHTML
@@ -104,7 +106,7 @@ class QuotevComAdapter(BaseSiteAdapter):
             self.story.setMetadata('status', 'In-Progress')
 
         # pages,readers,reads
-        metahtml = str(metadiv).replace(u'\n',' ')
+        metahtml = unicode(metadiv).replace(u'\n',' ')
         # logger.debug(metahtml)
         for entry in self.getConfigList('extra_valid_entries'):
             # if entry in metahtml:

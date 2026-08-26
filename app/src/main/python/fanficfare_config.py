@@ -4,8 +4,20 @@ import traceback
 
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 
+_ANDROID_CONFIG_DIR = None
+
+
+def set_config_dir(path):
+    global _ANDROID_CONFIG_DIR
+    if path:
+        _ANDROID_CONFIG_DIR = os.path.abspath(str(path))
+    else:
+        _ANDROID_CONFIG_DIR = None
+
 
 def get_personal_ini_path():
+    if _ANDROID_CONFIG_DIR:
+        return os.path.join(_ANDROID_CONFIG_DIR, "personal.ini")
     return os.path.join(os.path.expanduser("~"), "fanficfare", "personal.ini")
 
 
@@ -52,106 +64,214 @@ def build_configuration(url, fileform="epub", overrides=None):
     return configuration
 
 
-def get_config_status():
+def _safe_config_value(value):
+    if value is None:
+        return None
+    v = str(value).strip()
+    if not v:
+        return None
+    return v
+
+
+def _count_sections(config):
     try:
-        path = get_personal_ini_path()
-        home = os.path.expanduser("~")
-        abs_path = os.path.abspath(path)
-        exists = bool(path and os.path.isfile(path))
-        size = 0
+        return len(config.sections())
+    except Exception:
+        pass
+    return 0
+
+
+def _detect_credentials(config):
+    credentials_present = False
+    sections = []
+    try:
+        sections = config.sections()
+    except Exception:
+        pass
+
+    for section in sections:
         try:
-            if exists:
-                size = os.path.getsize(path)
-        except Exception:
-            pass
-        home_dir_names = []
-        try:
-            home_dir_names = sorted(os.listdir(home)) if os.path.isdir(home) else []
-        except Exception:
-            pass
-        known_dir_names = []
-        known_dir = "/data/data/com.example.fanficfare/files/fanficfare"
-        try:
-            known_dir_names = sorted(os.listdir(known_dir)) if os.path.isdir(known_dir) else []
-        except Exception:
-            pass
-        status = {
-            "exists": exists,
-            "path": path or "",
-            "size": size,
-            "modified": 0,
-            "parse_error": None,
-            "resolved_personal_path": path or "",
-            "resolved_exists": exists,
-            "resolved_size": size,
-            "home_dir": home,
-            "abs_personal_path": abs_path,
-            "home_exists": os.path.isdir(home),
-            "env_home": os.environ.get("HOME", ""),
-            "personal_exists": exists,
-            "personal_isfile": os.path.isfile(path) if path else False,
-            "home_dir_names": home_dir_names,
-            "known_dir_names": known_dir_names,
-            "storiesonline_section_username": None,
-            "storiesonline_section_password_present": False,
-            "storiesonline_defaults_username": None,
-            "always_login": None,
-            "login_test_attempted": False,
-            "login_test_error": None,
-        }
-        if exists:
+            options = []
             try:
-                st = os.stat(path)
-                status["modified"] = int(st.st_mtime * 1000)
+                options = config.options(section)
             except Exception:
                 pass
+            for key in options:
+                lowered = key.lower()
+                if lowered in {"username", "password", "token", "cookie", "api_key", "apikey"}:
+                    val = _safe_config_value(config.get(section, key, fallback=None))
+                    if val:
+                        credentials_present = True
+                        break
+            if credentials_present:
+                break
+        except Exception:
+            continue
+
+    return credentials_present
+
+
+def get_config_status():
+    path = get_personal_ini_path()
+    exists = bool(path and os.path.isfile(path))
+    size = 0
+    modified = 0
+    parse_error = None
+    sections = 0
+    credentials_present = False
+    configuration_valid = False
+    fanficfare_version = None
+    initialized = _ANDROID_CONFIG_DIR is not None
+    config_dir = _ANDROID_CONFIG_DIR or ""
+
+    if exists:
+        try:
+            size = os.path.getsize(path)
+            st = os.stat(path)
+            modified = int(st.st_mtime * 1000)
+        except Exception:
+            pass
+
+        try:
+            cfg = build_configuration("https://test1.com", "epub")
+            sections = _count_sections(cfg)
+            credentials_present = _detect_credentials(cfg)
+            configuration_valid = True
+            parse_error = None
+        except Exception as e:
+            configuration_valid = False
+            parse_error = "{}: {}".format(type(e).__name__, e)
+    else:
+        configuration_valid = False
+        parse_error = None
+
+    try:
+        fanficfare_version = _get_fanficfare_version()
+    except Exception:
+        fanficfare_version = None
+
+    status = {
+        "ok": True,
+        "initialized": initialized,
+        "config_dir": config_dir,
+        "personal_ini_path": path or "",
+        "exists": exists,
+        "is_file": exists,
+        "size": size,
+        "modified": modified,
+        "imported": exists,
+        "parse_error": parse_error,
+        "sections": sections,
+        "credentials_present": credentials_present,
+        "configuration_valid": configuration_valid,
+        "fanficfare_version": fanficfare_version,
+    }
+    return json.dumps(status)
+
+
+def test_configuration(url):
+    try:
+        if not url:
+            return json.dumps({
+                "ok": False,
+                "error_code": "CONFIG_ERROR",
+                "message": "URL is required",
+                "detail": "A story URL is needed to determine site-specific configuration",
+            })
+
+        path = get_personal_ini_path()
+        personal_exists = bool(path and os.path.isfile(path))
+
+        try:
+            cfg = build_configuration(url, "epub")
+            sections = []
             try:
-                cfg = __import__(
-                    "fanficfare.configurable", fromlist=["Configuration"]
-                ).Configuration(["test1.com"], "epub")
-                cfg.read(path)
-                status["parse_error"] = None
-                try:
-                    status["storiesonline_section_username"] = cfg.get("storiesonline.net", "username", fallback=None)
-                    status["storiesonline_section_password_present"] = bool(cfg.get("storiesonline.net", "password", fallback=None))
-                except Exception:
-                    pass
-                try:
-                    status["storiesonline_defaults_username"] = cfg.get("defaults", "username", fallback=None)
-                except Exception:
-                    pass
-                try:
-                    status["always_login"] = cfg.get("defaults", "always_login", fallback=None)
-                except Exception:
-                    pass
-            except Exception as e:
-                status["parse_error"] = "{}: {}".format(type(e).__name__, e)
-        return status
+                if hasattr(cfg, "sections"):
+                    sections = cfg.sections()
+                elif hasattr(cfg, "get_sections"):
+                    sections = cfg.get_sections()
+            except Exception:
+                pass
+
+            credentials_present = _detect_credentials(cfg)
+            configuration_valid = True
+            parse_error = None
+        except Exception as e:
+            configuration_valid = False
+            parse_error = "{}: {}".format(type(e).__name__, e)
+            sections = []
+            credentials_present = False
+
+        try:
+            from fanficfare import adapters
+            site = None
+            try:
+                found = adapters._get_class_for(url)
+                if found and found[0]:
+                    site = found[0].getSiteDomain()
+            except Exception:
+                pass
+
+            matched_section = None
+            try:
+                site_sections = adapters.getConfigSectionsFor(url)
+                cfg_for_section = build_configuration(url, "epub")
+                for section in site_sections:
+                    try:
+                        if hasattr(cfg_for_section, "has_section") and cfg_for_section.has_section(section):
+                            matched_section = section
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+            site_supported = site is not None
+        except Exception:
+            site = None
+            matched_section = None
+            site_supported = False
+
+        return json.dumps({
+            "ok": True,
+            "url": url,
+            "personal_ini_exists": personal_exists,
+            "personal_ini_path": path or "",
+            "configuration_valid": configuration_valid,
+            "parse_error": parse_error,
+            "sections": sections,
+            "credentials_present": credentials_present,
+            "site": site,
+            "matched_section": matched_section,
+            "site_supported": site_supported,
+        })
     except Exception as e:
-        return {
-            "exists": False,
-            "path": "",
-            "size": 0,
-            "modified": 0,
-            "parse_error": "{}: {}".format(type(e).__name__, e),
-            "resolved_personal_path": "",
-            "resolved_exists": False,
-            "resolved_size": 0,
-            "home_dir": "",
-            "abs_personal_path": "",
-            "home_exists": False,
-            "env_home": os.environ.get("HOME", ""),
-            "personal_exists": False,
-            "personal_isfile": False,
-            "home_dir_names": [],
-            "known_dir_names": [],
-            "storiesonline_section_username": None,
-            "storiesonline_section_password_present": False,
-            "storiesonline_defaults_username": None,
-            "always_login": None,
-            "login_test_attempted": False,
-            "login_test_error": None,
-        }
+        return json.dumps({
+            "ok": False,
+            "error_code": "UNKNOWN",
+            "message": str(e),
+            "detail": "{}: {}".format(type(e).__name__, e),
+        })
+
+
+def _get_fanficfare_version():
+    try:
+        # Chaquopy may strip __file__, so prefer the imported module namespace.
+        import fanficfare.cli as cli_mod
+        raw = getattr(cli_mod, "version", None)
+        if raw:
+            return str(raw)
+    except Exception:
+        pass
+    try:
+        import fanficfare as _ff_pkg
+        for key in ("__version__", "version", "VERSION"):
+            raw = getattr(_ff_pkg, key, None)
+            if raw:
+                return str(raw)
+    except Exception:
+        pass
+    return None
 
 
 def _import_fanficfare():
@@ -172,5 +292,7 @@ def _import_fanficfare():
     except Exception as e:
         _FANFICFARE_ERROR = "{}: {}".format(type(e).__name__, e)
         _FANFICFARE_TRACEBACK = traceback.format_exc()
+        print("FANFICFARE_IMPORT_ERROR: " + _FANFICFARE_ERROR)
+        print(_FANFICFARE_TRACEBACK)
         _FANFICFARE_AVAILABLE = False
         return False

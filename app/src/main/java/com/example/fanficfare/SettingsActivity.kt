@@ -173,6 +173,8 @@ class SettingsActivity : AppCompatActivity() {
             }
             if (dest.exists()) {
                 Toast.makeText(this, "personal.ini imported", Toast.LENGTH_SHORT).show()
+                val bridge = try { PythonBridge(this) } catch (e: Exception) { null }
+                bridge?.initialize(getConfigDir(this).absolutePath)
                 updateConfigStatus()
             } else {
                 Toast.makeText(this, "Import failed", Toast.LENGTH_SHORT).show()
@@ -187,6 +189,8 @@ class SettingsActivity : AppCompatActivity() {
             val file = File(getConfigDir(this), "personal.ini")
             if (file.exists()) file.delete()
             Toast.makeText(this, "personal.ini removed", Toast.LENGTH_SHORT).show()
+            val bridge = try { PythonBridge(this) } catch (e: Exception) { null }
+            bridge?.initialize(getConfigDir(this).absolutePath)
             updateConfigStatus()
         } catch (e: Exception) {
             Toast.makeText(this, "Remove error: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
@@ -212,85 +216,37 @@ class SettingsActivity : AppCompatActivity() {
         val bridge = try { PythonBridge(this) } catch (e: Exception) { null }
         val status = bridge?.getConfigStatus()
 
+        val initialized = status?.optBoolean("initialized") == true
+        val configDir = status?.optString("config_dir", "") ?: ""
+        val personalPath = status?.optString("personal_ini_path", "") ?: ""
         val exists = status?.optBoolean("exists") == true
+        val isFile = status?.optBoolean("is_file") == true
         val size = status?.optInt("size", 0) ?: 0
-        val resolved = if (status?.has("resolved_personal_path") == true) status.optString("resolved_personal_path", "") else "<NULL>"
-        val homeDir = if (status?.has("home_dir") == true) status.optString("home_dir", "") else "<NULL>"
-        val absPath = if (status?.has("abs_personal_path") == true) status.optString("abs_personal_path", "") else "<NULL>"
-        val envHome = if (status?.has("env_home") == true) status.optString("env_home", "") else "<NULL>"
-        val personalExists = status?.optBoolean("personal_exists") ?: false
-        val personalIsFile = status?.optBoolean("personal_isfile") ?: false
-        val resolvedSize = status?.optInt("resolved_size", 0) ?: 0
-        val parseError = if (status?.has("parse_error") == true) status.optString("parse_error", "<NULL>") else "<NULL>"
-
-        val androidDir = filesDir.absolutePath
-        val androidDest = java.io.File(filesDir, "fanficfare/personal.ini").absolutePath
-        val androidDestExists = java.io.File(androidDest).exists()
-        val androidDestSize = try { java.io.File(androidDest).length() } catch (e: Exception) { -1L }
-
-        val storiesUsername = if (status?.has("storiesonline_section_username") == true) status.optString("storiesonline_section_username", "<NULL>") else "<NULL>"
+        val modified = status?.optLong("modified", 0) ?: 0L
+        val parseError = if (status?.has("parse_error") == true) status.optString("parse_error", "") else ""
+        val personalExists = status?.optBoolean("imported") ?: false
+        val personalIsFile = status?.optBoolean("is_file") ?: false
+        val resolvedSize = status?.optInt("size", 0) ?: 0
+        val storiesUsername = if (status?.has("storiesonline_section_username") == true) status.optString("storiesonline_section_username", "") else ""
         val storiesPasswordPresent = status?.optBoolean("storiesonline_section_password_present") ?: false
-        val defaultsUsername = if (status?.has("storiesonline_defaults_username") == true) status.optString("storiesonline_defaults_username", "<NULL>") else "<NULL>"
-        val alwaysLogin = if (status?.has("always_login") == true) status.optString("always_login", "<NULL>") else "<NULL>"
+        val alwaysLogin = if (status?.has("always_login") == true) status.optString("always_login", "") else ""
         val loginAttempted = status?.optBoolean("login_test_attempted") ?: false
-        val loginError = if (status?.has("login_test_error") == true) status.optString("login_test_error", "<NULL>") else "<NULL>"
+        val loginError = if (status?.has("login_test_error") == true) status.optString("login_test_error", "") else ""
 
         val sb = StringBuilder()
-        if (exists) {
-            sb.append("personal.ini imported\n")
-        } else {
-            sb.append("No personal.ini imported\n")
-        }
-        sb.append("Size: ").append(size).append(" bytes\n")
-        sb.append("Resolved: ").append(if (resolved.isBlank()) "<EMPTY>" else resolved).append('\n')
-        sb.append("Python HOME: ").append(if (homeDir.isBlank()) "<EMPTY>" else homeDir).append('\n')
-        sb.append("Python personal.ini path: ").append(if (absPath.isBlank()) "<EMPTY>" else absPath).append('\n')
-        sb.append("Exists: ").append(personalExists).append('\n')
-        sb.append("Is file: ").append(personalIsFile).append('\n')
+        sb.append("Initialized: ").append(initialized).append('\n')
+        sb.append("Config directory: ").append(if (configDir.isBlank()) "<NULL>" else configDir).append('\n')
+        sb.append("Python personal.ini path: ").append(if (personalPath.isBlank()) "<NULL>" else personalPath).append('\n')
+        sb.append("Exists: ").append(exists).append('\n')
+        sb.append("Is file: ").append(isFile).append('\n')
         sb.append("Resolved size: ").append(resolvedSize).append(" bytes\n")
-        sb.append("Android filesDir: ").append(androidDir).append('\n')
-        sb.append("Android personal.ini path: ").append(androidDest).append('\n')
-        sb.append("Android exists: ").append(androidDestExists).append('\n')
-        sb.append("Android size: ").append(androidDestSize).append(" bytes\n")
-        sb.append("Paths match: ").append(absPath == androidDest).append('\n')
-        if (!parseError.isNullOrBlank() && parseError != "<NULL>") {
+        sb.append("Imported: ").append(personalExists).append('\n')
+        if (!parseError.isNullOrBlank()) {
             sb.append("Parse error: ").append(parseError).append('\n')
         }
-        sb.append("SOL username section: ").append(if (storiesUsername.isBlank()) "<EMPTY>" else storiesUsername).append('\n')
-        sb.append("SOL password present: ").append(storiesPasswordPresent).append('\n')
-        sb.append("Defaults username: ").append(if (defaultsUsername.isBlank()) "<EMPTY>" else defaultsUsername).append('\n')
-        sb.append("always_login: ").append(alwaysLogin).append('\n')
-        sb.append("Login test attempted: ").append(loginAttempted).append('\n')
-        if (!loginError.isNullOrBlank() && loginError != "<NULL>") {
-            sb.append("Login test error: ").append(loginError).append('\n')
-        }
-
-        runOnUiThread {
-            Thread {
-                val raw = try { bridge?.fanficfareLiteroticaConfigStatus("https://www.literotica.com/s/1") } catch (e: Exception) { null }
-                val text = try {
-                    val obj = org.json.JSONObject(raw ?: "{}")
-                    val sb2 = StringBuilder()
-                    sb2.append("Literotica config check\n")
-                    sb2.append("sections=").append(obj.optJSONArray("sections")?.toString() ?: "<NULL>").append('\n')
-                    sb2.append("matched_section=").append(obj.optString("matched_section", "<NULL>")).append('\n')
-                    sb2.append("is_adult raw_present=").append(obj.optBoolean("raw_present")).append('\n')
-                    sb2.append("is_adult raw_value=").append(obj.optString("raw_value", "<NULL>")).append('\n')
-                    sb2.append("is_adult configuration_value=").append(obj.optBoolean("configuration_value")).append('\n')
-                    if (obj.has("error")) {
-                        sb2.append("error=").append(obj.optString("error"))
-                    }
-                    sb2.toString()
-                } catch (e: Exception) {
-                    "Literotica config check failed: ${e.javaClass.simpleName}: ${e.message}"
-                }
-                runOnUiThread {
-                    sb.append('\n').append(text)
-                    statusText.text = sb.toString().trimEnd()
-                }
-            }.start()
-        }
-
+        sb.append("Credentials present: ").append(status?.optBoolean("credentials_present") ?: false).append('\n')
+        sb.append("Configuration valid: ").append(status?.optBoolean("configuration_valid") ?: false).append('\n')
+        sb.append("FanFicFare version: ").append(if (status?.has("fanficfare_version") == true) status.optString("fanficfare_version", "<NULL>") else "<NULL>").append('\n')
         statusText.text = sb.toString().trimEnd()
         buttonRemove.isEnabled = exists
     }

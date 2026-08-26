@@ -1,10 +1,11 @@
 # Software: eFiction
+from __future__ import absolute_import
 import re
 
 from bs4.element import Tag
 
-
-from urllib import parse as urlparse
+# py2 vs py3 transition
+from ..six.moves.urllib import parse as urlparse
 
 from .base_adapter import BaseSiteAdapter, makeDate
 from .. import exceptions

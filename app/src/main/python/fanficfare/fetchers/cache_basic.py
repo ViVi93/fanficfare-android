@@ -15,19 +15,30 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
+import sys
 import threading
 import logging
 logger = logging.getLogger(__name__)
 
-from ..ensure import ensure_text
+from ..six import text_type as unicode
+from ..six import ensure_text
 
 from .base_fetcher import FetcherResponse
 from .decorators import FetcherDecorator
 from .log import make_log
 
 import pickle
-def pickle_load(f):
-    return pickle.load(f,encoding="bytes")
+if sys.version_info < (2, 7):
+    sys.exit('This program requires Python 2.7 or newer.')
+elif sys.version_info < (3, 0):
+    reload(sys)  # Reload restores 'hidden' setdefaultencoding method
+    sys.setdefaultencoding("utf-8")
+    def pickle_load(f):
+        return pickle.load(f)
+else: # > 3.0
+    def pickle_load(f):
+        return pickle.load(f,encoding="bytes")
 
 class BasicCache(object):
     def __init__(self):
@@ -63,7 +74,7 @@ class BasicCache(object):
             keylist=[url]
             if parameters != None:
                 keylist.append('&'.join('{0}={1}'.format(key, val) for key, val in sorted(parameters.items())))
-            return str('?'.join(keylist))
+            return unicode('?'.join(keylist))
 
     def has_cachekey(self,cachekey):
         with self.cache_lock:

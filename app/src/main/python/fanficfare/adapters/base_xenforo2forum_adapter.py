@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 import logging
 from datetime import datetime
 logger = logging.getLogger(__name__)
@@ -24,7 +25,8 @@ import json
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-
+# py2 vs py3 transition
+from ..six import text_type as unicode
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -411,7 +413,7 @@ class BaseXenForo2ForumAdapter(BaseSiteAdapter):
 
     def get_cache_post(self,postid):
         ## saved using original 'post-99999' id for key.
-        postid=str(postid)
+        postid=unicode(postid) # thank you, Py3.
         if self.getPathPrefix()+'posts/' in postid:
             ## allows chapter urls to be passed in directly.
             # assumed normalized to /posts/1234/
@@ -420,8 +422,6 @@ class BaseXenForo2ForumAdapter(BaseSiteAdapter):
             postid = postid.split('#')[1]
         elif '/post-' in postid:
             postid = "post-"+postid.split('/post-')[-1]
-        elif '#' in postid:
-            postid = "post-"+postid.split('#')[1]
         # logger.debug("get cache %s %s"%(postid,postid in self.post_cache))
         return self.post_cache.get(postid,None)
 
@@ -654,7 +654,7 @@ class BaseXenForo2ForumAdapter(BaseSiteAdapter):
                 lastlink = threadmark_pages[-1]['href']
                 m = re.match(r'^(?P<prefix>.*page=)(?P<lastpage>\d+)$',lastlink)
                 for j in range( 2, int(m.group('lastpage'))+1 ):
-                    pageurl = (self.getURLDomain() + m.group('prefix') + str(j))
+                    pageurl = (self.getURLDomain() + m.group('prefix') + unicode(j))
                     # logger.debug("pageurl: %s"%pageurl)
                     threadmarks.extend(self.fetch_threadmarks(pageurl,
                                                               tmcat_name,
@@ -684,7 +684,7 @@ class BaseXenForo2ForumAdapter(BaseSiteAdapter):
 
     def make_reader_url(self,tmcat_num,reader_page_num):
         # https://xf2test.sufficientvelocity.com/threads/mauling-snarks-worm.41471/reader/page-4?threadmark_category=4
-        return self.story.getMetadata('storyUrl')+'reader/page-'+str(reader_page_num)+'?threadmark_category='+tmcat_num
+        return self.story.getMetadata('storyUrl')+'reader/page-'+unicode(reader_page_num)+'?threadmark_category='+tmcat_num
 
     def get_quote_expand_tag(self,soup):
         return soup.find_all('div',{'class':re.compile(r'bbCodeBlock-(expand|shrink)Link')})
@@ -753,11 +753,14 @@ class BaseXenForo2ForumAdapter(BaseSiteAdapter):
             self.story.addToList('parentforums',stripHTML(atag))
 
         use_threadmark_chaps = False
-        if '#' in useurl or self.getPathPrefix()+'posts/' in useurl:
+        if '#' in useurl:
+            anchorid = useurl.split('#')[1]
+            # souptag = souptag.find('li',id=anchorid)
             # cache is now loaded with posts from that reader
             # page.  looking for it in cache reuses code in
             # cache_posts that finds post tags.
-            souptag = self.get_cache_post(useurl)
+            souptag = self.get_cache_post(anchorid)
+
         else:
             threadmarks = self.extract_threadmarks(souptag)
             souptag = self.get_first_post(topsoup)
@@ -934,9 +937,6 @@ class BaseXenForo2ForumAdapter(BaseSiteAdapter):
                 if not souptag and url in self.threadmarks_for_reader:
                     (tmcat_num,tmcat_index)=self.threadmarks_for_reader[url]
                     reader_page_num = int((tmcat_index+posts_per_page)/posts_per_page) + offset
-                    if reader_page_num < 1:
-                        # don't try pages < 1.
-                        continue
                     reader_url=self.make_reader_url(tmcat_num,reader_page_num)
                     # logger.debug("Fetch reader page: %s"%reader_url)
                     if offset != 0:
@@ -1089,7 +1089,7 @@ class BaseXenForo2ForumAdapter(BaseSiteAdapter):
             for img in soup.find_all('img',src=re.compile(r'(^(data:image|failedtoload)|(clear.png$))')):
                 # logger.debug("replace_failed_smilies_with_alt_text img: %s"%img)
                 if img.has_attr('class'):
-                    clses = str(img['class']) # stringify list.
+                    clses = unicode(img['class']) # stringify list.
                     if img.has_attr('alt') and ('mceSmilie' in clses or 'smilie--sprite' in clses):
                         ## Change the img to a span containing the alt
                         ## text, remove attrs.  This is a one-way change.

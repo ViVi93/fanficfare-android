@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 from ..htmlcleanup import stripHTML
 from .. import exceptions
 from .base_adapter import BaseSiteAdapter, makeDate

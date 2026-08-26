@@ -15,6 +15,8 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
+from __future__ import print_function
 from io import StringIO
 from optparse import OptionParser, SUPPRESS_HELP
 from os.path import expanduser, join, dirname
@@ -25,17 +27,18 @@ import pprint
 import string
 import os, sys, platform
 
-version="4.60.3"
+version="4.60.0"
 os.environ['CURRENT_VERSION_ID']=version
 
 global_cache = 'global_cache'
 global_cookies = 'global_cookies'
 
-# suppresses default logger.  Logging is setup in fanficfare/__init__.py so it works in calibre, too.
-rootlogger = logging.getLogger()
-loghandler = logging.NullHandler()
-loghandler.setFormatter(logging.Formatter('(=====)(levelname)s:%(message)s'))
-rootlogger.addHandler(loghandler)
+if sys.version_info >= (2, 7):
+    # suppresses default logger.  Logging is setup in fanficfare/__init__.py so it works in calibre, too.
+    rootlogger = logging.getLogger()
+    loghandler = logging.NullHandler()
+    loghandler.setFormatter(logging.Formatter('(=====)(levelname)s:%(message)s'))
+    rootlogger.addHandler(loghandler)
 
 logger = logging.getLogger('fanficfare')
 
@@ -44,7 +47,8 @@ from fanficfare.configurable import Configuration
 from fanficfare.epubutils import (
     get_dcsource_chaptercount, get_update_data, reset_orig_chapters_epub)
 from fanficfare.geturls import get_urls_from_page, get_urls_from_imap
-import configparser
+from fanficfare.six.moves import configparser
+from fanficfare.six import text_type as unicode
 
 from fanficfare.fff_profile import do_cprofile
 
@@ -597,7 +601,7 @@ def get_configuration(url,
     if passed_defaultsini:
         # new StringIO each time rather than pass StringIO and rewind
         # for case of list download.  Just makes more sense to me.
-        configuration.read_file(StringIO(str(passed_defaultsini)))
+        configuration.read_file(StringIO(unicode(passed_defaultsini)))
     else:
         # don't need to check existance for our selves.
         conflist.append(join(dirname(__file__), 'defaults.ini'))
@@ -609,7 +613,7 @@ def get_configuration(url,
     if passed_personalini:
         # new StringIO each time rather than pass StringIO and rewind
         # for case of list download.  Just makes more sense to me.
-        configuration.read_file(StringIO(str(passed_personalini)))
+        configuration.read_file(StringIO(unicode(passed_personalini)))
 
     conflist.append(join(homepath, 'personal.ini'))
     conflist.append(join(homepath2, 'personal.ini'))

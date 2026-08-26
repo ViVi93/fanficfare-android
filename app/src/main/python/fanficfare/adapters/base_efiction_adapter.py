@@ -16,6 +16,7 @@
 #
 
 # Software: eFiction
+from __future__ import absolute_import
 
 import logging
 logger = logging.getLogger(__name__)
@@ -25,7 +26,8 @@ import bs4 as bs
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-
+# py2 vs py3 transition
+from ..six import text_type as unicode
 
 from .base_adapter import BaseSiteAdapter, makeDate
 
@@ -379,7 +381,7 @@ class BaseEfictionAdapter(BaseSiteAdapter):
                     errorDiv = soup.find("div", "errortext")
                     self.triedLoggingIn = True
                 else:
-                    raise exceptions.FailedToLogin(self.url, str(errorDiv))
+                    raise exceptions.FailedToLogin(self.url, unicode(errorDiv))
             elif "This story has not been validated" in stripHTML(errorDiv):
                 raise exceptions.AccessDenied(self.getSiteDomain() +" says: "+stripHTML(errorDiv))
             else:
@@ -425,7 +427,7 @@ class BaseEfictionAdapter(BaseSiteAdapter):
                 if (type(nextEl) is bs.Tag):
                     valueStr += nextEl.prettify()
                 else:
-                    valueStr += str(nextEl)
+                    valueStr += unicode(nextEl)
                 nextEl = nextEl.nextSibling
             key = stripHTML(labelSpan)
 

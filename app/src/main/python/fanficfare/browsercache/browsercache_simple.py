@@ -23,7 +23,7 @@ import time, datetime
 import re
 import traceback
 
-from ..ensure import ensure_binary, ensure_text
+from ..six import ensure_binary, ensure_text
 from ..exceptions import BrowserCacheException
 from .share_open import share_open
 

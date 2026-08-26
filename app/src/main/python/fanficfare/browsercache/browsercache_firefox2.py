@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 
 ## Cache parsing code lifted from:
 ## https://github.com/JamesHabben/FirefoxCache2
@@ -27,7 +28,7 @@ import datetime
 import time
 
 from . import BaseBrowserCache
-from ..ensure import ensure_text
+from ..six import ensure_text
 from ..exceptions import BrowserCacheException
 from ..dateutils import makeDate, utcnow
 from .share_open import share_open

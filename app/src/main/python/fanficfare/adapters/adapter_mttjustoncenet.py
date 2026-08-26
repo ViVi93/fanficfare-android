@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
 
 # Software: eFiction
 from .base_efiction_adapter import BaseEfictionAdapter

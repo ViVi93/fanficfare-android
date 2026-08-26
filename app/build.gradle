@@ -11,6 +11,20 @@ android {
         dataBinding = false
     }
 
+    signingConfigs {
+        release {
+            if (project.hasProperty('SIGNING_KEY_STORE_PATH') &&
+                project.hasProperty('SIGNING_KEY_ALIAS') &&
+                project.hasProperty('SIGNING_STORE_PASSWORD') &&
+                project.hasProperty('SIGNING_KEY_PASSWORD')) {
+                storeFile file(SIGNING_KEY_STORE_PATH)
+                keyAlias SIGNING_KEY_ALIAS
+                storePassword SIGNING_STORE_PASSWORD
+                keyPassword SIGNING_KEY_PASSWORD
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "com.example.fanficfare"
         minSdk 24
@@ -27,6 +41,7 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 

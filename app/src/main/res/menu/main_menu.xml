@@ -6,8 +6,8 @@
         android:title="Download"
         app:showAsAction="ifRoom" />
     <item
-        android:id="@+id/action_update"
-        android:title="Update"
+        android:id="@+id/action_select"
+        android:title="Select"
         app:showAsAction="never" />
     <item
         android:id="@+id/action_load_library"

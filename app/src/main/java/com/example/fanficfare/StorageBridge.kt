@@ -5,8 +5,10 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.IOException
 
 object StorageBridge {
+
     fun resolveLocalEpub(context: Context, path: String): Pair<File, Boolean>? {
         return if (path.startsWith("content://")) {
             val temp = copyContentUriToTemp(context, Uri.parse(path))
@@ -45,6 +47,29 @@ object StorageBridge {
             }
         } catch (e: Exception) {
             false
+        }
+    }
+
+    fun copyToOutputDir(context: Context, sourceFile: File, outputDir: String): String {
+        return if (outputDir.startsWith("content://")) {
+            val treeUri = Uri.parse(outputDir)
+            val treeDoc = DocumentFile.fromTreeUri(context, treeUri)
+                ?: throw IOException("Invalid output directory")
+            val mimeType = "application/epub+zip"
+            val newFile = treeDoc.createFile(mimeType, sourceFile.name)
+                ?: throw IOException("Cannot create file in output directory")
+            context.contentResolver.openOutputStream(newFile.uri)?.use { output ->
+                sourceFile.inputStream().use { input ->
+                    input.copyTo(output)
+                }
+            } ?: throw IOException("Cannot open output stream")
+            newFile.uri.toString()
+        } else {
+            val destDir = File(outputDir)
+            if (!destDir.exists()) destDir.mkdirs()
+            val outFile = File(destDir, sourceFile.name)
+            sourceFile.copyTo(outFile, overwrite = true)
+            outFile.absolutePath
         }
     }
 

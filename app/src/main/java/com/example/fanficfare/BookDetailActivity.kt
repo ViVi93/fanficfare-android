@@ -266,20 +266,22 @@ class BookDetailActivity : AppCompatActivity() {
         }
         DiagnosticLog.append(this, "Detail.ForceDownload", "validation_passed url=$url")
         DiagnosticLog.append(this, "Detail.ForceDownload", "starting")
+        val t0 = System.currentTimeMillis()
         Thread {
-            val resultJson = try {
-                DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_start")
-                val raw = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
-                    DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_input=${localPath.absolutePath}")
+            var resultJson: String? = null
+            try {
+                DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_start elapsed=${System.currentTimeMillis() - t0}")
+                resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
+                    DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_input=${localPath.absolutePath} elapsed=${System.currentTimeMillis() - t0}")
                     bridge.forceDownloadFromEpub(localPath.absolutePath, filesDir.absolutePath)
                 }
-                DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_returned=${raw != null}")
-                raw
+                DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_returned=${resultJson != null} elapsed=${System.currentTimeMillis() - t0}")
             } catch (e: Exception) {
                 DiagnosticLog.appendException(this, "Detail.ForceDownload", "storage_bridge_exception", e)
                 runOnUiThread { showError("Cannot read EPUB from this location: ${e.message ?: e.javaClass.simpleName}") }
                 return@Thread
-            } ?: run {
+            }
+            if (resultJson == null) {
                 DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_null")
                 runOnUiThread { showError("Cannot read EPUB from this location") }
                 return@Thread
@@ -292,28 +294,34 @@ class BookDetailActivity : AppCompatActivity() {
                         val title = result.optString("title", bookTitle)
                         val author = result.optString("author", bookAuthor)
                         val internalPath = result.optString("path", "")
-                        val outputDir = SettingsActivity.getOutputDir(this)
                         if (internalPath.isNotBlank()) {
-                            try {
-                                val source = File(internalPath)
-                                if (source.exists() && source.isFile) {
-                                    val finalPath = copyToOutputDir(source, outputDir)
-                                    DiagnosticLog.append(this, "Detail.ForceDownload", "copied finalPath=$finalPath")
-                                    Toast.makeText(applicationContext, "Force downloaded: $title", Toast.LENGTH_LONG).show()
-                                    if (!isFinishing && !isDestroyed) {
-                                        window?.decorView?.postDelayed({
-                                            if (!isFinishing && !isDestroyed) finishWithResult(title, author, finalPath, System.currentTimeMillis(), null)
-                                        }, 150)
+                            Toast.makeText(this, "Force downloaded: $title", Toast.LENGTH_LONG).show()
+                            Thread {
+                                val outputDir = SettingsActivity.getOutputDir(this)
+                                try {
+                                    val source = java.io.File(internalPath)
+                                    val finalPath = if (source.exists() && source.isFile) {
+                                        copyToOutputDir(source, outputDir)
+                                    } else {
+                                        null
                                     }
-                                    DiagnosticLog.append(this, "Detail.ForceDownload", "result=SUCCESS title=$title path=$finalPath lifecycle_finishing=$isFinishing destroyed=$isDestroyed")
-                                } else {
-                                    DiagnosticLog.append(this, "Detail.ForceDownload", "result=SUCCESS missing_source_file=$internalPath")
-                                    showError("Force downloaded: $title")
+                                    runOnUiThread {
+                                        if (!isFinishing && !isDestroyed) {
+                                            if (finalPath != null) {
+                                                finishWithResult(title, author, finalPath, System.currentTimeMillis(), null)
+                                            } else {
+                                                showError("Force downloaded: $title")
+                                            }
+                                        }
+                                        DiagnosticLog.append(this, "Detail.ForceDownload", "result=SUCCESS title=$title path=$finalPath lifecycle_finishing=$isFinishing destroyed=$isDestroyed")
+                                    }
+                                } catch (e: Exception) {
+                                    runOnUiThread {
+                                        showError("Force download failed: ${e.message ?: "copy/output error"}")
+                                    }
+                                    DiagnosticLog.appendException(this, "Detail.ForceDownload", "copy_output_exception", e)
                                 }
-                            } catch (e: Exception) {
-                                DiagnosticLog.appendException(this, "Detail.ForceDownload", "copy_output_exception", e)
-                                showError("Force download failed: ${e.message ?: "copy/output error"}")
-                            }
+                            }.start()
                         } else {
                             DiagnosticLog.append(this, "Detail.ForceDownload", "result=SUCCESS empty_internal_path")
                             showError("Force downloaded: $title")
@@ -384,23 +392,7 @@ class BookDetailActivity : AppCompatActivity() {
     }
 
     private fun copyToOutputDir(sourceFile: File, outputDir: String): String {
-        return if (outputDir.startsWith("content://")) {
-            val treeUri = Uri.parse(outputDir)
-            val treeDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, treeUri)
-                ?: throw IllegalArgumentException("Invalid output directory")
-            val newFile = treeDoc.createFile("application/epub+zip", sourceFile.name)
-                ?: throw IllegalArgumentException("Cannot create file")
-            contentResolver.openOutputStream(newFile.uri)?.use { out ->
-                sourceFile.inputStream().use { it.copyTo(out) }
-            } ?: throw IllegalArgumentException("Cannot open output stream")
-            newFile.uri.toString()
-        } else {
-            val destDir = File(outputDir)
-            if (!destDir.exists()) destDir.mkdirs()
-            val outFile = File(destDir, sourceFile.name)
-            sourceFile.copyTo(outFile, overwrite = true)
-            outFile.absolutePath
-        }
+        return StorageBridge.copyToOutputDir(this, sourceFile, outputDir)
     }
 
     private fun decodeSampledBitmap(data: ByteArray, maxDim: Int): Bitmap? {

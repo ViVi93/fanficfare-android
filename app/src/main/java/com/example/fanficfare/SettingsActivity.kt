@@ -8,7 +8,9 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 
@@ -18,11 +20,16 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
         setContentView(R.layout.activity_settings)
 
         val output = findViewById<EditText>(R.id.inputOutputDir)
         val prefs = getSharedPreferences("fanficfare_prefs", MODE_PRIVATE)
         output.setText(prefs.getString("output_dir", ""))
+
+        setupThemeSelector(prefs)
 
         findViewById<Button>(R.id.buttonPickFolder).setOnClickListener {
             val intent = Intent("android.provider.action.OPEN_DOCUMENT_TREE")
@@ -148,6 +155,40 @@ class SettingsActivity : AppCompatActivity() {
 
         refreshPythonDebugLog()
         updateConfigStatus()
+    }
+
+    private fun setupThemeSelector(prefs: android.content.SharedPreferences) {
+        val themeInput = findViewById<EditText>(R.id.inputTheme)
+        val current = prefs.getString("ui_theme_mode", "system") ?: "system"
+        val options = listOf("System", "Light", "Dark")
+        themeInput.setText(options[if (current == "system") 0 else if (current == "light") 1 else 2])
+        themeInput.setOnClickListener {
+            val titles = arrayOf("System", "Light", "Dark")
+            val checked = when (current) {
+                "system" -> 0
+                "light" -> 1
+                else -> 2
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Theme")
+                .setSingleChoiceItems(titles, checked) { _, which ->
+                    val mode = when (which) {
+                        1 -> "light"
+                        2 -> "dark"
+                        else -> "system"
+                    }
+                    prefs.edit().putString("ui_theme_mode", mode).apply()
+                    AppCompatDelegate.setDefaultNightMode(
+                        when (mode) {
+                            "light" -> AppCompatDelegate.MODE_NIGHT_NO
+                            "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+                            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                        }
+                    )
+                }
+                .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
+                .show()
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

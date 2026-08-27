@@ -26,6 +26,6 @@
         <item name="colorOnSurfaceVariant">@color/fanficfare_on_surface_variant</item>
 
         <item name="android:statusBarColor">?attr/colorPrimaryContainer</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

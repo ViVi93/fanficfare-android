@@ -12,6 +12,7 @@ class MyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.google.android.material.color.DynamicColors.applyToActivitiesIfAvailable(this)
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {

@@ -18,6 +18,9 @@ class DiagnosticsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
         setContentView(R.layout.activity_diagnostics)
 
         statusText = findViewById(R.id.textDiagnosticStatus)

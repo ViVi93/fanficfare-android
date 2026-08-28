@@ -35,9 +35,9 @@ class BookAdapter(
             val card = itemView as com.google.android.material.card.MaterialCardView
             val res = card.context.resources
             val strokeColor = if (selected) {
-                androidx.core.content.ContextCompat.getColor(card.context, android.R.color.holo_green_light)
+                card.context.getColor(com.example.fanficfare.R.color.fanficfare_primary)
             } else {
-                androidx.core.content.ContextCompat.getColor(card.context, android.R.color.transparent)
+                card.context.getColor(android.R.color.transparent)
             }
             val strokeWidth = if (selected) res.getDimensionPixelSize(R.dimen.selection_stroke) else 0
             card.strokeColor = strokeColor

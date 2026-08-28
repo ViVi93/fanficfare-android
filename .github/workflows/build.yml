@@ -1,4 +1,4 @@
-name: Android CI
+name: Android CI & Release
 
 on:
   push:
@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 17
@@ -25,10 +27,50 @@ jobs:
             "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0"
+      - name: Prepare release signing config
+        if: github.event_name == 'push'
+        env:
+          SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          echo "$SIGNING_KEY_STORE_BASE64" | base64 -d > signing.jks
+          cat > signing.properties <<EOF
+          SIGNING_KEY_STORE_PATH=$(pwd)/signing.jks
+          SIGNING_KEY_ALIAS=$SIGNING_KEY_ALIAS
+          SIGNING_STORE_PASSWORD=$SIGNING_STORE_PASSWORD
+          SIGNING_KEY_PASSWORD=$SIGNING_KEY_PASSWORD
+          EOF
+      - name: Build release APK
+        if: github.event_name == 'push'
+        env:
+          SIGNING_KEY_STORE_PATH: ${{ github.workspace }}/signing.jks
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease -Psigning.properties=signing.properties
       - name: Build debug APK
+        if: github.event_name != 'push'
         run: ./gradlew assembleDebug
-      - name: Upload debug APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fanficfare-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: fanficfare-apk
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
+            app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="build-${{ github.sha }}"
+          gh release create "$TAG" \
+            app/build/outputs/apk/release/app-release.apk \
+            --title "Build ${{ github.sha }}" \
+            --notes "Automated APK build from commit \`${{ github.sha }}\` on ${{ github.ref_name }}." \
+            --target "${{ github.sha }}" \
+            --repo "${{ github.repository }}"

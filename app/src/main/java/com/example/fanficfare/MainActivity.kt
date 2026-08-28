@@ -2,6 +2,7 @@ package com.example.fanficfare
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.Menu
@@ -42,35 +43,36 @@ class MainActivity : AppCompatActivity() {
         try {
             val t0 = System.currentTimeMillis()
             super.onCreate(savedInstanceState)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
+            }
             setContentView(R.layout.activity_main)
             supportActionBar?.hide()
             DiagnosticLog.append(this, "Main.Startup", "begin elapsed=${System.currentTimeMillis() - t0}")
-
-            toast("startup:onCreate_begin")
             if (!Python.isStarted()) {
                 try {
                     Python.start(com.chaquo.python.android.AndroidPlatform(this))
                 } catch (e: Exception) {
-                    toast("startup:python_failed")
+                    DiagnosticLog.append(this, "Main.Startup", "python_failed")
                 }
             }
             DiagnosticLog.append(this, "Main.Startup", "python_ready elapsed=${System.currentTimeMillis() - t0}")
-            toast("startup:python_ready")
 
             pythonBridge = PythonBridge(this)
-            pythonBridge?.getInitError()?.let { error -> toast("startup:bridge_init_failed") }
-            pythonBridge?.getFanFicFareError()?.let { error -> toast("startup:fanficfare_init_failed") }
+            pythonBridge?.getInitError()?.let { error ->
+                DiagnosticLog.append(this, "Main.Startup", "bridge_init_failed")
+            }
+            pythonBridge?.getFanFicFareError()?.let { error ->
+                DiagnosticLog.append(this, "Main.Startup", "fanficfare_init_failed")
+            }
             pythonBridge?.initialize(SettingsActivity.getConfigDir(this).absolutePath)
             DiagnosticLog.append(this, "Main.Startup", "bridge_ready elapsed=${System.currentTimeMillis() - t0}")
-            toast("startup:bridge_ready")
 
             val repository = BookRepository(this)
             DiagnosticLog.append(this, "Main.Startup", "repository_ready elapsed=${System.currentTimeMillis() - t0}")
-            toast("startup:repository_ready")
 
             viewModel = ViewModelProvider(this, ViewModelFactory(repository))[LibraryViewModel::class.java]
             DiagnosticLog.append(this, "Main.Startup", "viewmodel_ready elapsed=${System.currentTimeMillis() - t0}")
-            toast("startup:viewmodel_ready")
 
             bookAdapter = BookAdapter(viewModel.getBooksSnapshot(), { book ->
                 selectedBook = book
@@ -102,7 +104,6 @@ class MainActivity : AppCompatActivity() {
             DiagnosticLog.append(this, "Main.Startup", "load_persisted_library_end elapsed=${System.currentTimeMillis() - t0}")
             ensureNotificationPermission()
             DiagnosticLog.append(this, "Main.Startup", "complete elapsed=${System.currentTimeMillis() - t0}")
-            toast("startup:complete")
 
             viewModel.uiJobState.observe(this) { state ->
                 if (state == null) {
@@ -127,13 +128,13 @@ class MainActivity : AppCompatActivity() {
                 if (state.finished && lastTerminalToastJobId != state.jobId) {
                     lastTerminalToastJobId = state.jobId
                     when (state.status) {
-                        "success" -> {
-                            toast("${humanizeOperation(state.type)} complete")
-                            viewModel.loadLibrary()
-                        }
+                        "success" -> toast("${humanizeOperation(state.type)} complete")
                         "failed" -> toast("${humanizeOperation(state.type)} failed")
                         "cancelled" -> toast("${humanizeOperation(state.type)} cancelled")
                     }
+                }
+                if (state.finished) {
+                    viewModel.loadLibrary()
                 }
                 if (!state.finished) {
                     lastTerminalToastJobId = null
@@ -188,16 +189,32 @@ class MainActivity : AppCompatActivity() {
                     else -> false
                 }
             }
+
+            handleSharedUrl(intent)
         } catch (e: Throwable) {
             android.util.Log.e("MainActivity", "onCreate crash", e)
             runOnUiThread {
-                android.app.AlertDialog.Builder(this)
+                AlertDialog.Builder(this)
                     .setTitle("Startup Error")
                     .setMessage("${e.javaClass.simpleName}: ${e.message ?: "null"}")
                     .setPositiveButton("OK") { _, _ -> finish() }
                     .show()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSharedUrl(intent)
+    }
+
+    private fun handleSharedUrl(intent: Intent) {
+        if (intent.action != Intent.ACTION_SEND || intent.type != "text/plain") return
+        val url = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+        if (url.isBlank() || !url.startsWith("http")) return
+        DiagnosticLog.append(this, "Main.Shared", "shared_url=$url")
+        viewModel.enqueueDownload(url)
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -527,7 +544,9 @@ class MainActivity : AppCompatActivity() {
                         )
                     }
                     list.sortByDescending { it.lastModified }
-                    viewModel.setBooks(list)
+                    for (book in list) {
+                        viewModel.addOrUpdate(book)
+                    }
                     syncBooks(viewModel.getBooksSnapshot())
                     updateEmptyState()
                     toast("Loaded ${list.size} EPUBs")

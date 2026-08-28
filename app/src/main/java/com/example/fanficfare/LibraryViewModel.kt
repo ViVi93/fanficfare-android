@@ -36,8 +36,13 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
         _uiJobState.addSource(repository.latestJobs) { jobs ->
             val current = jobs.maxByOrNull { it.createdAt }
             val terminal = current?.status?.let { it == "success" || it == "failed" || it == "cancelled" } ?: false
-            if (terminal && current != null) {
-                if (_lastNotifiedTerminalJobId != current.id) {
+            if (current == null) {
+                _lastNotifiedTerminalJobId = null
+                _uiJobState.value = null
+                return@addSource
+            }
+            if (terminal) {
+                if (_observedNonTerminalJobIds.contains(current.id) && _lastNotifiedTerminalJobId != current.id) {
                     _lastNotifiedTerminalJobId = current.id
                     _uiJobState.value = JobUiState(
                         jobId = current.id,
@@ -48,8 +53,10 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
                         finished = true
                     )
                 }
-            } else if (!terminal && current != null) {
+                _observedNonTerminalJobIds.remove(current.id)
+            } else {
                 _lastNotifiedTerminalJobId = null
+                _observedNonTerminalJobIds.add(current.id)
                 _uiJobState.value = JobUiState(
                     jobId = current.id,
                     type = current.type,
@@ -58,14 +65,12 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
                     indeterminate = true,
                     finished = false
                 )
-            } else {
-                _lastNotifiedTerminalJobId = null
-                _uiJobState.value = null
             }
         }
     }
 
     private var _lastNotifiedTerminalJobId: Long? = null
+    private val _observedNonTerminalJobIds = mutableSetOf<Long>()
 
     fun getCurrentSort(): String = _currentSort.value ?: "modified"
 

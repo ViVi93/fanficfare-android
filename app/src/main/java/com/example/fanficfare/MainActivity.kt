@@ -128,13 +128,13 @@ class MainActivity : AppCompatActivity() {
                 if (state.finished && lastTerminalToastJobId != state.jobId) {
                     lastTerminalToastJobId = state.jobId
                     when (state.status) {
-                        "success" -> {
-                            toast("${humanizeOperation(state.type)} complete")
-                            viewModel.loadLibrary()
-                        }
+                        "success" -> toast("${humanizeOperation(state.type)} complete")
                         "failed" -> toast("${humanizeOperation(state.type)} failed")
                         "cancelled" -> toast("${humanizeOperation(state.type)} cancelled")
                     }
+                }
+                if (state.finished) {
+                    viewModel.loadLibrary()
                 }
                 if (!state.finished) {
                     lastTerminalToastJobId = null
@@ -544,7 +544,9 @@ class MainActivity : AppCompatActivity() {
                         )
                     }
                     list.sortByDescending { it.lastModified }
-                    viewModel.setBooks(list)
+                    for (book in list) {
+                        viewModel.addOrUpdate(book)
+                    }
                     syncBooks(viewModel.getBooksSnapshot())
                     updateEmptyState()
                     toast("Loaded ${list.size} EPUBs")

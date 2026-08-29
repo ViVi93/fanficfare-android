@@ -15,6 +15,7 @@ class DiagnosticsActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var importText: TextView
     private lateinit var logText: TextView
+    private lateinit var appVersionText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,6 +27,7 @@ class DiagnosticsActivity : AppCompatActivity() {
         statusText = findViewById(R.id.textDiagnosticStatus)
         importText = findViewById(R.id.textImportDiagnostics)
         logText = findViewById(R.id.textDiagnosticLog)
+        appVersionText = findViewById(R.id.textAppVersion)
 
         updateStatus()
         showLog()
@@ -66,6 +68,8 @@ class DiagnosticsActivity : AppCompatActivity() {
         statusText.text = "Python: ${if (python != null) "started" else "missing"}\n" +
             "Module: ${if (module != null) "loaded" else "missing"}\n" +
             "Log file: ${DiagnosticLog.getFile(this).absolutePath}"
+        val info = packageManager.getPackageInfo(packageName, 0)
+        appVersionText.text = "App version: ${info.versionName ?: "?"} (${info.versionCode})"
     }
 
     private fun showLog() {

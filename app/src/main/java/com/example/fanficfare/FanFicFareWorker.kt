@@ -68,6 +68,16 @@ class FanFicFareWorker(
         else -> status.replaceFirstChar { it.uppercase() }
     }
 
+    private fun logWorker(tag: String, message: String) {
+        val text = "[$tag] $message"
+        android.util.Log.d("FFF-Worker", text)
+        try {
+            DiagnosticLog.append(applicationContext, "FFF-Worker", text)
+        } catch (e: Exception) {
+            android.util.Log.e("FFF-Worker", "log_failed", e)
+        }
+    }
+
     override suspend fun getForegroundInfo(): ForegroundInfo {
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle("FanFicFare")
@@ -79,13 +89,16 @@ class FanFicFareWorker(
     }
 
     override suspend fun doWork(): Result {
-        val type = inputData.getString(KEY_TYPE) ?: return Result.failure()
+        val type = inputData.getString(KEY_TYPE) ?: return Result.failure().also { logWorker("doWork", "no_type") }
         val url = inputData.getString(KEY_URL) ?: ""
         val inputPath = inputData.getString(KEY_INPUT_PATH) ?: ""
         val bookId = inputData.getLong(KEY_BOOK_ID, -1L)
         val workId = inputData.getString(KEY_WORK_ID) ?: ""
 
+        logWorker("doWork", "start type=$type url=$url workId=$workId")
+
         if (isStopped) {
+            logWorker("doWork", "stopped_early")
             return Result.failure()
         }
 
@@ -95,10 +108,10 @@ class FanFicFareWorker(
 
         val existingJob = if (workId.isNotBlank()) jobDao.findByWorkId(workId) else null
         val recovery = when {
-            existingJob == null -> null
-            existingJob.status == "success" -> recoverExistingSuccess(type, existingJob, bookDao, jobDao)
-            existingJob.status == "cancelled" -> Result.failure()
-            else -> null
+            existingJob == null -> null.also { logWorker("doWork", "no_existing_job") }
+            existingJob.status == "success" -> recoverExistingSuccess(type, existingJob, bookDao, jobDao).also { logWorker("doWork", "recovered_success") }
+            existingJob.status == "cancelled" -> Result.failure().also { logWorker("doWork", "existing_cancelled") }
+            else -> null.also { logWorker("doWork", "existing_status=${existingJob.status}") }
         }
         if (recovery != null) return recovery
 
@@ -111,6 +124,7 @@ class FanFicFareWorker(
             createdAt = System.currentTimeMillis()
         )
         val jobId = jobDao.insert(job)
+        logWorker("doWork", "job_inserted id=$jobId")
 
         return try {
             if (isStopped) {
@@ -121,16 +135,30 @@ class FanFicFareWorker(
                         finishedAt = System.currentTimeMillis()
                     )
                 )
+                logWorker("doWork", "stopped_before_phase")
                 return Result.failure()
             }
 
             setPhase("preparing")
+            logWorker("doWork", "phase=preparing")
 
             when (type) {
-                TYPE_DOWNLOAD -> handleDownload(url, bookDao, jobDao, job.copy(id = jobId))
-                TYPE_UPDATE -> handleUpdate(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId))
-                TYPE_FORCE_DOWNLOAD -> handleForceDownload(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId))
-                TYPE_METADATA -> handleMetadata(url, jobDao, job.copy(id = jobId))
+                TYPE_DOWNLOAD -> {
+                    logWorker("doWork", "calling_handleDownload")
+                    handleDownload(url, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleDownload_result=$it") }
+                }
+                TYPE_UPDATE -> {
+                    logWorker("doWork", "calling_handleUpdate")
+                    handleUpdate(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleUpdate_result=$it") }
+                }
+                TYPE_FORCE_DOWNLOAD -> {
+                    logWorker("doWork", "calling_handleForceDownload")
+                    handleForceDownload(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleForceDownload_result=$it") }
+                }
+                TYPE_METADATA -> {
+                    logWorker("doWork", "calling_handleMetadata")
+                    handleMetadata(url, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleMetadata_result=$it") }
+                }
                 else -> {
                     jobDao.update(
                         job.copy(
@@ -140,11 +168,13 @@ class FanFicFareWorker(
                             finishedAt = System.currentTimeMillis()
                         )
                     )
+                    logWorker("doWork", "unknown_type")
                     setPhase("failed")
                     Result.failure()
                 }
             }
         } catch (e: Exception) {
+            logWorker("doWork", "exception=${e.javaClass.simpleName}: ${e.message ?: "null"}")
             jobDao.update(
                 job.copy(
                     id = jobId,
@@ -155,6 +185,8 @@ class FanFicFareWorker(
             )
             setPhase("failed")
             Result.failure()
+        }.also { result ->
+            logWorker("doWork", "final_result=$result")
         }
     }
 
@@ -194,7 +226,10 @@ class FanFicFareWorker(
                         chapters = 0,
                         sourceUriString = outputPath
                     ).toEntity()
+                    val before = bookDao.findByFilePath(outputPath)
+                    android.util.Log.d("FFF-Dup", "recoverDownload title=${book.title} path=${outputPath} before=${before?.id}")
                     bookDao.insert(book)
+                    android.util.Log.d("FFF-Dup", "recoverDownload inserted id=${book.id}")
                     jobDao.update(
                         existingJob.copy(
                             bookId = book.id,
@@ -218,6 +253,8 @@ class FanFicFareWorker(
                 val current = jobDao.getById(existingJob.id)
                 if (current?.status == "cancelled") return Result.failure()
                 if (existing != null) {
+                    val before = bookDao.findByFilePath(outputPath)
+                    android.util.Log.d("FFF-Dup", "recoverUpdate title=${existing.title} path=${outputPath} existingId=${existing.id} before=${before?.id}")
                     bookDao.insert(
                         existing.copy(
                             filePath = outputPath,
@@ -225,6 +262,7 @@ class FanFicFareWorker(
                             sizeBytes = file.length()
                         )
                     )
+                    android.util.Log.d("FFF-Dup", "recoverUpdate inserted")
                 }
                 jobDao.update(
                     existingJob.copy(
@@ -271,6 +309,7 @@ class FanFicFareWorker(
         val bridge = PythonBridge(applicationContext)
         val outputDir = applicationContext.filesDir.absolutePath
         val raw = bridge.fanficfareDownload(url, outputDir)
+        logWorker("handleDownload", "bridge_returned_len=${raw.length}")
         if (isStopped) {
             jobDao.update(
                 job.copy(
@@ -383,7 +422,10 @@ class FanFicFareWorker(
             sourceUriString = finalPath
         ).toEntity()
 
+        val before = bookDao.findByFilePath(finalPath)
+        android.util.Log.d("FFF-Dup", "handleDownload title=${entity.title} path=${finalPath} before=${before?.id}")
         bookDao.insert(entity)
+        android.util.Log.d("FFF-Dup", "handleDownload inserted id=${entity.id}")
         jobDao.update(
             job.copy(
                 bookId = entity.id,
@@ -515,7 +557,10 @@ class FanFicFareWorker(
                 setPhase("cancelled")
                 return Result.failure()
             }
+            val before = bookDao.findByFilePath(finalPath)
+            android.util.Log.d("FFF-Dup", "handleUpdate title=${updated.title} path=${finalPath} existingId=${existing?.id} before=${before?.id}")
             bookDao.insert(updated)
+            android.util.Log.d("FFF-Dup", "handleUpdate inserted id=${updated.id}")
             jobDao.update(
                 job.copy(
                     bookId = updated.id,
@@ -656,7 +701,10 @@ class FanFicFareWorker(
                 setPhase("cancelled")
                 return Result.failure()
             }
+            val before = bookDao.findByFilePath(finalPath)
+            android.util.Log.d("FFF-Dup", "handleForceDownload title=${updatedEntity.title} path=${finalPath} existingId=${existing?.id} before=${before?.id}")
             bookDao.insert(updatedEntity)
+            android.util.Log.d("FFF-Dup", "handleForceDownload inserted id=${updatedEntity.id}")
             jobDao.update(
                 job.copy(
                     bookId = updatedEntity.id,

@@ -12,7 +12,7 @@ fun BookItem.toEntity(now: Long = System.currentTimeMillis()): BookEntity = Book
     sizeBytes = sizeBytes,
     coverData = coverUriString,
     chapters = chapters,
-    addedAt = now
+    addedAt = if (addedAt > 0) addedAt else now
 )
 
 fun BookEntity.toBookItem(): BookItem = BookItem(
@@ -24,5 +24,6 @@ fun BookEntity.toBookItem(): BookItem = BookItem(
     coverUriString = coverData,
     url = url.orEmpty(),
     chapters = chapters,
-    sourceUriString = sourcePath
+    sourceUriString = sourcePath,
+    addedAt = if (addedAt > 0) addedAt else lastModified
 )

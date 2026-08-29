@@ -32,7 +32,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     val visibleBooks: LiveData<List<BookItem>> = _visibleBooks
 
     init {
-        _visibleBooks.value = repository.getBooks().toList()
+        repository.getSavedSort()?.let { _currentSort.value = it }
         _uiJobState.addSource(repository.latestJobs) { jobs ->
             val current = jobs.maxByOrNull { it.createdAt }
             val terminal = current?.status?.let { it == "success" || it == "failed" || it == "cancelled" } ?: false
@@ -67,6 +67,17 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
                 )
             }
         }
+        repository.books.observeForever { books ->
+            val sort = _currentSort.value ?: "modified"
+            val sorted = when (sort) {
+                "title" -> books.sortedBy { it.title.lowercase() }
+                "author" -> books.sortedBy { it.author.lowercase() }
+                "chapters" -> books.sortedByDescending { it.chapters }
+                "size" -> books.sortedByDescending { it.sizeBytes }
+                else -> books.sortedByDescending { it.addedAt }
+            }
+            _visibleBooks.value = sorted
+        }
     }
 
     private var _lastNotifiedTerminalJobId: Long? = null
@@ -76,13 +87,14 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
 
     fun setSort(sort: String) {
         _currentSort.value = sort
+        repository.setSavedSort(sort)
         val current = repository.getBooks().toList()
         val sorted = when (sort) {
             "title" -> current.sortedBy { it.title.lowercase() }
             "author" -> current.sortedBy { it.author.lowercase() }
             "chapters" -> current.sortedByDescending { it.chapters }
             "size" -> current.sortedByDescending { it.sizeBytes }
-            else -> current.sortedByDescending { it.lastModified }
+            else -> current.sortedByDescending { it.addedAt }
         }
         repository.setBooks(sorted)
         recomputeVisible(sorted)
@@ -107,8 +119,8 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
         viewModelScope.launch {
             ok = repository.loadLibrary()
             if (ok) {
-                repository.setBooks(repository.getBooks().toList())
-                recomputeVisible()
+                val sort = _currentSort.value ?: "modified"
+                setSort(sort)
             }
         }
         return ok
@@ -167,6 +179,10 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     }
 
     fun hasRunningJob(): Boolean = repository.hasRunningJob()
+
+    fun cancelCurrentDownload() {
+        repository.cancelCurrentDownload()
+    }
 
     fun enqueueDownload(url: String) = viewModelScope.launch { repository.enqueueDownload(url) }
     fun enqueueUpdate(bookId: Long, inputPath: String) = viewModelScope.launch { repository.enqueueUpdate(bookId, inputPath) }

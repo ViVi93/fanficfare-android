@@ -9,5 +9,6 @@ data class BookItem(
     val coverUriString: String? = null,
     val url: String = "",
     val chapters: Int = 0,
-    val sourceUriString: String? = null
+    val sourceUriString: String? = null,
+    val addedAt: Long = 0L
 )

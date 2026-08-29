@@ -49,7 +49,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
                         type = current.type,
                         status = current.status,
                         phase = humanizeJobStatus(current.status),
-                        indeterminate = true,
+                        indeterminate = false,
                         finished = true
                     )
                 }

@@ -24,5 +24,6 @@ fun BookEntity.toBookItem(): BookItem = BookItem(
     coverUriString = coverData,
     url = url.orEmpty(),
     chapters = chapters,
-    sourceUriString = sourcePath
+    sourceUriString = sourcePath,
+    addedAt = addedAt
 )

@@ -634,7 +634,7 @@ class MainActivity : AppCompatActivity() {
             "author" -> books.sortedBy { it.author.lowercase() }
             "chapters" -> books.sortedByDescending { it.chapters }
             "size" -> books.sortedByDescending { it.sizeBytes }
-            else -> books.sortedByDescending { it.lastModified }
+            else -> books.sortedByDescending { it.addedAt }
         }
     }
 

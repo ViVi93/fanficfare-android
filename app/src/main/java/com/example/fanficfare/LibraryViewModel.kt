@@ -33,7 +33,6 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
 
     init {
         repository.getSavedSort()?.let { _currentSort.value = it }
-        _visibleBooks.value = repository.getBooks().toList()
         _uiJobState.addSource(repository.latestJobs) { jobs ->
             val current = jobs.maxByOrNull { it.createdAt }
             val terminal = current?.status?.let { it == "success" || it == "failed" || it == "cancelled" } ?: false
@@ -50,7 +49,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
                         type = current.type,
                         status = current.status,
                         phase = humanizeJobStatus(current.status),
-                        indeterminate = false,
+                        indeterminate = true,
                         finished = true
                     )
                 }
@@ -67,6 +66,17 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
                     finished = false
                 )
             }
+        }
+        repository.books.observeForever { books ->
+            val sort = _currentSort.value ?: "modified"
+            val sorted = when (sort) {
+                "title" -> books.sortedBy { it.title.lowercase() }
+                "author" -> books.sortedBy { it.author.lowercase() }
+                "chapters" -> books.sortedByDescending { it.chapters }
+                "size" -> books.sortedByDescending { it.sizeBytes }
+                else -> books.sortedByDescending { it.addedAt }
+            }
+            _visibleBooks.value = sorted
         }
     }
 

@@ -91,7 +91,7 @@ class MainActivity : AppCompatActivity() {
             findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).layoutManager = LinearLayoutManager(this)
             findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
 
-            viewModel.books.observe(this) { books ->
+            viewModel.visibleBooks.observe(this) { books ->
                 if (books.isNotEmpty()) {
                     syncBooks(books)
                 }

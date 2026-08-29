@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -720,3 +721,92 @@ def run_dns_diagnostics():
         msg = "{}: {}".format(type(e).__name__, e)
         print("[fanficfare_bridge] run_dns_diagnostics ERROR {}".format(msg))
         return json.dumps({"ok": False, "error": msg})
+
+
+def _dedupe_urls(urls):
+    if not urls:
+        return []
+    seen = {}
+    for url in urls:
+        key = _canonical_dedupe_key(url)
+        if key not in seen or len(url) < len(seen[key]):
+            seen[key] = url
+    return list(seen.values())
+
+
+def _canonical_dedupe_key(url):
+    url = url.rstrip('/')
+    lowered = url.lower()
+    if 'archiveofourown.org/works/' in lowered or 'ao3.org/works/' in lowered:
+        m = re.search(r'/works/(\d+)', lowered)
+        if m:
+            return 'ao3_work:' + m.group(1)
+    return lowered
+
+
+def list_story_urls(page_url, normalize=False):
+    if not _import_fanficfare():
+        return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
+    try:
+        from fanficfare.geturls import get_urls_from_page
+        from fanficfare_config import build_configuration
+        _download_debug_write("list_story_urls START url={} normalize={}".format(page_url, normalize))
+        configuration = build_configuration(page_url, "epub")
+        result = get_urls_from_page(page_url, configuration=configuration, normalize=normalize)
+        if not isinstance(result, dict):
+            result = {}
+        urls = result.get('urllist', []) or []
+        urls = _dedupe_urls(urls)
+        payload = {"ok": True}
+        payload.update(result)
+        payload['urllist'] = urls
+        payload['duplicates_removed'] = len(result.get('urllist', []) or []) - len(urls)
+        _download_debug_write("list_story_urls RETURN count={} deduped_from={}".format(len(urls), len(result.get('urllist', []) or [])))
+        return json.dumps(payload)
+    except Exception as e:
+        _download_debug_write("list_story_urls EXCEPTION {}: {}".format(type(e).__name__, e))
+        return json.dumps({"ok": False, "error": str(e), "detail": "{}: {}".format(type(e).__name__, e)})
+
+
+def normalize_story_urls(page_url):
+    return list_story_urls(page_url, normalize=True)
+
+
+def download_story_list(page_url):
+    if not _import_fanficfare():
+        return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
+    try:
+        from fanficfare.geturls import get_urls_from_page
+        from fanficfare_config import build_configuration
+        _download_debug_write("download_story_list START url={}".format(page_url))
+        configuration = build_configuration(page_url, "epub")
+        result = get_urls_from_page(page_url, configuration=configuration, normalize=False)
+        if not isinstance(result, dict):
+            result = {}
+        urls = _dedupe_urls(result.get('urllist', []) or [])
+        if not urls:
+            _download_debug_write("download_story_list RETURN no_urls")
+            return json.dumps({"ok": True, "count": 0, "stories": []})
+        stories = []
+        errors = 0
+        for url in urls:
+            try:
+                meta_raw = get_metadata(url)
+                meta = json.loads(meta_raw)
+                if meta.get("ok"):
+                    stories.append({
+                        "url": url,
+                        "title": meta.get("title") or "",
+                        "chapters": meta.get("chapters") or 0,
+                    })
+                else:
+                    stories.append({"url": url, "title": "", "chapters": 0})
+                    errors += 1
+            except Exception:
+                stories.append({"url": url, "title": "", "chapters": 0})
+                errors += 1
+        _download_debug_write("download_story_list RETURN count={} errors={}".format(len(stories), errors))
+        return json.dumps({"ok": True, "count": len(stories), "errors": errors, "stories": stories})
+    except Exception as e:
+        _download_debug_write("download_story_list EXCEPTION {}: {}".format(type(e).__name__, e))
+        return json.dumps({"ok": False, "error": str(e), "detail": "{}: {}".format(type(e).__name__, e)})

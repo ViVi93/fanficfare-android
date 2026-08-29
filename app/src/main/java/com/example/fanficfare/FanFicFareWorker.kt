@@ -11,6 +11,7 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.example.fanficfare.data.local.AppDatabase
 import com.example.fanficfare.data.local.BookDao
+import com.example.fanficfare.data.local.BookEntity
 import com.example.fanficfare.data.local.DownloadJobDao
 import com.example.fanficfare.data.local.DownloadJobEntity
 import com.example.fanficfare.data.local.toEntity
@@ -75,6 +76,31 @@ class FanFicFareWorker(
             DiagnosticLog.append(applicationContext, "FFF-Worker", text)
         } catch (e: Exception) {
             android.util.Log.e("FFF-Worker", "log_failed", e)
+        }
+    }
+
+    private suspend fun upsertBook(
+        bookDao: BookDao,
+        candidate: BookEntity,
+        filePath: String
+    ): BookEntity {
+        val existing = if (!candidate.url.isNullOrBlank()) {
+            bookDao.findByUrl(candidate.url) ?: bookDao.findByFilePath(filePath)
+        } else {
+            bookDao.findByFilePath(filePath)
+        }
+        return if (existing != null) {
+            val merged = candidate.copy(
+                id = existing.id,
+                addedAt = existing.addedAt
+            )
+            bookDao.update(merged)
+            android.util.Log.d("FFF-Dup", "upsertBook updated id=${merged.id}")
+            merged
+        } else {
+            val newId = bookDao.insert(candidate)
+            android.util.Log.d("FFF-Dup", "upsertBook inserted id=$newId")
+            candidate.copy(id = newId)
         }
     }
 
@@ -228,11 +254,11 @@ class FanFicFareWorker(
                     ).toEntity()
                     val before = bookDao.findByFilePath(outputPath)
                     android.util.Log.d("FFF-Dup", "recoverDownload title=${book.title} path=${outputPath} before=${before?.id}")
-                    bookDao.insert(book)
-                    android.util.Log.d("FFF-Dup", "recoverDownload inserted id=${book.id}")
+                    val saved = upsertBook(bookDao, book, outputPath)
+                    android.util.Log.d("FFF-Dup", "recoverDownload inserted id=${saved.id}")
                     jobDao.update(
                         existingJob.copy(
-                            bookId = book.id,
+                            bookId = saved.id,
                             status = "success",
                             finishedAt = System.currentTimeMillis()
                         )
@@ -255,14 +281,8 @@ class FanFicFareWorker(
                 if (existing != null) {
                     val before = bookDao.findByFilePath(outputPath)
                     android.util.Log.d("FFF-Dup", "recoverUpdate title=${existing.title} path=${outputPath} existingId=${existing.id} before=${before?.id}")
-                    bookDao.insert(
-                        existing.copy(
-                            filePath = outputPath,
-                            lastModified = System.currentTimeMillis(),
-                            sizeBytes = file.length()
-                        )
-                    )
-                    android.util.Log.d("FFF-Dup", "recoverUpdate inserted")
+                    val saved = upsertBook(bookDao, existing.copy(filePath = outputPath, lastModified = System.currentTimeMillis(), sizeBytes = file.length()), outputPath)
+                    android.util.Log.d("FFF-Dup", "recoverUpdate updated id=${saved.id}")
                 }
                 jobDao.update(
                     existingJob.copy(
@@ -424,11 +444,11 @@ class FanFicFareWorker(
 
         val before = bookDao.findByFilePath(finalPath)
         android.util.Log.d("FFF-Dup", "handleDownload title=${entity.title} path=${finalPath} before=${before?.id}")
-        bookDao.insert(entity)
-        android.util.Log.d("FFF-Dup", "handleDownload inserted id=${entity.id}")
+        val saved = upsertBook(bookDao, entity, finalPath)
+        android.util.Log.d("FFF-Dup", "handleDownload inserted id=${saved.id}")
         jobDao.update(
             job.copy(
-                bookId = entity.id,
+                bookId = saved.id,
                 status = "success",
                 outputPath = finalPath,
                 finishedAt = System.currentTimeMillis()
@@ -559,11 +579,11 @@ class FanFicFareWorker(
             }
             val before = bookDao.findByFilePath(finalPath)
             android.util.Log.d("FFF-Dup", "handleUpdate title=${updated.title} path=${finalPath} existingId=${existing?.id} before=${before?.id}")
-            bookDao.insert(updated)
-            android.util.Log.d("FFF-Dup", "handleUpdate inserted id=${updated.id}")
+            val saved = upsertBook(bookDao, updated, finalPath)
+            android.util.Log.d("FFF-Dup", "handleUpdate inserted id=${saved.id}")
             jobDao.update(
                 job.copy(
-                    bookId = updated.id,
+                    bookId = saved.id,
                     status = "success",
                     outputPath = finalPath,
                     finishedAt = System.currentTimeMillis()
@@ -703,11 +723,11 @@ class FanFicFareWorker(
             }
             val before = bookDao.findByFilePath(finalPath)
             android.util.Log.d("FFF-Dup", "handleForceDownload title=${updatedEntity.title} path=${finalPath} existingId=${existing?.id} before=${before?.id}")
-            bookDao.insert(updatedEntity)
-            android.util.Log.d("FFF-Dup", "handleForceDownload inserted id=${updatedEntity.id}")
+            val saved = upsertBook(bookDao, updatedEntity, finalPath)
+            android.util.Log.d("FFF-Dup", "handleForceDownload inserted id=${saved.id}")
             jobDao.update(
                 job.copy(
-                    bookId = updatedEntity.id,
+                    bookId = saved.id,
                     status = "success",
                     outputPath = finalPath,
                     finishedAt = System.currentTimeMillis()

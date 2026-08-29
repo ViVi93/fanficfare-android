@@ -148,6 +148,10 @@ class MainActivity : AppCompatActivity() {
                         showDownloadDialog()
                         true
                     }
+                    R.id.action_add_from_page -> {
+                        startActivity(Intent(this, AddFromPageActivity::class.java))
+                        true
+                    }
                     R.id.action_select -> {
                         enterSelectionMode()
                         true
@@ -634,7 +638,7 @@ class MainActivity : AppCompatActivity() {
             "author" -> books.sortedBy { it.author.lowercase() }
             "chapters" -> books.sortedByDescending { it.chapters }
             "size" -> books.sortedByDescending { it.sizeBytes }
-            else -> books.sortedByDescending { it.addedAt }
+            else -> books.sortedByDescending { it.lastModified }
         }
     }
 
@@ -647,7 +651,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSortDialog() {
-        val options = arrayOf("Date Added", "Title", "Author", "Chapters", "Size")
+        val options = arrayOf("Recent", "Title", "Author", "Chapters", "Size")
         val currentSort = viewModel.getCurrentSort()
         val checked = when (currentSort) {
             "title" -> 1

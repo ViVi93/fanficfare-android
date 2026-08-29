@@ -6,6 +6,10 @@
         android:title="Download"
         app:showAsAction="ifRoom" />
     <item
+        android:id="@+id/action_add_from_page"
+        android:title="Add from page"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_select"
         android:title="Select"
         app:showAsAction="never" />

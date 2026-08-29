@@ -11,10 +11,10 @@ import androidx.room.Update
 @Dao
 interface BookDao {
 
-    @Query("SELECT * FROM books ORDER BY addedAt ASC")
+    @Query("SELECT * FROM books ORDER BY lastModified ASC")
     fun observeAll(): LiveData<List<BookEntity>>
 
-    @Query("SELECT * FROM books ORDER BY addedAt ASC")
+    @Query("SELECT * FROM books ORDER BY lastModified ASC")
     suspend fun getAll(): List<BookEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

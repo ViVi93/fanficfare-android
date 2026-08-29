@@ -34,6 +34,9 @@ class PythonBridge(private val context: Context) {
     fun fanficfareLiteroticaConfigStatus(url: String): String =
         safeCall("get_literotica_config_status", url)
 
+    fun getLoginStatus(url: String): String =
+        safeCall("get_login_status", url)
+
     fun scanEpubDir(directory: String): String =
         safeCall("scan_epub_dir", directory)
 
@@ -66,6 +69,15 @@ class PythonBridge(private val context: Context) {
 
     fun clearDownloadDebug(): String =
         safeCall("clear_download_debug")
+
+    fun listStoryUrls(pageUrl: String, normalize: Boolean = false): String =
+        safeCall("list_story_urls", pageUrl, normalize)
+
+    fun normalizeStoryUrls(pageUrl: String): String =
+        safeCall("normalize_story_urls", pageUrl)
+
+    fun downloadStoryList(pageUrl: String): String =
+        safeCall("download_story_list", pageUrl)
 
     fun getInitError(): String? = initError
 

@@ -45,6 +45,7 @@
         <activity android:name=".BookDetailActivity" />
         <activity android:name=".SettingsActivity" />
         <activity android:name=".DiagnosticsActivity" />
+        <activity android:name=".AddFromPageActivity" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

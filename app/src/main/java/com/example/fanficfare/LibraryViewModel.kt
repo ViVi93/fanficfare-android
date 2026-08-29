@@ -34,7 +34,9 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     init {
         repository.getSavedSort()?.let { _currentSort.value = it }
         _uiJobState.addSource(repository.latestJobs) { jobs ->
-            val current = jobs.maxByOrNull { it.createdAt }
+            val latestNonTerminal = jobs.filter { !setOf("success", "failed", "cancelled").contains(it.status) }
+                .maxByOrNull { it.createdAt }
+            val current = latestNonTerminal ?: jobs.maxByOrNull { it.createdAt }
             val terminal = current?.status?.let { it == "success" || it == "failed" || it == "cancelled" } ?: false
             if (current == null) {
                 _lastNotifiedTerminalJobId = null
@@ -74,7 +76,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
                 "author" -> books.sortedBy { it.author.lowercase() }
                 "chapters" -> books.sortedByDescending { it.chapters }
                 "size" -> books.sortedByDescending { it.sizeBytes }
-                else -> books.sortedByDescending { it.addedAt }
+                else -> books.sortedByDescending { it.lastModified }
             }
             _visibleBooks.value = sorted
         }
@@ -94,7 +96,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
             "author" -> current.sortedBy { it.author.lowercase() }
             "chapters" -> current.sortedByDescending { it.chapters }
             "size" -> current.sortedByDescending { it.sizeBytes }
-            else -> current.sortedByDescending { it.addedAt }
+            else -> current.sortedByDescending { it.lastModified }
         }
         repository.setBooks(sorted)
         recomputeVisible(sorted)

@@ -316,8 +316,8 @@ class BookRepository(private val context: Context) {
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            FanFicFareWorker.UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
+            requestWorkId,
+            ExistingWorkPolicy.KEEP,
             work
         )
         downloadJobDao.update(job.copy(id = jobId, workId = work.id.toString()))

@@ -210,7 +210,6 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleSharedUrl(intent)
     }
 
     private fun handleSharedUrl(intent: Intent) {

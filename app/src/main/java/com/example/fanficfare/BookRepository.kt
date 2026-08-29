@@ -39,6 +39,10 @@ class BookRepository(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val prefs: SharedPreferences = context.getSharedPreferences("fanficfare_prefs", Context.MODE_PRIVATE)
 
+    companion object {
+        private const val KEY_SORT = "sort"
+    }
+
     private val _books = MutableLiveData<List<BookItem>>(emptyList())
     val books: LiveData<List<BookItem>> = _books
     private val _latestJobs: MediatorLiveData<List<DownloadJobEntity>> = MediatorLiveData<List<DownloadJobEntity>>().apply {
@@ -122,8 +126,24 @@ class BookRepository(private val context: Context) {
     fun addOrUpdate(book: BookItem) {
         val list = (_books.value ?: emptyList()).toMutableList()
         val idx = findByIdentity(book)
-        if (idx >= 0) list[idx] = book else list.add(0, book)
+        val msg = "title=${book.title} url=${book.url} path=${book.uriString} idx=$idx sizeBefore=${list.size}"
+        android.util.Log.d("FFF-Dup", msg)
+        DiagnosticLog.append(context, "FFF-Dup", msg)
+        if (idx >= 0) {
+            list[idx] = book
+            val msg2 = "addOrUpdate replaced_at=$idx"
+            android.util.Log.d("FFF-Dup", msg2)
+            DiagnosticLog.append(context, "FFF-Dup", msg2)
+        } else {
+            list.add(0, book)
+            val msg2 = "addOrUpdate appended"
+            android.util.Log.d("FFF-Dup", msg2)
+            DiagnosticLog.append(context, "FFF-Dup", msg2)
+        }
         _books.value = list
+        val msg3 = "addOrUpdate sizeAfter=${list.size}"
+        android.util.Log.d("FFF-Dup", msg3)
+        DiagnosticLog.append(context, "FFF-Dup", msg3)
         scope.launch {
             upsertBookEntity(book)
         }
@@ -158,6 +178,9 @@ class BookRepository(private val context: Context) {
     }
 
     fun setBooks(newBooks: List<BookItem>) {
+        val msg = "setBooks count=${newBooks.size}"
+        android.util.Log.d("FFF-Dup", msg)
+        DiagnosticLog.append(context, "FFF-Dup", msg)
         _books.value = newBooks.toList()
         scope.launch {
             bookDao.clear()
@@ -167,6 +190,9 @@ class BookRepository(private val context: Context) {
 
     suspend fun loadLibrary(): Boolean {
         val entities = bookDao.getAll()
+        val msg = "loadLibrary entityCount=${entities.size}"
+        android.util.Log.d("FFF-Dup", msg)
+        DiagnosticLog.append(context, "FFF-Dup", msg)
         _books.postValue(entities.map { it.toBookItem() })
         return true
     }
@@ -258,6 +284,12 @@ class BookRepository(private val context: Context) {
         return java.io.File(dir, name).absolutePath
     }
 
+    fun getSavedSort(): String? = prefs.getString(KEY_SORT, null)
+
+    fun setSavedSort(sort: String) {
+        prefs.edit().putString(KEY_SORT, sort).apply()
+    }
+
     suspend fun enqueueDownload(url: String): Long {
         val job = DownloadJobEntity(
             bookId = 0,
@@ -285,7 +317,7 @@ class BookRepository(private val context: Context) {
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             FanFicFareWorker.UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.REPLACE,
             work
         )
         downloadJobDao.update(job.copy(id = jobId, workId = work.id.toString()))
@@ -397,6 +429,28 @@ class BookRepository(private val context: Context) {
     }
 
     suspend fun getJob(jobId: Long): DownloadJobEntity? = downloadJobDao.getById(jobId)
+
+    fun cancelCurrentDownload() {
+        DiagnosticLog.append(context, "Main.Cancel", "cancel_start")
+        try {
+            WorkManager.getInstance(context).cancelUniqueWork(FanFicFareWorker.UNIQUE_WORK_NAME)
+            DiagnosticLog.append(context, "Main.Cancel", "workmanager_cancelled")
+        } catch (e: Exception) {
+            DiagnosticLog.appendException(context, "Main.Cancel", "workmanager_cancel_failed", e)
+            android.util.Log.e("FFF-Cancel", "cancel failed", e)
+        }
+        scope.launch(Dispatchers.IO) {
+            try {
+                val dao = database.downloadJobDao()
+                val stale = dao.getByStatus("running") + dao.getByStatus("queued")
+                val cancelled = stale.map { it.copy(status = "cancelled", finishedAt = System.currentTimeMillis()) }
+                cancelled.forEach { dao.update(it) }
+                DiagnosticLog.append(context, "Main.Cancel", "db_updated count=${cancelled.size}")
+            } catch (e: Exception) {
+                DiagnosticLog.appendException(context, "Main.Cancel", "db_update_failed", e)
+            }
+        }
+    }
 
     fun retryJob(job: DownloadJobEntity) {
         when (job.type) {

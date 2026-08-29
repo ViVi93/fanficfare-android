@@ -32,6 +32,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     val visibleBooks: LiveData<List<BookItem>> = _visibleBooks
 
     init {
+        repository.getSavedSort()?.let { _currentSort.value = it }
         _visibleBooks.value = repository.getBooks().toList()
         _uiJobState.addSource(repository.latestJobs) { jobs ->
             val current = jobs.maxByOrNull { it.createdAt }
@@ -76,6 +77,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
 
     fun setSort(sort: String) {
         _currentSort.value = sort
+        repository.setSavedSort(sort)
         val current = repository.getBooks().toList()
         val sorted = when (sort) {
             "title" -> current.sortedBy { it.title.lowercase() }
@@ -167,6 +169,10 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     }
 
     fun hasRunningJob(): Boolean = repository.hasRunningJob()
+
+    fun cancelCurrentDownload() {
+        repository.cancelCurrentDownload()
+    }
 
     fun enqueueDownload(url: String) = viewModelScope.launch { repository.enqueueDownload(url) }
     fun enqueueUpdate(bookId: Long, inputPath: String) = viewModelScope.launch { repository.enqueueUpdate(bookId, inputPath) }

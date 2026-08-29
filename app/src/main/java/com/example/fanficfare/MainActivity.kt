@@ -95,10 +95,8 @@ class MainActivity : AppCompatActivity() {
                 if (books.isNotEmpty()) {
                     syncBooks(books)
                 }
-                updateEmptyState()
             }
 
-            updateEmptyState()
             DiagnosticLog.append(this, "Main.Startup", "load_persisted_library_begin elapsed=${System.currentTimeMillis() - t0}")
             loadPersistedLibrary()
             DiagnosticLog.append(this, "Main.Startup", "load_persisted_library_end elapsed=${System.currentTimeMillis() - t0}")
@@ -186,6 +184,12 @@ class MainActivity : AppCompatActivity() {
                         clearSelectionMode()
                         true
                     }
+                    R.id.action_cancel_download -> {
+                        DiagnosticLog.append(this, "Main.Cancel", "cancel_pressed")
+                        toast("Cancelling download...")
+                        viewModel.cancelCurrentDownload()
+                        true
+                    }
                     else -> false
                 }
             }
@@ -214,7 +218,9 @@ class MainActivity : AppCompatActivity() {
         val url = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
         if (url.isBlank() || !url.startsWith("http")) return
         DiagnosticLog.append(this, "Main.Shared", "shared_url=$url")
+        toast("Sharing download: ${android.net.Uri.parse(url).host ?: url}")
         viewModel.enqueueDownload(url)
+        DiagnosticLog.append(this, "Main.Shared", "enqueued_download url=$url")
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -248,8 +254,6 @@ class MainActivity : AppCompatActivity() {
     private fun getPythonBridge(): PythonBridge? = pythonBridge
 
     private fun updateEmptyState() {
-        val empty = findViewById<TextView>(R.id.textEmpty)
-        empty?.visibility = if (viewModel.getBooksSnapshot().isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun syncBooks(books: List<BookItem>) {
@@ -517,6 +521,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun scanManualEpubDir(folder: java.io.File) {
         toast("Scanning ${folder.absolutePath}...")
+        android.util.Log.d("FFF-Dup", "scanManualEpubDir start path=${folder.absolutePath}")
         Thread {
             val resultJson = pythonBridge?.scanEpubDir(folder.absolutePath)
                 ?: """{"ok":false,"error":"bridge missing"}"""
@@ -524,6 +529,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (result?.optBoolean("ok") == true) {
                     val books = result.optJSONArray("books") ?: org.json.JSONArray()
+                    android.util.Log.d("FFF-Dup", "scanManualEpubDir scannedCount=${books.length()}")
                     val list = mutableListOf<BookItem>()
                     val seen = mutableSetOf<String>()
                     for (i in 0 until books.length()) {

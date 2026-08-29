@@ -109,7 +109,6 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
         viewModelScope.launch {
             ok = repository.loadLibrary()
             if (ok) {
-                repository.setBooks(repository.getBooks().toList())
                 recomputeVisible()
             }
         }

@@ -25,5 +25,5 @@ fun BookEntity.toBookItem(): BookItem = BookItem(
     url = url.orEmpty(),
     chapters = chapters,
     sourceUriString = sourcePath,
-    addedAt = addedAt
+    addedAt = if (addedAt > 0) addedAt else lastModified
 )

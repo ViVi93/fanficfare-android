@@ -193,7 +193,7 @@ class BookRepository(private val context: Context) {
         val msg = "loadLibrary entityCount=${entities.size}"
         android.util.Log.d("FFF-Dup", msg)
         DiagnosticLog.append(context, "FFF-Dup", msg)
-        _books.postValue(entities.map { it.toBookItem() })
+        _books.value = entities.map { it.toBookItem() }
         return true
     }
 

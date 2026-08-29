@@ -84,7 +84,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
             "author" -> current.sortedBy { it.author.lowercase() }
             "chapters" -> current.sortedByDescending { it.chapters }
             "size" -> current.sortedByDescending { it.sizeBytes }
-            else -> current.sortedByDescending { it.lastModified }
+            else -> current.sortedByDescending { it.addedAt }
         }
         repository.setBooks(sorted)
         recomputeVisible(sorted)
@@ -109,7 +109,8 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
         viewModelScope.launch {
             ok = repository.loadLibrary()
             if (ok) {
-                recomputeVisible()
+                val sort = _currentSort.value ?: "modified"
+                setSort(sort)
             }
         }
         return ok

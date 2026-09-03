@@ -14,10 +14,12 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.fanficfare.adapter.BookAdapter
 import com.example.fanficfare.model.BookItem
 import com.chaquo.python.Python
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 
@@ -442,8 +444,10 @@ class MainActivity : AppCompatActivity() {
             val url = input.text.toString().trim()
             if (url.isBlank()) return@setOnClickListener
             toast("Checking metadata...")
-            viewModel.enqueueMetadata(url)
-            DiagnosticLog.append(this, "Main.Update", "enqueued_metadata url=$url")
+            lifecycleScope.launch {
+                viewModel.enqueueMetadata(url)
+                DiagnosticLog.append(this@MainActivity, "Main.Update", "enqueued_metadata url=$url")
+            }
         }
         AlertDialog.Builder(this)
             .setView(view)

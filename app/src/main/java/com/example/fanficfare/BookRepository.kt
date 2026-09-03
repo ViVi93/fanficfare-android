@@ -108,6 +108,17 @@ class BookRepository(private val context: Context) {
         }
     }
 
+    suspend fun getAllDownloadJobs(): List<DownloadJobEntity> = withContext(Dispatchers.IO) {
+        downloadJobDao.getAll()
+    }
+
+    suspend fun updateDownloadJobStatus(jobId: Long, status: String, finishedAt: Long) {
+        withContext(Dispatchers.IO) {
+            val job = downloadJobDao.getById(jobId)
+            if (job != null) downloadJobDao.update(job.copy(status = status, finishedAt = finishedAt))
+        }
+    }
+
     fun getBooks(): List<BookItem> = _books.value ?: emptyList()
 
     fun getBooksSnapshot(): List<BookItem> = (_books.value ?: emptyList()).toList()
@@ -418,12 +429,9 @@ class BookRepository(private val context: Context) {
                     .build()
             )
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .addTag("fanficfare_metadata")
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            FanFicFareWorker.UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
-            work
-        )
+        WorkManager.getInstance(context).enqueue(work)
         downloadJobDao.update(job.copy(id = jobId, workId = work.id.toString()))
         return jobId
     }
@@ -443,7 +451,9 @@ class BookRepository(private val context: Context) {
             try {
                 val dao = database.downloadJobDao()
                 val stale = dao.getByStatus("running") + dao.getByStatus("queued")
-                val cancelled = stale.map { it.copy(status = "cancelled", finishedAt = System.currentTimeMillis()) }
+                val cancelled = stale
+                    .filter { setOf("download", "update", "force_download").contains(it.type) }
+                    .map { it.copy(status = "cancelled", finishedAt = System.currentTimeMillis()) }
                 cancelled.forEach { dao.update(it) }
                 DiagnosticLog.append(context, "Main.Cancel", "db_updated count=${cancelled.size}")
             } catch (e: Exception) {

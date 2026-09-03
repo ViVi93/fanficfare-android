@@ -7,12 +7,13 @@ import java.io.PrintWriter
 import java.text.SimpleDateFormat
 import java.util.*
 
-class MyApplication : Application() {
+class MyApplication : Application(), androidx.work.Configuration.Provider {
     private val originalHandler = Thread.getDefaultUncaughtExceptionHandler()
 
     override fun onCreate() {
         super.onCreate()
         com.google.android.material.color.DynamicColors.applyToActivitiesIfAvailable(this)
+        android.util.Log.d("FFF-App", "WorkManager initialized=${androidx.work.WorkManager.getInstance(this)}")
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
@@ -26,6 +27,10 @@ class MyApplication : Application() {
             }
         }
     }
+
+    override val workManagerConfiguration: androidx.work.Configuration = androidx.work.Configuration.Builder()
+            .setMinimumLoggingLevel(android.util.Log.DEBUG)
+            .build()
 
     private fun logCrash(throwable: Throwable, threadName: String) {
         try {

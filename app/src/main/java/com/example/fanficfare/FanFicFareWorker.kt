@@ -2,6 +2,7 @@ package com.example.fanficfare
 
 import android.app.NotificationChannel
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -111,7 +112,7 @@ class FanFicFareWorker(
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true)
             .build()
-        return ForegroundInfo(NOTIFICATION_ID, notification)
+        return ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     override suspend fun doWork(): Result {
@@ -122,6 +123,13 @@ class FanFicFareWorker(
         val workId = inputData.getString(KEY_WORK_ID) ?: ""
 
         logWorker("doWork", "start type=$type url=$url workId=$workId")
+
+        if (isStopped) {
+            logWorker("doWork", "stopped_early")
+            return Result.failure()
+        }
+
+        setForeground(getForegroundInfo())
 
         if (isStopped) {
             logWorker("doWork", "stopped_early")
@@ -776,6 +784,7 @@ class FanFicFareWorker(
             job.copy(
                 status = status,
                 error = errorMessage.ifBlank { null },
+                resultJson = if (result.optBoolean("ok")) result.toString() else null,
                 finishedAt = System.currentTimeMillis()
             )
         )

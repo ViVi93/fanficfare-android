@@ -54,6 +54,9 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
                         indeterminate = false,
                         finished = true
                     )
+                } else if (!_observedNonTerminalJobIds.contains(current.id)) {
+                    _lastNotifiedTerminalJobId = current.id
+                    _uiJobState.value = null
                 }
                 _observedNonTerminalJobIds.remove(current.id)
             } else {
@@ -189,5 +192,5 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     fun enqueueDownload(url: String) = viewModelScope.launch { repository.enqueueDownload(url) }
     fun enqueueUpdate(bookId: Long, inputPath: String) = viewModelScope.launch { repository.enqueueUpdate(bookId, inputPath) }
     fun enqueueForceDownload(bookId: Long, inputPath: String) = viewModelScope.launch { repository.enqueueForceDownload(bookId, inputPath) }
-    fun enqueueMetadata(url: String) = viewModelScope.launch { repository.enqueueMetadata(url) }
+    suspend fun enqueueMetadata(url: String): Long = repository.enqueueMetadata(url)
 }

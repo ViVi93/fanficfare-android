@@ -23,5 +23,6 @@ data class DownloadJobEntity(
     val error: String? = null,
     val createdAt: Long = 0L,
     val finishedAt: Long? = null,
-    val workId: String? = null
+    val workId: String? = null,
+    val resultJson: String? = null
 )

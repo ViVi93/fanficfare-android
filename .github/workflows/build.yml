@@ -27,7 +27,7 @@ jobs:
             "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0"
-      - name: Prepare release signing config
+      - name: Build release APK
         if: github.event_name == 'push'
         env:
           SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 }}
@@ -36,15 +36,11 @@ jobs:
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           echo "$SIGNING_KEY_STORE_BASE64" | base64 -d > signing.jks
-          cat > signing.properties <<EOF
-          SIGNING_KEY_STORE_PATH=$(pwd)/signing.jks
-          SIGNING_KEY_ALIAS=$SIGNING_KEY_ALIAS
-          SIGNING_STORE_PASSWORD=$SIGNING_STORE_PASSWORD
-          SIGNING_KEY_PASSWORD=$SIGNING_KEY_PASSWORD
-          EOF
-      - name: Build release APK
-        if: github.event_name == 'push'
-        run: ./gradlew assembleRelease -Psigning.properties=signing.properties
+          ./gradlew assembleRelease \
+            -PSIGNING_KEY_STORE_PATH="$(pwd)/signing.jks" \
+            -PSIGNING_KEY_ALIAS="$SIGNING_KEY_ALIAS" \
+            -PSIGNING_STORE_PASSWORD="$SIGNING_STORE_PASSWORD" \
+            -PSIGNING_KEY_PASSWORD="$SIGNING_KEY_PASSWORD"
       - name: Build debug APK
         if: github.event_name != 'push'
         run: ./gradlew assembleDebug

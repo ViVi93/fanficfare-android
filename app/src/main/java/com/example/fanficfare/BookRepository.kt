@@ -36,6 +36,7 @@ class BookRepository(private val context: Context) {
     private val database = AppDatabase.getInstance(context)
     private val bookDao = database.bookDao()
     private val downloadJobDao = database.downloadJobDao()
+    val jobDao: com.example.fanficfare.data.local.DownloadJobDao = downloadJobDao
     private val scope = CoroutineScope(Dispatchers.IO)
     private val prefs: SharedPreferences = context.getSharedPreferences("fanficfare_prefs", Context.MODE_PRIVATE)
 
@@ -46,19 +47,27 @@ class BookRepository(private val context: Context) {
     private val _books = MutableLiveData<List<BookItem>>(emptyList())
     val books: LiveData<List<BookItem>> = _books
     private val _latestJobs: MediatorLiveData<List<DownloadJobEntity>> = MediatorLiveData<List<DownloadJobEntity>>().apply {
+        android.util.Log.d("FFF-UI-OBS", "BookRepository latestJobs mediator init")
         addSource(downloadJobDao.observeAll()) { value = it }
     }
     val latestJobs: LiveData<List<DownloadJobEntity>> = _latestJobs
 
     init {
+        android.util.Log.d("FFF-UI-OBS", "BookRepository init starting")
         scope.launch {
             migrateIfNeeded()
             reconcileStaleRunningJobs()
             val initialEntities = bookDao.getAll()
             _books.postValue(initialEntities.map { it.toBookItem() })
             withContext(kotlinx.coroutines.Dispatchers.Main) {
+                android.util.Log.d("FFF-UI-OBS", "BookRepository init observing books")
                 bookDao.observeAll().observeForever { entities ->
                     _books.postValue(entities.map { it.toBookItem() })
+                }
+                android.util.Log.d("FFF-UI-OBS", "BookRepository init observing jobs")
+                downloadJobDao.observeAll().observeForever { jobs ->
+                    android.util.Log.d("FFF-UI-OBS", "BookRepository job observer fired count=${jobs.size}")
+                    _latestJobs.postValue(jobs)
                 }
             }
         }

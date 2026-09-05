@@ -15,16 +15,14 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging, time, datetime
 logger = logging.getLogger(__name__)
 import re
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six.moves import http_cookiejar as cl
 
+from http import cookiejar as cl
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -136,7 +134,7 @@ class ScribbleHubComAdapter(BaseSiteAdapter): # XXX
                      parameters=None,
                      usecache=True):
         try:
-            return super(getClass(), self).post_request(url, parameters, usecache)
+            return super(getClass(), self).post_request(url, parameters, usecache=usecache)
         except exceptions.HTTPErrorFFF as e:
             ## this is a fix for the scribblehub ajax request sometimes returning
             #  a 400 but only with flaresolverr. Have not been able to reproduce

@@ -15,13 +15,11 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 import re
 import json
 
-from ..six import text_type as unicode
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
@@ -464,7 +462,7 @@ class BaseOTWAdapter(BaseSiteAdapter):
                 # we sort of assume ddmain exists because otherwise, there would be no fic
                 workskin = divmain.style
                 if workskin:
-                    workskin = unicode(workskin.contents[0])  # 'contents' returns a list with (here) a single element
+                    workskin = str(workskin.contents[0])  # 'contents' returns a list with (here) a single element
                     # some transformation to adjust which classes are affected
                     workskin = workskin.replace('#workskin', '.userstuff')
                     self.story.extra_css = "/*start of AO3 workskin*/\n" + workskin + "\n/* end of AO3 workskin*/\n"
@@ -707,7 +705,7 @@ class BaseOTWAdapter(BaseSiteAdapter):
                 maxpagenum = max([ int(re.sub(r'^.*'+re.escape(pageparam)+r'(\d+).*$','\\1',x)) for x in pageurls ])
                 # logger.debug(maxpagenum)
                 for j in range(1,maxpagenum+1):
-                    pageurl = 'https://' + self.getSiteDomain() + '/series/' + seriesid + pageparam + unicode(j)
+                    pageurl = 'https://' + self.getSiteDomain() + '/series/' + seriesid + pageparam + str(j)
                     # logger.debug(pageurl)
                     pagesoup = self.make_soup(self.get_request(pageurl))
                     urllist.extend([ 'https://'+self.host+a['href'] for a in pagesoup.select('h4.heading a:first-child') ])

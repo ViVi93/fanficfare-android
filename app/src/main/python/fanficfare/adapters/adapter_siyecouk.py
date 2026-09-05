@@ -16,7 +16,6 @@
 #
 
 # Software: eFiction
-from __future__ import absolute_import
 import logging
 import re
 from ..htmlcleanup import stripHTML

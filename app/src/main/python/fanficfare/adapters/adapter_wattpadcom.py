@@ -14,14 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from __future__ import absolute_import
 
 import json
 import logging
 import re
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
+
 
 from .base_adapter import BaseSiteAdapter, makeDate
 from .. import exceptions as exceptions
@@ -38,7 +36,7 @@ class WattpadComAdapter(BaseSiteAdapter):
 
     def __init__(self, config, url):
         BaseSiteAdapter.__init__(self, config, url)
-        self.storyId = unicode(self.getStoryId(url))
+        self.storyId = str(self.getStoryId(url))
         self.story.setMetadata('siteabbrev',self.getSiteAbbrev())
         self.story.setMetadata('storyId', self.storyId)
         self._setURL('https://www.wattpad.com/story/%s' % self.storyId)
@@ -171,8 +169,8 @@ class WattpadComAdapter(BaseSiteAdapter):
                 break
         self.story.extendList('category', storyCategories)
         #try:
-            #storyCategories = [WattpadComAdapter.CATEGORY_DEFs.get(unicode(c)) for c in storyInfo['categories'] if
-            #                   unicode(c) in WattpadComAdapter.CATEGORY_DEFs]
+            #storyCategories = [WattpadComAdapter.CATEGORY_DEFs.get(str(c)) for c in storyInfo['categories'] if
+            #                   str(c) in WattpadComAdapter.CATEGORY_DEFs]
             #self.story.setMetadata('category', storyCategories[0])
         #except Exception as e:
             #pass

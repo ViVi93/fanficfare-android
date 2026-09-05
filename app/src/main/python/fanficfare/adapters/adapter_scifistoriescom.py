@@ -15,11 +15,10 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 
-# py2 vs py3 transition
+
 
 from .adapter_storiesonlinenet import StoriesOnlineNetAdapter
 

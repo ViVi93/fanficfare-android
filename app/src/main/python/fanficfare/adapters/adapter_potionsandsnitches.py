@@ -16,15 +16,13 @@
 #
 
 # Software: eFiction
-from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 import re
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
+
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -39,7 +37,7 @@ class PotionsAndSnitchesOrgSiteAdapter(BaseSiteAdapter):
 
 
         # normalized story URL.
-        self._setURL('http://' + self.getSiteDomain() + '/fanfiction/viewstory.php?sid='+self.story.getMetadata('storyId'))
+        self._setURL('https://' + self.getSiteDomain() + '/fanfiction/viewstory.php?sid='+self.story.getMetadata('storyId'))
 
 
     @staticmethod
@@ -52,10 +50,10 @@ class PotionsAndSnitchesOrgSiteAdapter(BaseSiteAdapter):
 
     @classmethod
     def getSiteExampleURLs(cls):
-        return "http://www.potionsandsnitches.org/fanfiction/viewstory.php?sid=1234"
+        return "https://www.potionsandsnitches.org/fanfiction/viewstory.php?sid=1234"
 
     def getSiteURLPattern(self):
-        return re.escape("http://")+r"(www\.)?potionsandsnitches\.(net|org)/fanfiction/viewstory\.php\?sid=\d+$"
+        return r"https?://(www\.)?potionsandsnitches\.(net|org)/fanfiction/viewstory\.php\?sid=\d+$"
 
     def extractChapterUrlsAndMetadata(self):
 
@@ -76,13 +74,13 @@ class PotionsAndSnitchesOrgSiteAdapter(BaseSiteAdapter):
         # Find authorid and URL from... author url.
         a = soup.find('a', href=re.compile(r"viewuser.php\?uid=\d+"))
         self.story.setMetadata('authorId',a['href'].split('=')[1])
-        self.story.setMetadata('authorUrl','http://'+self.host+'/fanfiction/'+a['href'])
+        self.story.setMetadata('authorUrl','https://'+self.host+'/fanfiction/'+a['href'])
         self.story.setMetadata('author',a.string)
 
         # Find the chapters:
         for chapter in soup.find_all('a', href=re.compile(r'viewstory.php\?sid='+self.story.getMetadata('storyId')+r"&chapter=\d+$")):
             # just in case there's tags, like <i> in chapter titles.
-            self.add_chapter(chapter,'http://'+self.host+'/fanfiction/'+chapter['href'])
+            self.add_chapter(chapter,'https://'+self.host+'/fanfiction/'+chapter['href'])
 
 
         def defaultGetattr(d,k):
@@ -101,7 +99,7 @@ class PotionsAndSnitchesOrgSiteAdapter(BaseSiteAdapter):
                 ## Everything until the next div class='listbox'
                 svalue = ""
                 while 'listbox' not in defaultGetattr(value,'class'):
-                    svalue += unicode(value)
+                    svalue += str(value)
                     value = value.nextSibling
                 self.setDescription(url,svalue)
                 #self.story.setMetadata('description',stripHTML(svalue))
@@ -173,7 +171,7 @@ class PotionsAndSnitchesOrgSiteAdapter(BaseSiteAdapter):
             # Find Series name from series URL.
             a = soup.find('a', href=re.compile(r"viewseries.php\?seriesid=\d+"))
             series_name = a.string
-            series_url = 'http://'+self.host+'/fanfiction/'+a['href']
+            series_url = 'https://'+self.host+'/fanfiction/'+a['href']
 
             seriessoup = self.make_soup(self.get_request(series_url))
             storyas = seriessoup.find_all('a', href=re.compile(r'^viewstory.php\?sid=\d+$'))

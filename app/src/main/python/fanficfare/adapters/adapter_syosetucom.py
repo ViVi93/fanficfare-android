@@ -15,7 +15,6 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging, time
 logger = logging.getLogger(__name__)
 import re, math
@@ -25,10 +24,9 @@ from base64 import urlsafe_b64encode as b64encode
 
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six.moves import http_cookiejar as cl
-from ..six.moves.urllib.parse import urlparse
-from ..six import text_type as unicode
+
+from http import cookiejar as cl
+from urllib.parse import urlparse
 
 from .base_adapter import BaseSiteAdapter, makeDate
 
@@ -415,7 +413,7 @@ class SyosetuComAdapter(BaseSiteAdapter):
             else:
                 div['class'] = 'novel_honbun'
             if self.getConfig('include_author_notes', True) or div['class'] == 'novel_honbun':
-                text_divs.append(unicode(div))
+                text_divs.append(str(div))
         if not text_divs:
             raise exceptions.FailedToDownload("Error downloading Chapter: %s!  Missing required element!" % url)
         soup = self.make_soup(' '.join(text_divs))

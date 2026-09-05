@@ -15,7 +15,6 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 from datetime import datetime
 import logging
 import re
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
+
 
 from .base_adapter import BaseSiteAdapter
 

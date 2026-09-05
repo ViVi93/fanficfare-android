@@ -33,40 +33,37 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
 
     init {
         repository.getSavedSort()?.let { _currentSort.value = it }
+        android.util.Log.d("FFF-UI-OBS", "LibraryViewModel init observer")
         _uiJobState.addSource(repository.latestJobs) { jobs ->
-            val latestNonTerminal = jobs.filter { !setOf("success", "failed", "cancelled").contains(it.status) }
-                .maxByOrNull { it.createdAt }
-            val current = latestNonTerminal ?: jobs.maxByOrNull { it.createdAt }
-            val terminal = current?.status?.let { it == "success" || it == "failed" || it == "cancelled" } ?: false
-            if (current == null) {
+            android.util.Log.d("FFF-UI-OBS", "latestJobs fired count=${jobs.size}")
+            val latest = jobs.maxWith(compareBy<DownloadJobEntity> { it.finishedAt ?: it.createdAt }.thenBy { it.id })
+            android.util.Log.d("FFF-UI-OBS", "selected job=${latest?.id} status=${latest?.status} finished=${latest?.status in setOf("success","failed","cancelled")}")
+            android.util.Log.d("FFF-UI", "selected job=${latest?.id} status=${latest?.status} finished=${latest?.status in setOf("success","failed","cancelled")}")
+            val terminal = latest?.status?.let { it == "success" || it == "failed" || it == "cancelled" } ?: false
+            if (latest == null) {
                 _lastNotifiedTerminalJobId = null
                 _uiJobState.value = null
                 return@addSource
             }
             if (terminal) {
-                if (_observedNonTerminalJobIds.contains(current.id) && _lastNotifiedTerminalJobId != current.id) {
-                    _lastNotifiedTerminalJobId = current.id
-                    _uiJobState.value = JobUiState(
-                        jobId = current.id,
-                        type = current.type,
-                        status = current.status,
-                        phase = humanizeJobStatus(current.status),
-                        indeterminate = false,
-                        finished = true
-                    )
-                } else if (!_observedNonTerminalJobIds.contains(current.id)) {
-                    _lastNotifiedTerminalJobId = current.id
-                    _uiJobState.value = null
-                }
-                _observedNonTerminalJobIds.remove(current.id)
+                _lastNotifiedTerminalJobId = latest.id
+                _uiJobState.value = JobUiState(
+                    jobId = latest.id,
+                    type = latest.type,
+                    status = latest.status,
+                    phase = humanizeJobStatus(latest.status),
+                    indeterminate = false,
+                    finished = true
+                )
+                _observedNonTerminalJobIds.remove(latest.id)
             } else {
                 _lastNotifiedTerminalJobId = null
-                _observedNonTerminalJobIds.add(current.id)
+                _observedNonTerminalJobIds.add(latest.id)
                 _uiJobState.value = JobUiState(
-                    jobId = current.id,
-                    type = current.type,
-                    status = current.status,
-                    phase = humanizeJobStatus(current.status),
+                    jobId = latest.id,
+                    type = latest.type,
+                    status = latest.status,
+                    phase = humanizeJobStatus(latest.status),
                     indeterminate = true,
                     finished = false
                 )

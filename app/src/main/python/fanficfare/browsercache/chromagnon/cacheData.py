@@ -38,7 +38,8 @@ import struct
 import os
 
 from . import cacheAddress
-from six.moves import range
+import builtins
+from builtins import range
 
 from ..share_open import share_open
 

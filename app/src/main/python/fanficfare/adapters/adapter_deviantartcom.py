@@ -16,11 +16,10 @@
 #
 
 
-from __future__ import absolute_import
 import logging
 import re
-# py2 vs py3 transition
-from ..six.moves.urllib.parse import urlparse
+
+from urllib.parse import urlparse
 
 from .base_adapter import BaseSiteAdapter, makeDate
 from fanficfare.htmlcleanup import stripHTML

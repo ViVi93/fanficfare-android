@@ -256,6 +256,7 @@ class SettingsActivity : AppCompatActivity() {
         val buttonRemove = findViewById<Button>(R.id.buttonRemoveConfig)
         val bridge = try { PythonBridge(this) } catch (e: Exception) { null }
         val status = bridge?.getConfigStatus()
+        DiagnosticLog.append(this, "Settings.ConfigStatus", status?.toString() ?: "null")
 
         val initialized = status?.optBoolean("initialized") == true
         val configDir = status?.optString("config_dir", "") ?: ""
@@ -287,6 +288,10 @@ class SettingsActivity : AppCompatActivity() {
         }
         sb.append("Credentials present: ").append(status?.optBoolean("credentials_present") ?: false).append('\n')
         sb.append("Configuration valid: ").append(status?.optBoolean("configuration_valid") ?: false).append('\n')
+        val importError = status?.optString("import_error", "") ?: ""
+        if (importError.isNotBlank()) {
+            sb.append("Import error: ").append(importError).append('\n')
+        }
         sb.append("FanFicFare version: ").append(if (status?.has("fanficfare_version") == true) status.optString("fanficfare_version", "<NULL>") else "<NULL>").append('\n')
         statusText.text = sb.toString().trimEnd()
         buttonRemove.isEnabled = exists

@@ -29,10 +29,9 @@ from .log import make_log
 from .base_fetcher import FetcherResponse
 from .fetcher_requests import RequestsFetcher
 
-from ..six.moves.http_cookiejar import Cookie
-from ..six.moves.urllib.parse import urlencode
-from ..six import string_types as basestring, text_type, binary_type
-from ..six import ensure_binary, ensure_text
+from http.cookiejar import Cookie
+from urllib.parse import urlencode
+from ..ensure import ensure_binary, ensure_text
 
 FLARESOLVERR_SESSION="FanFicFareSession"
 ## no convinced this is a good idea yet.
@@ -286,20 +285,20 @@ def encode_params(data):
     (lifted from requests)
     """
 
-    if isinstance(data, (text_type, binary_type)):
+    if isinstance(data, (str, bytes)):
         return data
     elif hasattr(data, 'read'):
         return data
     elif hasattr(data, '__iter__'):
         result = []
         for k, vs in to_key_val_list(data):
-            if isinstance(vs, basestring) or not hasattr(vs, '__iter__'):
+            if isinstance(vs, str) or not hasattr(vs, '__iter__'):
                 vs = [vs]
             for v in vs:
                 if v is not None:
                     result.append(
-                        (k.encode('utf-8') if isinstance(k, text_type) else k,
-                         v.encode('utf-8') if isinstance(v, text_type) else v))
+                        (k.encode('utf-8') if isinstance(k, str) else k,
+                         v.encode('utf-8') if isinstance(v, str) else v))
         return urlencode(result, doseq=True)
     else:
         return data

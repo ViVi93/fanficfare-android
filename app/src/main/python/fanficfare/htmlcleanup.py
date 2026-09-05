@@ -15,23 +15,15 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 
 import re
 
 # py2 vs py3 transition
-from .six.moves.urllib.parse import unquote
-from .six import text_type as unicode
-from .six import string_types as basestring
-from .six import ensure_text
-from .six import unichr
-from .six import PY2
-if PY2:
-    from cgi import escape as htmlescape
-else: # PY3
-    from html import escape as htmlescape
+from urllib.parse import unquote
+from .ensure import ensure_text
+from html import escape as htmlescape
 
 def _unirepl(match):
     "Return the unicode string for a decimal number"
@@ -43,7 +35,7 @@ def _unirepl(match):
         s = match.group(1)
     try:
         value = int(s, radix)
-        retval = "%s%s"%(unichr(value),match.group(2))
+        retval = "%s%s"%(chr(value),match.group(2))
     except:
         # This way, at least if there's more of entities out there
         # that fail, it doesn't blow the entire download.
@@ -69,7 +61,7 @@ def _replaceNotEntities(data):
     return p.sub(r'&\1', data)
 
 def stripHTML(soup, remove_all_entities=True):
-    if isinstance(soup,basestring):
+    if isinstance(soup,str):
         retval = removeEntities(re.sub(r'<[^>]+>','',"%s" % soup),
                                 remove_all_entities=remove_all_entities).strip()
     else:
@@ -86,7 +78,7 @@ def stripHTML(soup, remove_all_entities=True):
     return ensure_text(retval).replace(u'\xc2\xa0',' ').strip()
 
 def conditionalRemoveEntities(value):
-    if isinstance(value,basestring):
+    if isinstance(value,str):
         return removeEntities(value).strip()
     else:
         return value
@@ -100,8 +92,8 @@ def removeEntities(text, space_only=False, remove_all_entities=False):
     if text is None:
         return u""
 
-    if not isinstance(text,basestring):
-        text = unicode(text)
+    if not isinstance(text,str):
+        text = str(text)
 
     try:
         t = text

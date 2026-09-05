@@ -76,6 +76,28 @@ class MainActivity : AppCompatActivity() {
             viewModel = ViewModelProvider(this, ViewModelFactory(repository))[LibraryViewModel::class.java]
             DiagnosticLog.append(this, "Main.Startup", "viewmodel_ready elapsed=${System.currentTimeMillis() - t0}")
 
+            android.util.Log.d("FFF-UI-OBS", "MainActivity direct observer repo=${true}")
+            repository.jobDao.observeAll().observe(this) { jobs ->
+                android.util.Log.d("FFF-UI-OBS", "MainActivity direct observeAll count=${jobs.size}")
+                val latest = jobs.maxByOrNull { it.createdAt }
+                android.util.Log.d("FFF-UI-OBS", "MainActivity direct latest job=${latest?.id} status=${latest?.status}")
+                if (latest == null) {
+                    statusContainer?.visibility = android.view.View.GONE
+                    return@observe
+                }
+                val text = when (latest.status) {
+                    "queued" -> "Queued"
+                    "running" -> "Running..."
+                    "success" -> "✓ Complete"
+                    "failed" -> "✗ Failed"
+                    "cancelled" -> "⏹ Cancelled"
+                    else -> latest.status.replaceFirstChar { it.uppercase() }
+                }
+                statusContainer?.visibility = android.view.View.VISIBLE
+                statusProgress?.visibility = if (latest.status == "running") android.view.View.VISIBLE else android.view.View.GONE
+                statusText?.text = text
+            }
+
             bookAdapter = BookAdapter(viewModel.getBooksSnapshot(), { book ->
                 selectedBook = book
                 if (bookAdapter.isSelectionMode()) {
@@ -134,11 +156,35 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 if (state.finished) {
-                    viewModel.loadLibrary()
+                    // Worker already inserted/updated the book; avoid reloading from disk
                 }
                 if (!state.finished) {
                     lastTerminalToastJobId = null
                 }
+            }
+            val dao = (viewModel as? LibraryViewModel)?.let { 
+                try { (it as Any).javaClass.getDeclaredField("repository").let { f -> f.isAccessible = true; f.get(it) } } catch (e: Exception) { null }
+            } as? com.example.fanficfare.BookRepository
+            android.util.Log.d("FFF-UI-OBS", "MainActivity direct observer repo=${dao != null}")
+            dao?.jobDao?.observeAll()?.observe(this) { jobs ->
+                android.util.Log.d("FFF-UI-OBS", "MainActivity direct observeAll count=${jobs.size}")
+                val latest = jobs.maxByOrNull { it.createdAt }
+                android.util.Log.d("FFF-UI-OBS", "MainActivity direct latest job=${latest?.id} status=${latest?.status}")
+                if (latest == null) {
+                    statusContainer?.visibility = android.view.View.GONE
+                    return@observe
+                }
+                val text = when (latest.status) {
+                    "queued" -> "Queued"
+                    "running" -> "Running..."
+                    "success" -> "✓ Complete"
+                    "failed" -> "✗ Failed"
+                    "cancelled" -> "⏹ Cancelled"
+                    else -> latest.status.replaceFirstChar { it.uppercase() }
+                }
+                statusContainer?.visibility = android.view.View.VISIBLE
+                statusProgress?.visibility = if (latest.status == "running") android.view.View.VISIBLE else android.view.View.GONE
+                statusText?.text = text
             }
 
             val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)

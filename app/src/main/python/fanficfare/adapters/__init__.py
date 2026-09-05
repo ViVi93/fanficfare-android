@@ -15,13 +15,12 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import os, re, sys, types
 from contextlib import contextmanager
 import logging
 
-# py2 vs py3 transition
-from ..six.moves.urllib.parse import urlparse
+
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +31,6 @@ from .. import configurable as configurable
 
 from . import base_adapter
 from . import base_efiction_adapter
-## Removed test-only adapters for Android compatibility:
-## adapter_test1, adapter_test2, adapter_test3, adapter_test4
 from . import adapter_fanfictionnet
 from . import adapter_fictionalleyarchiveorg
 from . import adapter_fictionpresscom

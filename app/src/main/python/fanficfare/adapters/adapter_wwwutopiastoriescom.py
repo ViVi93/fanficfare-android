@@ -23,7 +23,6 @@
 ### Updated on December 18, 2016
 ###     Updated format as per linter, and added documentation
 ####################################################################################################
-from __future__ import absolute_import
 '''
 This site is much link fictionmania, in that there is only one chapter per
 story, so we only have the one url to get information from.
@@ -38,9 +37,8 @@ from bs4.element import Comment
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
-from ..six.moves.urllib.parse import quote
+
+from urllib.parse import quote
 
 from .base_adapter import BaseSiteAdapter, makeDate
 
@@ -117,7 +115,7 @@ class WWWUtopiastoriesComAdapter(BaseSiteAdapter):
 
 
         ## Title
-        a = unicode(soup.find('title')).replace(":: GaggedUtopia's Story Archive",'').strip()
+        a = str(soup.find('title')).replace(":: GaggedUtopia's Story Archive",'').strip()
         self.story.setMetadata('title',stripHTML(a))
 
         # Find the chapters:
@@ -128,14 +126,14 @@ class WWWUtopiastoriesComAdapter(BaseSiteAdapter):
 
 
         for detail in soup.find_all('li'):
-            det = unicode(detail).replace(u"\xa0",'')
+            det = str(detail).replace(u"\xa0",'')
             heading = stripHTML(det).split(' - ')[0]
             text = stripHTML(det).replace(heading+' - ','')
             # logger.debug(heading)
             # logger.debug(text)
             if 'Author' in heading:
                 a = detail.find('a')
-                if 'mailto' in unicode(a):
+                if 'mailto' in str(a):
                     self.story.setMetadata('authorId','0000000000')
                     self.story.setMetadata('authorUrl',self.url)
                     self.story.setMetadata('author','Unknown')

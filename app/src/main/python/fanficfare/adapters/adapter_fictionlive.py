@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 from .base_adapter import BaseSiteAdapter
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
-from ..six import ensure_text
+from ..ensure import ensure_text
 
 def getClass():
     return FictionLiveAdapter

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import
 
 __license__   = 'GPL v3'
 __copyright__ = '2020, Jim Miller'
@@ -16,8 +15,7 @@ from zipfile import ZipFile, ZIP_STORED, ZIP_DEFLATED
 from xml.dom.minidom import parseString
 
 # py2 vs py3 transition
-from .six import ensure_text, text_type as unicode
-from .six import string_types as basestring
+from .ensure import ensure_text
 from io import BytesIO
 
 FONT_EXTS = ('ttf','otf','woff','woff2')
@@ -106,7 +104,7 @@ def get_oldcover(epub,relpath,contentdom,item):
     except Exception as e:
         ## Calibre's Polish Book corrupts sub-book covers.
         logger.warning("Cover (x)html file %s not found"%href)
-        logger.warning("Exception: %s"%(unicode(e)))
+        logger.warning("Exception: %s"%(str(e)))
 
     try:
         # remove all .. and the path part above it, if present.
@@ -122,7 +120,7 @@ def get_oldcover(epub,relpath,contentdom,item):
         return (oldcoverhtmlhref,oldcoverhtmltype,oldcoverhtmldata,oldcoverimghref,oldcoverimgtype,oldcoverimgdata)
     except Exception as e:
         logger.warning("Cover Image %s not found"%src)
-        logger.warning("Exception: %s"%(unicode(e)))
+        logger.warning("Exception: %s"%(str(e)))
     return None
 
 def get_update_data(inputio,
@@ -209,7 +207,7 @@ def get_update_data(inputio,
                                         # logger.debug("-->html Add oldimages:%s"%newsrc)
                                 except Exception as e:
                                     logger.warning("Image %s not found!\n(originally:%s)"%(newsrc,longdesc))
-                                    # logger.warning("Exception: %s"%(unicode(e)),exc_info=True)
+                                    # logger.warning("Exception: %s"%(str(e)),exc_info=True)
                         ## Inline and embedded CSS url() images
                         for inline in soup.select('*[style]') + soup.select('style'):
                             style = ''
@@ -480,8 +478,8 @@ def reset_orig_chapters_epub(inputio,outfile):
         if zf not in ['mimetype','toc.ncx','nav.xhtml'] and not zf.endswith('/toc.ncx') and not zf.endswith('/nav.xhtml'):
             entrychanged = False
             data = inputepub.read(zf)
-            # if isinstance(data,unicode):
-            #     logger.debug("\n\n\ndata is unicode\n\n\n")
+            # if isinstance(data,str):
+            #     logger.debug("\n\n\ndata is str\n\n\n")
             if re.match(r'.*/file\d+\.xhtml',zf):
                 #logger.debug("zf:%s"%zf)
                 data = data.decode('utf-8')
@@ -546,7 +544,7 @@ def reset_orig_chapters_epub(inputio,outfile):
                     if h3_tag and h3_tag.string == chaptertitle:
                         h3_tag.string.replace_with(chapterorigtitle)
 
-                    data = unicode(soup)
+                    data = str(soup)
 
                     entrychanged = ( origdata != data )
                     changed = changed or entrychanged
@@ -588,7 +586,7 @@ def reset_orig_chapters_epub(inputio,outfile):
 
     # only *actually* write if changed.
     if changed:
-        if isinstance(outfile,basestring):
+        if isinstance(outfile,str):
             with open(outfile,"wb") as outputio:
                 outputio.write(zipio.getvalue())
         else:
@@ -639,7 +637,7 @@ def make_soup(data,dblsoup=True):
         warnings.simplefilter("ignore")
         soup = bs4.BeautifulSoup(data,'html5lib')
         if dblsoup:
-            soup = bs4.BeautifulSoup(unicode(soup),'html5lib')
+            soup = bs4.BeautifulSoup(str(soup),'html5lib')
 
     for ns in soup.find_all('fff_hide_noscript'):
         ns.name = 'noscript'

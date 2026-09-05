@@ -3,7 +3,6 @@
 # -*- coding: utf-8 -*-
 # Copyright(c) 2009 Andrew Chatham and Vijay Pandurangan
 # Changes Copyright 2018 FanFicFare team
-from __future__ import absolute_import
 
 import struct
 import time
@@ -11,7 +10,7 @@ import random
 import logging
 
 # py2 vs py3 transition
-from .six import ensure_binary
+from .ensure import ensure_binary
 from io import BytesIO
 
 logger = logging.getLogger(__name__)

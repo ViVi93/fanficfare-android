@@ -1,10 +1,8 @@
-from __future__ import absolute_import
 import re
 import logging
 logger = logging.getLogger(__name__)
-# py2 vs py3 transition
-from ..six import text_type as unicode
-from ..six.moves.urllib import parse as urlparse
+
+from urllib import parse as urlparse
 
 from .base_adapter import BaseSiteAdapter, makeDate
 
@@ -128,7 +126,7 @@ class FictionManiaTVAdapter(BaseSiteAdapter):
                 element.name = 'div'
 
                 if keep_summary_html:
-                    self.story.setMetadata('description', unicode(element))
+                    self.story.setMetadata('description', str(element))
                 else:
                     self.story.setMetadata('description', element.get_text(strip=True))
 
@@ -147,7 +145,7 @@ class FictionManiaTVAdapter(BaseSiteAdapter):
 
             # While wrapping in paragraphs would be possible, it's too much work,
             # I'd rather display the story 1:1 like it was found in the pre tag.
-            content = unicode(element)
+            content = str(element)
             content = content.replace('\n', '<br/>')
 
             if self.getConfig('non_breaking_spaces'):

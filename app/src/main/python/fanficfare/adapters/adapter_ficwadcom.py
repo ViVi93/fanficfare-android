@@ -15,7 +15,6 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 import re
@@ -23,8 +22,7 @@ import re
 from .. import exceptions as exceptions
 from ..htmlcleanup import stripHTML
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
+
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -143,7 +141,7 @@ class FicwadComSiteAdapter(BaseSiteAdapter):
         ## perhaps not the most efficient way to parse this, using
         ## regexps for each rather than something more complex, but
         ## IMO, it's more readable and amenable to change.
-        metastr = stripHTML(unicode(metap)).replace('\n',' ').replace('\t',' ').replace(u'\u00a0',' ')
+        metastr = stripHTML(str(metap)).replace('\n',' ').replace('\t',' ').replace(u'\u00a0',' ')
 
         m = re.match(r".*?Rating: (.+?) -.*?",metastr)
         if m:

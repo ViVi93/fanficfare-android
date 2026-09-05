@@ -17,8 +17,6 @@
 ################################################################################
 ###   Written by GComyn
 ################################################################################
-from __future__ import absolute_import
-from __future__ import unicode_literals
 import logging
 logger = logging.getLogger(__name__)
 import re
@@ -26,8 +24,7 @@ import re
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
+
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 

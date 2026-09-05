@@ -18,14 +18,12 @@
 ## Adapted by GComyn on April 22, 2017
 ####################################################################################################
 
-from __future__ import absolute_import
 import logging
 import re
 import sys  # ## used for debug purposes
 import datetime
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
+
 
 from .base_adapter import BaseSiteAdapter, makeDate
 
@@ -137,7 +135,7 @@ class LCFanFicComSiteAdapter(BaseSiteAdapter):
             self.story.setMetadata('rating', rated.replace('Rated', '').replace(':', '').strip())
             summaryblock.p.decompose()
 
-        synopsis = unicode(summaryblock.body).strip()
+        synopsis = str(summaryblock.body).strip()
         if not self.getConfig('keep_summary_html'):
             synopsis = stripHTML(synopsis)
 

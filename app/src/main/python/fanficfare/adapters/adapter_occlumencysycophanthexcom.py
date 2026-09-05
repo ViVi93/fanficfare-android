@@ -16,15 +16,13 @@
 #
 
 # Software: eFiction
-from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 import re
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
+
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -183,7 +181,7 @@ class OcclumencySycophantHexComAdapter(BaseSiteAdapter):
             val = val.nextSibling
         val = val.nextSibling
         while not defaultGetattr(val) == 'table':
-            svalue += unicode(val)
+            svalue += str(val)
             val = val.nextSibling
         self.setDescription(url,svalue)
 

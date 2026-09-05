@@ -15,7 +15,6 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import time
 from datetime import date, datetime
 import logging
@@ -26,9 +25,8 @@ import json
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
-from ..six.moves import http_cookiejar as cl
+
+from http import cookiejar as cl
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -393,7 +391,7 @@ class FimFictionNetSiteAdapter(BaseSiteAdapter):
             soup = self.make_soup(data).find_all('div', {'class':re.compile(r'(.*\bauthors-note\b.*|.*\bchapter-body\b.*)')})
             if soup == None:
                 raise exceptions.FailedToDownload("Error downloading Chapter: %s!  Missing required element!" % url)
-            chapter_divs = [unicode(div) for div in soup]
+            chapter_divs = [str(div) for div in soup]
             soup = self.make_soup(" ".join(chapter_divs))
         else:
             soup = self.make_soup(data).find('div', {'id' : 'chapter-body'})

@@ -15,15 +15,13 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 import re
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
+
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -201,7 +199,7 @@ class SheppardWeirComAdapter(BaseSiteAdapter): # XXX
                 return ""
 
         # Summary
-        summarydata = unicode(soup.find('div',{'class':'content'}))
+        summarydata = str(soup.find('div',{'class':'content'}))
         start='<span class="label">Summary: </span>'
         end='</div>'
         summarydata = summarydata[summarydata.index(start)+len(start):summarydata.rindex(end)]

@@ -15,22 +15,17 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 
 # py2 vs py3 transition
-from ..six import text_type as unicode
 from .. import exceptions
 
 from urllib3.util.retry import Retry
 import requests
 from requests.exceptions import HTTPError as RequestsHTTPError
 from requests.adapters import HTTPAdapter
-try:
-    from requests_file import FileAdapter
-except ImportError:
-    FileAdapter = None
+from requests_file import FileAdapter
 
 ## makes requests/cloudscraper dump req/resp headers.
 # import http.client as http_client
@@ -75,8 +70,7 @@ class RequestsFetcher(Fetcher):
         else:
             session.mount('https://', HTTPAdapter(max_retries=self.retries))
         session.mount('http://', HTTPAdapter(max_retries=self.retries))
-        if FileAdapter is not None:
-            session.mount('file://', FileAdapter())
+        session.mount('file://', FileAdapter())
         # logger.debug("Session Proxies Before:%s"%session.proxies)
         ## try to get OS proxy settings via Calibre
         try:
@@ -147,9 +141,8 @@ class RequestsFetcher(Fetcher):
                                    resp_json)
         except RequestsHTTPError as e:
             ## not RequestsHTTPError(requests.exceptions.HTTPError) or
-            ## .six.moves.urllib.error import HTTPError because we
-            ## want code *and* content for that one trekfanfiction
-            ## catch.
+            ## urllib.error import HTTPError because we want code
+            ## *and* content for that one trekfanfiction catch.
             raise exceptions.HTTPErrorFFF(
                 url,
                 e.response.status_code,

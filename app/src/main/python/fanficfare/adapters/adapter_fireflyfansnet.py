@@ -17,12 +17,10 @@
 ####################################################################################################
 # Adapted by GComyn - December 10, 2016
 ####################################################################################################
-from __future__ import absolute_import
 ''' This adapter will download the stories from the www.fireflyfans.net forum  pages '''
 import logging
 import re
-# py2 vs py3 transition
-from ..six import text_type as unicode
+
 
 from .base_adapter import BaseSiteAdapter, makeDate
 
@@ -126,7 +124,7 @@ class FireFlyFansNetSiteAdapter(BaseSiteAdapter):
         # which is usualy FireFly on this site, but I'm going to get them
         # anyway.a
         category = soup.find('span', {'id': 'MainContent_txtItemDetails'})
-        category = stripHTML(unicode(category).replace(u"\xa0", u' '))
+        category = stripHTML(str(category).replace(u"\xa0", u' '))
         metad = category.split('    ')
         for meta in metad:
             if ":" in meta:

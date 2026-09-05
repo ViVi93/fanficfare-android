@@ -57,6 +57,11 @@ class FanFicFareWorker(
         )
     }
 
+    private suspend fun updateJobStatus(jobDao: DownloadJobDao, job: DownloadJobEntity, status: String) {
+        jobDao.update(job.copy(status = status))
+        logWorker("doWork", "db_status jobId=${job.id} status=$status")
+    }
+
     private fun humanize(status: String): String = when (status) {
         "queued" -> "Queued"
         "preparing" -> "Preparing"
@@ -116,12 +121,12 @@ class FanFicFareWorker(
     }
 
     override suspend fun doWork(): Result {
+        logWorker("doWork", "ENTER url=${inputData.getString(KEY_URL)} type=${inputData.getString(KEY_TYPE)} workId=${inputData.getString(KEY_WORK_ID)}")
         val type = inputData.getString(KEY_TYPE) ?: return Result.failure().also { logWorker("doWork", "no_type") }
         val url = inputData.getString(KEY_URL) ?: ""
         val inputPath = inputData.getString(KEY_INPUT_PATH) ?: ""
         val bookId = inputData.getLong(KEY_BOOK_ID, -1L)
         val workId = inputData.getString(KEY_WORK_ID) ?: ""
-
         logWorker("doWork", "start type=$type url=$url workId=$workId")
 
         if (isStopped) {
@@ -336,8 +341,9 @@ class FanFicFareWorker(
 
         val bridge = PythonBridge(applicationContext)
         val outputDir = applicationContext.filesDir.absolutePath
+        logWorker("handleDownload", "bridge_call url=$url outputDir=$outputDir")
         val raw = bridge.fanficfareDownload(url, outputDir)
-        logWorker("handleDownload", "bridge_returned_len=${raw.length}")
+        logWorker("handleDownload", "bridge_raw_len=${raw.length}")
         if (isStopped) {
             jobDao.update(
                 job.copy(
@@ -349,6 +355,7 @@ class FanFicFareWorker(
             return Result.failure()
         }
         val result = JSONObject(raw)
+        logWorker("handleDownload", "result_json_ok=${result.optBoolean("ok")} title=${result.optString("title", "")}")
         if (!result.optBoolean("ok")) {
             jobDao.update(
                 job.copy(
@@ -363,6 +370,7 @@ class FanFicFareWorker(
 
         val title = result.optString("title", "story")
         val internalPath = result.optString("path", "")
+        logWorker("handleDownload", "result_path=$internalPath")
         if (internalPath.isBlank()) {
             jobDao.update(
                 job.copy(
@@ -376,6 +384,7 @@ class FanFicFareWorker(
         }
 
         val source = File(internalPath)
+        logWorker("handleDownload", "source_path=$internalPath exists=${source.exists()} isFile=${source.isFile} size=${source.length()}")
         if (!source.exists() || !source.isFile) {
             jobDao.update(
                 job.copy(
@@ -400,9 +409,13 @@ class FanFicFareWorker(
         setPhase("processing")
 
         val savedOutputDir = SettingsActivity.getOutputDir(applicationContext)
+        logWorker("handleDownload", "output_dir=$savedOutputDir")
         val finalPath = try {
-            StorageBridge.copyToOutputDir(applicationContext, source, savedOutputDir)
+            val copied = StorageBridge.copyToOutputDir(applicationContext, source, savedOutputDir)
+            logWorker("handleDownload", "copied_to=$copied")
+            copied
         } catch (e: Exception) {
+            logWorker("handleDownload", "copy_exception=${e.javaClass.simpleName}: ${e.message}")
             jobDao.update(
                 job.copy(
                     status = "failed",
@@ -454,6 +467,7 @@ class FanFicFareWorker(
         android.util.Log.d("FFF-Dup", "handleDownload title=${entity.title} path=${finalPath} before=${before?.id}")
         val saved = upsertBook(bookDao, entity, finalPath)
         android.util.Log.d("FFF-Dup", "handleDownload inserted id=${saved.id}")
+        logWorker("handleDownload", "upserted id=${saved.id} path=$finalPath")
         jobDao.update(
             job.copy(
                 bookId = saved.id,

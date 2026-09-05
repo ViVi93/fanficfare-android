@@ -15,12 +15,19 @@
 # limitations under the License.
 #
 
-import logging
-import os
-
-logger = logging.getLogger(__name__)
-loghandler = logging.StreamHandler()
-loghandler.setFormatter(logging.Formatter("FFF: %(levelname)s: %(asctime)s: %(filename)s(%(lineno)d): %(message)s"))
-logger.addHandler(loghandler)
-loghandler.setLevel(logging.CRITICAL)
-logger.setLevel(logging.CRITICAL)
+try: # just a way to switch between CLI and PI
+    from calibre.constants import DEBUG
+    if os.environ.get('CALIBRE_WORKER', None) is not None or DEBUG:
+        loghandler.setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
+    else:
+        loghandler.setLevel(logging.CRITICAL)
+        logger.setLevel(logging.CRITICAL)
+except:
+    import logging
+    logger = logging.getLogger(__name__)
+    loghandler=logging.StreamHandler()
+    loghandler.setFormatter(logging.Formatter("FFF: %(levelname)s: %(asctime)s: %(filename)s(%(lineno)d): %(message)s"))
+    logger.addHandler(loghandler)
+    loghandler.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)

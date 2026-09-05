@@ -15,7 +15,6 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging
 import random
 
@@ -26,9 +25,8 @@ from datetime import datetime
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six.moves.urllib.parse import urljoin
-from ..six import text_type as unicode
+
+from urllib.parse import urljoin
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -351,7 +349,7 @@ class StoriesOnlineNetAdapter(BaseSiteAdapter):
         while not story_found:
             page = page + 1
             try:
-                data = self.get_request(self.story.getList('authorUrl')[0] + "/" + unicode(page))
+                data = self.get_request(self.story.getList('authorUrl')[0] + "/" + str(page))
             except exceptions.HTTPErrorFFF as e:
                 if e.status_code == 404:
                     raise exceptions.FailedToDownload("Story not found in Author's list--Set Access Level to Full Access and change Listings Theme back to "+self.getTheme())
@@ -471,7 +469,7 @@ class StoriesOnlineNetAdapter(BaseSiteAdapter):
         # variable number of links before it.
         for line in description_element.contents:
             content = stripHTML(line)
-            line = unicode(line)
+            line = str(line)
             if content == '' or line.strip() == '' or line.startswith("<span") or line.startswith("<br"):
                 # skip empty, <span (universe, series or context) and <br>.
                 # logger.debug("Discard: %s"%line)
@@ -560,13 +558,13 @@ class StoriesOnlineNetAdapter(BaseSiteAdapter):
                 pid = 'undefined'
             ci = re.compile("var ci='([^']+)'").findall(html)[0]
             tto = re.compile("var tto='([^']+)'").findall(html)[0]
-            url = "https://"+self.getSiteDomain()+"/res/responders/tl.php?r="+unicode(random.randint(1, 100001))
+            url = "https://"+self.getSiteDomain()+"/res/responders/tl.php?r="+str(random.randint(1, 100001))
             params = {}
             params['cmd'] = 'gt'
             params['data[]'] = [story_id, pid, ci, story_id + 5, tto]
             ver = self.post_request(url, params)
 
-            url = "https://"+self.getSiteDomain()+"/res/responders/tl.php?r="+unicode(random.randint(1, 100001))
+            url = "https://"+self.getSiteDomain()+"/res/responders/tl.php?r="+str(random.randint(1, 100001))
             params = {}
             params['cmd'] = 'gr'
             params['data[]'] = [ver]

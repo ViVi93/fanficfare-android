@@ -16,14 +16,13 @@
 #
 
 
-from __future__ import absolute_import
 import io
 import logging
 import re
 import zipfile
 
 from bs4 import BeautifulSoup
-# py2 vs py3 transition
+
 
 from .base_adapter import BaseSiteAdapter, makeDate
 from fanficfare.htmlcleanup import stripHTML

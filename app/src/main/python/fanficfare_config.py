@@ -165,6 +165,8 @@ def get_config_status():
         "credentials_present": credentials_present,
         "configuration_valid": configuration_valid,
         "fanficfare_version": fanficfare_version,
+        "import_error": _FANFICFARE_ERROR,
+        "import_traceback": _FANFICFARE_TRACEBACK,
     }
     return json.dumps(status)
 
@@ -294,5 +296,13 @@ def _import_fanficfare():
         _FANFICFARE_TRACEBACK = traceback.format_exc()
         print("FANFICFARE_IMPORT_ERROR: " + _FANFICFARE_ERROR)
         print(_FANFICFARE_TRACEBACK)
+        try:
+            log_path = os.path.join(get_personal_ini_path(), "..", "import_error.log")
+            log_path = os.path.normpath(log_path)
+            with open(log_path, "w") as f:
+                f.write("ERROR: " + _FANFICFARE_ERROR + "\n\n")
+                f.write(_FANFICFARE_TRACEBACK)
+        except Exception:
+            pass
         _FANFICFARE_AVAILABLE = False
         return False

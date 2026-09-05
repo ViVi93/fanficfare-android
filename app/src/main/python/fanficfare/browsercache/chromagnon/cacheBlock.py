@@ -33,7 +33,8 @@ for design details
 """
 from __future__ import absolute_import
 import struct
-from six.moves import range
+import builtins
+from builtins import range
 
 from ..share_open import share_open
 

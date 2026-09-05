@@ -21,7 +21,6 @@
 ### Rewritten by: GComyn on November, 06, 2016
 ### Original was adapter_fannation.py
 ##################################################################################
-from __future__ import absolute_import
 from .base_efiction_adapter import BaseEfictionAdapter
 
 class ValentChamberComAdapter(BaseEfictionAdapter):

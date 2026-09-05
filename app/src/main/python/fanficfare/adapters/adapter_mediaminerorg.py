@@ -15,15 +15,13 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 import logging
 logger = logging.getLogger(__name__)
 import re
 from ..htmlcleanup import stripHTML
 from .. import exceptions as exceptions
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
+
 
 from .base_adapter import BaseSiteAdapter,  makeDate
 
@@ -117,7 +115,7 @@ class MediaMinerOrgSiteAdapter(BaseSiteAdapter):
 
         ## title:
         ## <h1 id="post-title">A, A' Fan Fiction &#10095; Mmmmm</h1>
-        titletext = unicode(stripHTML(soup.find("h1",{"id":"post-title"})))
+        titletext = str(stripHTML(soup.find("h1",{"id":"post-title"})))
         titletext = titletext[titletext.index(u'❯')+2:]
         # print("title:(%s)"%titletext)
         self.story.setMetadata('title',titletext)
@@ -158,7 +156,7 @@ class MediaMinerOrgSiteAdapter(BaseSiteAdapter):
 
         metasoup = soup.find("div",{"class":"post-meta"})
         metastr = stripHTML(metasoup)
-        metahtml = unicode(metasoup)
+        metahtml = str(metasoup)
         
         self.setDescription(url, metahtml[metahtml.index('</a><br/>')+9:metahtml.index('<br/><b>')])
 

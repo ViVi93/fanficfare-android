@@ -40,8 +40,8 @@ except ImportError:
 import logging
 logger = logging.getLogger(__name__)
 
-from ..six.moves.urllib.parse import urlparse, urljoin
-from ..six import ensure_text
+from urllib.parse import urlparse, urljoin
+from ..ensure import ensure_text
 
 from ..exceptions import BrowserCacheException
 

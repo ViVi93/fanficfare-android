@@ -15,15 +15,13 @@
 # limitations under the License.
 #
 
-from __future__ import absolute_import
 from datetime import datetime
 import logging
 logger = logging.getLogger(__name__)
 import re
 
-# py2 vs py3 transition
-from ..six import text_type as unicode
-from ..six.moves.urllib.parse import urlparse
+
+from urllib.parse import urlparse
 
 from .. import exceptions as exceptions
 from ..htmlcleanup import stripHTML
@@ -115,7 +113,7 @@ class FanFictionNetSiteAdapter(BaseSiteAdapter):
         ## title.
         if( not self.getConfig("try_shortened_title_urls") or
             not re.match(r"https?://www\.fanfiction\.net/s/\d+/\d+/(?P<title>[^/]+)$", url) ):
-            return super(getClass(), self).get_request(url,usecache)
+            return super(getClass(), self).get_request(url,usecache=usecache)
 
         ## kludgey way to attempt more than one URL variant by
         ## removing title one letter at a time.  Note that network and
@@ -129,9 +127,9 @@ class FanFictionNetSiteAdapter(BaseSiteAdapter):
                 useurl = url
                 if j: # j==0, full URL, then remove letters.
                     useurl = url[:-j]
-                return super(getClass(), self).get_request(useurl,usecache)
+                return super(getClass(), self).get_request(useurl,usecache=usecache)
             except exceptions.HTTPErrorFFF as fffe:
-                if j >= maxcut or 'Page not found or expired' not in unicode(fffe):
+                if j >= maxcut or 'Page not found or expired' not in str(fffe):
                     raise
             j = j+1
 
@@ -186,7 +184,7 @@ class FanFictionNetSiteAdapter(BaseSiteAdapter):
                     soup = self.make_soup(newdata)
                     have_later_meta = True
             except Exception as e:
-                logger.warning("Caught exception in check_next_chapter URL: %s Exception %s."%(unicode(tryurl),unicode(e)))
+                logger.warning("Caught exception in check_next_chapter URL: %s Exception %s."%(str(tryurl),str(e)))
 
         if self.getConfig('meta_from_last_chapter') and not have_later_meta and chapcount > 1:
             tryurl = "https://%s/s/%s/%d/%s"%(self.getSiteDomain(),
@@ -382,7 +380,7 @@ class FanFictionNetSiteAdapter(BaseSiteAdapter):
                         logger.debug("skip_author_cover: cover_url matches authimg_url: don't use")
                         cover_url = None
                 except Exception as e:
-                    logger.warning("Caught exception in skip_author_cover: %s."%unicode(e))
+                    logger.warning("Caught exception in skip_author_cover: %s."%str(e))
 
             if cover_url:
                 self.setCoverImage(url,cover_url)

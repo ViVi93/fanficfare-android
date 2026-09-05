@@ -10,3 +10,4 @@
 *.keystore
 __pycache__/
 *.pyc
+.jks

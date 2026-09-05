@@ -44,12 +44,11 @@ jobs:
           EOF
       - name: Build release APK
         if: github.event_name == 'push'
-        env:
-          SIGNING_KEY_STORE_PATH: ${{ github.workspace }}/signing.jks
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease -Psigning.properties=signing.properties
+        run: ./gradlew assembleRelease \
+          -PSIGNING_KEY_STORE_PATH="${{ github.workspace }}/signing.jks" \
+          -PSIGNING_KEY_ALIAS="${{ secrets.SIGNING_KEY_ALIAS }}" \
+          -PSIGNING_STORE_PASSWORD="${{ secrets.SIGNING_STORE_PASSWORD }}" \
+          -PSIGNING_KEY_PASSWORD="${{ secrets.SIGNING_KEY_PASSWORD }}"
       - name: Build debug APK
         if: github.event_name != 'push'
         run: ./gradlew assembleDebug

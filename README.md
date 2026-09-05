@@ -28,8 +28,8 @@ Personal-use Android app for downloading fanfiction to ebook formats using the u
 
 - Debug APK: `./gradlew clean :app:assembleDebug`
 - Output: `app/build/outputs/apk/debug/app-debug.apk`
-- Min SDK: 24 / Target SDK: 34
-- Chaquopy: 17.0.0 / Kotlin: 1.9.22 / AGP: 8.2.2
+- Min SDK: 24 / Target SDK: 35
+- Chaquopy: 17.0.0 / Kotlin: 1.9.22 / AGP: 8.7.2
 
 ## Repository
 
@@ -38,4 +38,4 @@ https://github.com/ViVi93/fanficfare-android
 ## Notes
 
 - Do not commit `personal.ini` or credentials/secrets
-- Release builds are signed via GitHub Actions on push to `master`
+- Release builds are signed via GitHub Actions on push to `main` or `master`

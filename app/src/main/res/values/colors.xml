@@ -42,4 +42,11 @@
     <color name="fanficfare_elevation_overlay_03">#00FFFFFF</color>
     <color name="fanficfare_elevation_overlay_04">#00FFFFFF</color>
     <color name="fanficfare_elevation_overlay_05">#00FFFFFF</color>
+
+    <!-- Base no-op declarations for night-only opaque surface containers -->
+    <color name="fanficfare_surface_container_lowest_opaque">#00FFFFFF</color>
+    <color name="fanficfare_surface_container_low_opaque">#00FFFFFF</color>
+    <color name="fanficfare_surface_container_opaque">#00FFFFFF</color>
+    <color name="fanficfare_surface_container_high_opaque">#00FFFFFF</color>
+    <color name="fanficfare_surface_container_highest_opaque">#00FFFFFF</color>
 </resources>

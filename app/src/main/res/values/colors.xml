@@ -35,4 +35,11 @@
     <color name="fanficfare_inverse_primary">#8DC37A</color>
 
     <color name="fanficfare_shadow">#000000</color>
+
+    <!-- Base no-op declarations for night-only elevation overlays -->
+    <color name="fanficfare_elevation_overlay_01">#00FFFFFF</color>
+    <color name="fanficfare_elevation_overlay_02">#00FFFFFF</color>
+    <color name="fanficfare_elevation_overlay_03">#00FFFFFF</color>
+    <color name="fanficfare_elevation_overlay_04">#00FFFFFF</color>
+    <color name="fanficfare_elevation_overlay_05">#00FFFFFF</color>
 </resources>

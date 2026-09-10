@@ -36,7 +36,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
         android.util.Log.d("FFF-UI-OBS", "LibraryViewModel init observer")
         _uiJobState.addSource(repository.latestJobs) { jobs ->
             android.util.Log.d("FFF-UI-OBS", "latestJobs fired count=${jobs.size}")
-            val latest = jobs.maxWith(compareBy<DownloadJobEntity> { it.finishedAt ?: it.createdAt }.thenBy { it.id })
+            val latest = jobs.maxWithOrNull(compareBy<DownloadJobEntity> { it.finishedAt ?: it.createdAt }.thenBy { it.id })
             android.util.Log.d("FFF-UI-OBS", "selected job=${latest?.id} status=${latest?.status} finished=${latest?.status in setOf("success","failed","cancelled")}")
             android.util.Log.d("FFF-UI", "selected job=${latest?.id} status=${latest?.status} finished=${latest?.status in setOf("success","failed","cancelled")}")
             val terminal = latest?.status?.let { it == "success" || it == "failed" || it == "cancelled" } ?: false

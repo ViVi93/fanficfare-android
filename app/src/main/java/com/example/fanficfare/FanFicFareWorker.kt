@@ -141,6 +141,15 @@ class FanFicFareWorker(
             return Result.failure()
         }
 
+        try {
+            if (!com.chaquo.python.Python.isStarted()) {
+                com.chaquo.python.Python.start(com.chaquo.python.android.AndroidPlatform(applicationContext))
+                logWorker("doWork", "python_started")
+            }
+        } catch (e: Exception) {
+            logWorker("doWork", "python_start_failed=${e.message}")
+        }
+
         val database = AppDatabase.getInstance(applicationContext)
         val bookDao = database.bookDao()
         val jobDao = database.downloadJobDao()
@@ -354,13 +363,28 @@ class FanFicFareWorker(
             setPhase("cancelled")
             return Result.failure()
         }
-        val result = JSONObject(raw)
-        logWorker("handleDownload", "result_json_ok=${result.optBoolean("ok")} title=${result.optString("title", "")}")
-        if (!result.optBoolean("ok")) {
+        val result = try {
+            JSONObject(raw)
+        } catch (e: Exception) {
+            logWorker("handleDownload", "json_parse_failed type=${e.javaClass.simpleName} msg=${e.message ?: ""} raw_prefix=${raw.take(200)}")
             jobDao.update(
                 job.copy(
                     status = "failed",
-                    error = result.optString("error", "unknown"),
+                    error = "Invalid response from bridge: ${e.message ?: "unknown"}",
+                    finishedAt = System.currentTimeMillis()
+                )
+            )
+            setPhase("failed")
+            return Result.failure()
+        }
+        logWorker("handleDownload", "result_json_ok=${result.optBoolean("ok")} title=${result.optString("title", "")}")
+        if (!result.optBoolean("ok")) {
+            val errorMsg = result.optString("error", "unknown")
+            logWorker("handleDownload", "result_error=$errorMsg raw_prefix=$raw")
+            jobDao.update(
+                job.copy(
+                    status = "failed",
+                    error = errorMsg,
                     finishedAt = System.currentTimeMillis()
                 )
             )

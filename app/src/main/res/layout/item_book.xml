@@ -14,17 +14,35 @@
         android:layout_height="wrap_content"
         android:padding="14dp">
 
-        <ImageView
-            android:id="@+id/imageCover"
+        <FrameLayout
+            android:id="@+id/frameCover"
             android:layout_width="64dp"
             android:layout_height="96dp"
-            android:layout_marginEnd="12dp"
-            android:contentDescription="Cover"
-            android:scaleType="centerCrop"
+            android:layout_marginEnd="20dp"
+            android:background="@drawable/cover_border"
+            android:padding="3dp"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
-            app:srcCompat="@android:color/darker_gray" />
+            app:layout_constraintTop_toTopOf="parent">
+
+            <ImageView
+                android:id="@+id/imageCover"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Cover"
+                android:scaleType="centerCrop"
+                android:background="@android:color/darker_gray"
+                app:srcCompat="@android:color/darker_gray" />
+        </FrameLayout>
+
+        <View
+            android:id="@+id/dividerCover"
+            android:layout_width="10dp"
+            android:layout_height="0dp"
+            app:layout_constraintBottom_toBottomOf="@id/frameCover"
+            app:layout_constraintEnd_toStartOf="@id/textTitle"
+            app:layout_constraintStart_toEndOf="@id/frameCover"
+            app:layout_constraintTop_toTopOf="@id/frameCover" />
 
         <TextView
             android:id="@+id/textTitle"
@@ -34,8 +52,8 @@
             android:textSize="@dimen/m3_title_medium"
             android:textStyle="bold"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/imageCover"
-            app:layout_constraintTop_toTopOf="@id/imageCover" />
+            app:layout_constraintStart_toEndOf="@id/dividerCover"
+            app:layout_constraintTop_toTopOf="@id/frameCover" />
 
         <TextView
             android:id="@+id/textAuthor"
@@ -44,8 +62,9 @@
             android:text="Author"
             android:textSize="@dimen/m3_body_small"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/imageCover"
-            app:layout_constraintTop_toBottomOf="@id/textTitle" />
+            app:layout_constraintStart_toEndOf="@id/dividerCover"
+            app:layout_constraintTop_toBottomOf="@id/textTitle"
+            android:layout_marginTop="4dp" />
 
         <TextView
             android:id="@+id/textChapters"
@@ -55,8 +74,9 @@
             android:textSize="@dimen/m3_label_small"
             android:textColor="?attr/colorOnSurfaceVariant"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/imageCover"
-            app:layout_constraintTop_toBottomOf="@id/textAuthor" />
+            app:layout_constraintStart_toEndOf="@id/dividerCover"
+            app:layout_constraintTop_toBottomOf="@id/textAuthor"
+            android:layout_marginTop="4dp" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

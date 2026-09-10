@@ -1,6 +1,10 @@
 package com.example.fanficfare.adapter
 
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -9,6 +13,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.example.fanficfare.R
 import com.example.fanficfare.model.BookItem
+import com.example.fanficfare.util.CoverColorUtils
 
 class BookAdapter(
     private val books: List<BookItem>,
@@ -54,6 +59,9 @@ class BookAdapter(
                 true
             }
 
+            // Set dynamic content description for accessibility
+            imageCover.contentDescription = "Cover for ${book.title} by ${book.author}"
+
             val cover = book.coverUriString
             if (cover?.isNotBlank() == true && cover.startsWith("data:")) {
                 try {
@@ -70,11 +78,58 @@ class BookAdapter(
                     }
                 } catch (e: Exception) {
                     android.util.Log.d("FFF-Cover", "decodeByteArray failed: type=" + e.javaClass.simpleName + " msg=" + (e.message ?: ""))
-                    imageCover.visibility = View.GONE
-                    return
                 }
             }
-            imageCover.visibility = View.GONE
+            // No cover data - generate placeholder
+            showPlaceholder(book)
+        }
+
+        private fun showPlaceholder(book: BookItem) {
+            val bgColor = CoverColorUtils.colorFromString(book.title)
+            val textColor = CoverColorUtils.contrastingTextColor(bgColor)
+            val initials = CoverColorUtils.initialsFromTitle(book.title, book.author)
+
+            val width = imageCover.width
+            val height = imageCover.height
+            if (width <= 0 || height <= 0) {
+                imageCover.post {
+                    if (imageCover.width > 0 && imageCover.height > 0) showPlaceholder(book)
+                }
+                return
+            }
+            val insetPx = (3 * imageCover.resources.displayMetrics.density).toInt()
+            val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val paint = Paint().apply {
+                isAntiAlias = true
+                color = bgColor
+                style = Paint.Style.FILL
+            }
+            canvas.drawRect(
+                insetPx.toFloat(),
+                insetPx.toFloat(),
+                (width - insetPx).toFloat(),
+                (height - insetPx).toFloat(),
+                paint
+            )
+
+            val textPaint = Paint().apply {
+                isAntiAlias = true
+                color = textColor
+                textSize = (minOf(width, height) * 0.38f)
+                typeface = Typeface.DEFAULT_BOLD
+                textAlign = Paint.Align.CENTER
+            }
+            val bounds = android.graphics.Rect()
+            textPaint.getTextBounds(initials, 0, initials.length, bounds)
+            canvas.drawText(
+                initials,
+                width / 2f,
+                height / 2f + bounds.height() / 2f - bounds.bottom,
+                textPaint
+            )
+            imageCover.setImageBitmap(bitmap)
+            imageCover.visibility = View.VISIBLE
         }
     }
 

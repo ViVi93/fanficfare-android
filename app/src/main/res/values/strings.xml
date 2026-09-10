@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">FanFicFare</string>
+    <string name="empty_library_title">No books yet</string>
+    <string name="empty_library_subtitle">Tap the button below to download your first story</string>
+    <string name="empty_library_action">Download a story</string>
+    <string name="empty_library_desc">Illustration of an open book</string>
+    <string name="empty_add_from_page_title">No stories found</string>
+    <string name="empty_add_from_page_subtitle">Paste a page URL above and tap \"Fetch stories\" to get started</string>
+    <string name="empty_add_from_page_desc">Illustration of a document with a search icon</string>
 </resources>

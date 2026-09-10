@@ -29,7 +29,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Default Output Directory"
-            android:textSize="16sp"
+            android:textSize="@dimen/m3_title_medium"
             android:textStyle="bold"
             android:layout_marginTop="16dp" />
 
@@ -41,26 +41,29 @@
             android:hint="/storage/emulated/0/FanFicFare"
             android:inputType="textUri" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonPickFolder"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Pick Folder" />
+            android:text="Pick Folder"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonSave"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Save" />
+            android:text="Save"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonAllFilesAccess"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Grant All Files Access" />
+            android:text="Grant All Files Access"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
 
         <View
             android:layout_width="match_parent"
@@ -72,7 +75,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="FanFicFare Configuration"
-            android:textSize="16sp"
+            android:textSize="@dimen/m3_title_medium"
             android:textStyle="bold" />
 
         <TextView
@@ -81,22 +84,25 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="No personal.ini imported"
-            android:textSize="14sp" />
+            android:textSize="@dimen/m3_body_medium" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonImportConfig"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Import personal.ini" />
+            android:text="Import personal.ini"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonRemoveConfig"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="Remove personal.ini"
-            android:enabled="false" />
+            android:enabled="false"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:textColor="?attr/colorError" />
 
         <View
             android:layout_width="match_parent"
@@ -108,7 +114,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Python download debug"
-            android:textSize="16sp"
+            android:textSize="@dimen/m3_title_medium"
             android:textStyle="bold" />
 
         <TextView
@@ -117,26 +123,32 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="No log yet"
-            android:textSize="13sp" />
+            android:textSize="@dimen/m3_body_small" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="8dp">
+            android:layout_marginTop="8dp"
+            android:gravity="center_horizontal">
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonRefreshPythonDebug"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Refresh debug log" />
+                android:text="Refresh debug log"
+                style="@style/Widget.Material3.Button.TextButton" />
 
-            <Button
+            <Space
+                android:layout_width="16dp"
+                android:layout_height="0dp" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonClearPythonDebug"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="Clear debug log" />
+                android:text="Clear debug log"
+                style="@style/Widget.Material3.Button.TextButton" />
 
         </LinearLayout>
 
@@ -150,7 +162,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="DNS diagnostics"
-            android:textSize="16sp"
+            android:textSize="@dimen/m3_title_medium"
             android:textStyle="bold" />
 
         <TextView
@@ -159,14 +171,15 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="No DNS diagnostics run yet"
-            android:textSize="13sp" />
+            android:textSize="@dimen/m3_body_small" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonRunDnsDiagnostics"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Run DNS diagnostics" />
+            android:text="Run DNS diagnostics"
+            style="@style/Widget.Material3.Button.ElevatedButton" />
 
     </LinearLayout>
 </ScrollView>

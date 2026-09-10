@@ -16,7 +16,9 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:title="Add from page"
-            app:titleTextColor="?android:attr/textColorPrimary" />
+            app:titleTextColor="?android:attr/textColorPrimary"
+            app:popupTheme="@style/Theme.FanficFare"
+            android:popupBackground="?attr/colorSurface" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -74,7 +76,8 @@
                     android:id="@+id/buttonFetch"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Fetch stories" />
+                    android:text="Fetch stories"
+                    style="@style/Widget.Material3.Button.ElevatedButton" />
             </LinearLayout>
 
             <TextView
@@ -119,10 +122,11 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Select all" />
+                android:text="Select all"
+                style="@style/Widget.Material3.Button.TextButton" />
 
             <Space
-                android:layout_width="8dp"
+                android:layout_width="12dp"
                 android:layout_height="0dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -130,10 +134,11 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Select none" />
+                android:text="Select none"
+                style="@style/Widget.Material3.Button.TextButton" />
 
             <Space
-                android:layout_width="8dp"
+                android:layout_width="12dp"
                 android:layout_height="0dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -141,24 +146,32 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Download selected" />
+                android:text="Download selected"
+                style="@style/Widget.Material3.Button.ElevatedButton" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/textEmpty"
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
-            android:text="No stories yet"
-            android:textColor="?android:attr/textColorSecondary"
-            android:gravity="center"
-            android:visibility="gone" />
+            android:layout_weight="1">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerStories"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
+            <TextView
+                android:id="@+id/textEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="@string/empty_add_from_page_subtitle"
+                android:textColor="?android:attr/textColorSecondary"
+                android:gravity="center"
+                android:padding="24dp"
+                android:visibility="gone" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerStories"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+        </FrameLayout>
+
     </LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

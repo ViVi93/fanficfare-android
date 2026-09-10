@@ -9,7 +9,7 @@
     <TextView
         android:id="@+id/textDiagnosticStatus"
         android:text="Status"
-        android:textSize="12sp"
+        android:textSize="@dimen/m3_label_small"
         android:background="#22000000"
         android:padding="8dp"
         android:layout_width="match_parent"
@@ -18,7 +18,7 @@
     <TextView
         android:id="@+id/textAppVersion"
         android:text=""
-        android:textSize="12sp"
+        android:textSize="@dimen/m3_label_small"
         android:background="#22000000"
         android:padding="8dp"
         android:layout_width="match_parent"
@@ -27,7 +27,7 @@
     <TextView
         android:id="@+id/textImportDiagnostics"
         android:text=""
-        android:textSize="12sp"
+        android:textSize="@dimen/m3_label_small"
         android:background="#22000000"
         android:padding="8dp"
         android:layout_width="match_parent"
@@ -39,34 +39,38 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonRefreshLog"
             android:text="Refresh"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            style="@style/Widget.Material3.Button.TextButton" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonClearLog"
             android:text="Clear Log"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            style="@style/Widget.Material3.Button.TextButton" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonShareLog"
             android:text="Share"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            style="@style/Widget.Material3.Button.TextButton" />
     </LinearLayout>
 
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/buttonRunImportDiagnostics"
         android:text="Run FanFicFare Import Diagnostics"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp" />
+        android:layout_marginTop="8dp"
+        style="@style/Widget.Material3.Button.ElevatedButton" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -76,7 +80,7 @@
         <TextView
             android:id="@+id/textDiagnosticLog"
             android:text="No log entries"
-            android:textSize="11sp"
+            android:textSize="@dimen/m3_body_small"
             android:fontFamily="monospace"
             android:padding="8dp"
             android:layout_width="match_parent"

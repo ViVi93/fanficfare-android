@@ -27,5 +27,10 @@
 
         <item name="android:statusBarColor">?attr/colorPrimaryContainer</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="colorSurfaceContainerLowest">@color/fanficfare_surface_container_lowest_opaque</item>
+        <item name="colorSurfaceContainerLow">@color/fanficfare_surface_container_low_opaque</item>
+        <item name="colorSurfaceContainer">@color/fanficfare_surface_container_opaque</item>
+        <item name="colorSurfaceContainerHigh">@color/fanficfare_surface_container_high_opaque</item>
+        <item name="colorSurfaceContainerHighest">@color/fanficfare_surface_container_highest_opaque</item>
     </style>
 </resources>

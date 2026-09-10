@@ -282,9 +282,18 @@ class AddFromPageActivity : AppCompatActivity() {
             textStatus.visibility = View.VISIBLE
 
             val items = urls.map { url -> StoryItem(url = url) }
-            adapter.submitList(items)
-            persistAddFromPageItems(pageUrl, normalize, items)
+            val dedupedExact = dedupeExactUrls(items)
+            val dedupedSeries = dedupeSeriesUrls(dedupedExact)
+            val dedupedItems = dedupeChapterSlugs(dedupedSeries)
+            DiagnosticLog.append(this@AddFromPageActivity, "AddFromPage", "dedupe raw=${items.size} exact=${dedupedExact.size} series=${dedupedSeries.size} chapter=${dedupedItems.size}")
+            val sampleRaw = items.take(3).joinToString(" | ") { it.url }
+            val sampleDeduped = dedupedItems.take(3).joinToString(" | ") { it.url }
+            DiagnosticLog.append(this@AddFromPageActivity, "AddFromPage", "dedupe sample_raw=$sampleRaw")
+            DiagnosticLog.append(this@AddFromPageActivity, "AddFromPage", "dedupe sample_deduped=$sampleDeduped")
+            adapter.submitList(dedupedItems)
+            persistAddFromPageItems(pageUrl, normalize, dedupedItems)
             updateActions()
+            startLazyMetadata(dedupedItems)
 
             if (!seriesDesc.isNullOrBlank()) {
                 AlertDialog.Builder(this@AddFromPageActivity)
@@ -535,8 +544,10 @@ class AddFromPageActivity : AppCompatActivity() {
                 )
             }
             if (items.isEmpty()) return null
-            DiagnosticLog.append(this, "AddFromPage", "load_persisted_items pageUrl=$pageUrl count=${items.size}")
-            Triple(pageUrl, normalize, items)
+            val dedupedSeries = dedupeSeriesUrls(items)
+            val deduped = dedupeChapterSlugs(dedupedSeries)
+            DiagnosticLog.append(this, "AddFromPage", "load_persisted_items pageUrl=$pageUrl raw=${items.size} dedupedSeries=${dedupedSeries.size} deduped=${deduped.size}")
+            Triple(pageUrl, normalize, deduped)
         } catch (e: Exception) {
             DiagnosticLog.appendException(this, "AddFromPage", "load_persisted_items_failed", e)
             null
@@ -551,12 +562,82 @@ class AddFromPageActivity : AppCompatActivity() {
         } catch (e: Exception) {
             DiagnosticLog.appendException(this, "AddFromPage", "clear_persisted_items_failed", e)
         }
+        fetchJob?.cancel()
+        fetchJob = null
+        metadataJob?.cancel()
+        metadataJob = null
+        adapter.submitList(emptyList())
+        textStatus.text = ""
+        textStatus.visibility = View.VISIBLE
+        textSeriesInfo.text = ""
+        textSeriesInfo.visibility = View.GONE
+        updateActions()
     }
 
     private fun getAddFromPageDir(): File {
         val dir = File(filesDir, "add_from_page")
         if (!dir.exists()) dir.mkdirs()
         return dir
+    }
+
+    private fun dedupeExactUrls(items: List<StoryItem>): List<StoryItem> {
+        val seen = mutableSetOf<String>()
+        val result = mutableListOf<StoryItem>()
+        for (item in items) {
+            val url = item.url.trim()
+            if (seen.add(url)) {
+                result.add(item)
+            }
+        }
+        return result
+    }
+
+    private fun dedupeSeriesUrls(items: List<StoryItem>): List<StoryItem> {
+        val urls = items.map { it.url.trim() }
+        val seriesUrls = urls.filter { it.lowercase().contains("/series/") }
+        val seen = mutableSetOf<String>()
+        val result = mutableListOf<StoryItem>()
+
+        for (item in items) {
+            val url = item.url.trim()
+            val lower = url.lowercase()
+            val isChapterish = lower.contains("/ch-") || lower.contains("-ch-") || lower.contains("/chapter")
+
+            if (isChapterish && seriesUrls.any { seriesUrl ->
+                    val seriesBase = seriesUrl.substringBeforeLast('/').substringBeforeLast('/')
+                    url.startsWith(seriesBase, ignoreCase = true)
+                }) {
+                continue
+            }
+
+            if (seen.add(url)) {
+                result.add(item)
+            }
+        }
+
+        return result
+    }
+
+    private fun dedupeChapterSlugs(items: List<StoryItem>): List<StoryItem> {
+        val urls = items.map { it.url.trim() }
+        val storySlugSet = urls
+            .filter { url ->
+                val last = url.substringAfterLast('/')
+                !last.contains("-ch-")
+            }
+            .map { it.substringAfterLast('/') }
+            .toSet()
+
+        return items.filter { item ->
+            val url = item.url.trim()
+            val last = url.substringAfterLast('/')
+            if (!last.contains("-ch-")) {
+                true
+            } else {
+                val base = last.substringBefore("-ch-")
+                storySlugSet.none { it.startsWith(base, ignoreCase = true) }
+            }
+        }
     }
 
     private data class StoryItem(

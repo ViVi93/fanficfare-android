@@ -305,6 +305,11 @@ class MainActivity : AppCompatActivity() {
     private fun getPythonBridge(): PythonBridge? = pythonBridge
 
     private fun updateEmptyState() {
+        val emptyState = findViewById<android.view.View>(R.id.emptyState)
+        val bookList = findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList)
+        val hasBooks = bookAdapter.itemCount > 0
+        emptyState.visibility = if (hasBooks) android.view.View.GONE else android.view.View.VISIBLE
+        bookList.visibility = if (hasBooks) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun syncBooks(books: List<BookItem>) {
@@ -576,6 +581,15 @@ class MainActivity : AppCompatActivity() {
         toast("Scanning ${folder.absolutePath}...")
         android.util.Log.d("FFF-Dup", "scanManualEpubDir start path=${folder.absolutePath}")
         Thread {
+            val epubFiles = folder.listFiles()?.filter { file ->
+                file.isFile && file.extension.equals("epub", ignoreCase = true)
+            } ?: emptyList()
+            if (epubFiles.isEmpty()) {
+                runOnUiThread {
+                    showError("No EPUB files found in ${folder.absolutePath}")
+                }
+                return@Thread
+            }
             val resultJson = pythonBridge?.scanEpubDir(folder.absolutePath)
                 ?: """{"ok":false,"error":"bridge missing"}"""
             val result = json(resultJson)
@@ -611,7 +625,13 @@ class MainActivity : AppCompatActivity() {
                     toast("Loaded ${list.size} EPUBs")
                     viewModel.saveLibrary()
                 } else {
-                    showError("Scan failed: ${result?.optString("error") ?: "unknown"}")
+                    val errorMsg = result?.optString("error") ?: "unknown"
+                    android.util.Log.w("FFF-Dup", "scanManualEpubDir failed: $errorMsg")
+                    if (errorMsg.contains("not a zip", ignoreCase = true) || errorMsg.contains("zip", ignoreCase = true)) {
+                        showError("Scan issue: some files were not valid EPUBs. Showing existing library if available.")
+                    } else {
+                        showError("Scan failed: $errorMsg")
+                    }
                 }
             }
         }.start()

@@ -516,12 +516,15 @@ def scan_epub_dir(directory):
             for f in files:
                 if f.lower().endswith(".epub"):
                     path = os.path.join(root, f)
-                    stat = os.stat(path)
-                    meta = _extract_epub_metadata(path)
-                    meta["path"] = path
-                    meta["size"] = stat.st_size
-                    meta["modified"] = int(stat.st_mtime * 1000)
-                    books.append(meta)
+                    try:
+                        stat = os.stat(path)
+                        meta = _extract_epub_metadata(path)
+                        meta["path"] = path
+                        meta["size"] = stat.st_size
+                        meta["modified"] = int(stat.st_mtime * 1000)
+                        books.append(meta)
+                    except Exception as file_err:
+                        print("[FFF-ScanSkip] Skipping corrupt EPUB %s: %s" % (path, file_err))
         return json.dumps({"ok": True, "books": books})
     except Exception as e:
         return json.dumps({"ok": False, "error": str(e), "books": []})

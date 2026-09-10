@@ -12,7 +12,10 @@ class MyApplication : Application(), androidx.work.Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        com.google.android.material.color.DynamicColors.applyToActivitiesIfAvailable(this)
+        // Disabled dynamic colors: it was overriding app-defined Material3 button/theme tokens
+        // and causing inconsistent button rendering across screens.
+        // Re-enable only if we explicitly want wallpaper-derived theming.
+        // com.google.android.material.color.DynamicColors.applyToActivitiesIfAvailable(this)
         android.util.Log.d("FFF-App", "WorkManager initialized=${androidx.work.WorkManager.getInstance(this)}")
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->

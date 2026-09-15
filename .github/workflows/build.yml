@@ -42,12 +42,15 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
+          echo "SIGNING_KEY_STORE_BASE64 length: ${#SIGNING_KEY_STORE_BASE64}"
+          echo "SIGNING_KEY_ALIAS length: ${#SIGNING_KEY_ALIAS}"
           if [ -z "$SIGNING_KEY_STORE_BASE64" ]; then
             echo "WARNING: Signing secrets not found. Building unsigned release."
             echo "UNSIGNED=true" >> $GITHUB_ENV
           else
             echo "$SIGNING_KEY_STORE_BASE64" | base64 -d > signing.jks
             echo "UNSIGNED=false" >> $GITHUB_ENV
+            echo "Keystore created: $(ls -la signing.jks)"
           fi
       - name: Build debug APK
         run: ./gradlew assembleDebug

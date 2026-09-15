@@ -1,0 +1,732 @@
+# -*- coding: utf-8 -*-
+__license__ = 'GPL v3'
+__copyright__ = '2026, Community'
+__docformat__ = 'restructuredtext en'
+
+"""
+Self-contained EPUB metadata and cover editor.
+
+Provides functions to read, edit, and write back EPUB OPF metadata and
+cover images using only the Python standard library (zipfile + xml.etree).
+
+Inspired by calibre's epub.py / opf3.py metadata editing logic, but
+rewritten to avoid the heavy calibre/lxml dependencies for use in
+Chaquopy on Android.
+"""
+
+import os
+import tempfile
+import shutil
+import zipfile
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
+
+# Namespace prefixes used in OPF files
+DC_NS = "http://purl.org/dc/elements/1.1/"
+OPF_NS = "http://www.idpf.org/2007/opf"
+
+# Register namespaces so ET doesn't mangle them
+ET.register_namespace('', OPF_NS)
+ET.register_namespace('dc', DC_NS)
+
+
+def _find_opf_path(z):
+    """Find the OPF file path inside the EPUB zip archive."""
+    # Check container.xml first
+    try:
+        container = z.read("META-INF/container.xml")
+        container_dom = ET.fromstring(container)
+        container_ns = container_dom.tag.split("}")[0] + "}" if "}" in container_dom.tag else ""
+        for rootfile in container_dom.iter():
+            if rootfile.tag == container_ns + "rootfile":
+                full_path = rootfile.get("full-path")
+                if full_path:
+                    return full_path
+    except Exception:
+        pass
+    # Fallback: search for .opf files
+    for name in z.namelist():
+        if name.endswith(".opf"):
+            return name
+    return None
+
+
+def _find_manifest_cover_item_id(opf_root):
+    """Find the cover item id from the OPF's meta[name=cover] tag (EPUB 2 style)."""
+    for meta in opf_root.findall(".//{%s}meta" % OPF_NS):
+        if meta.get("name") == "cover":
+            return meta.get("content")
+    # EPUB 3 style: look for item with properties="cover-image"
+    for item in opf_root.findall(".//{%s}item" % OPF_NS):
+        props = item.get("properties", "")
+        if "cover-image" in props:
+            return item.get("id")
+    return None
+
+
+def _get_all_metadata_elements(opf_root):
+    """Get the metadata element from the OPF root."""
+    meta = opf_root.find(".//{%s}metadata" % OPF_NS)
+    if meta is None:
+        meta = opf_root.find("{%s}metadata" % OPF_NS)
+    return meta
+
+
+def _ensure_metadata_element(root):
+    """Ensure the metadata element exists in the OPF root."""
+    meta = root.find("{%s}metadata" % OPF_NS)
+    if meta is None:
+        meta = ET.SubElement(root, "{%s}metadata" % OPF_NS)
+        # Add required namespaces
+        meta.set("xmlns:dc", DC_NS)
+        meta.set("xmlns:opf", OPF_NS)
+    return meta
+
+
+def _find_parent(root, target):
+    """Find the parent element of target by searching from root."""
+    if root is target:
+        return None
+    for elem in root:
+        if elem is target:
+            return root
+        result = _find_parent(elem, target)
+        if result is not None:
+            return result
+    return None
+
+
+def _remove_all_dc_elements(meta, tag_local):
+    """Remove all dc tag elements with the given local name."""
+    for elem in list(meta.findall(".//{%s}%s" % (DC_NS, tag_local))):
+        parent = _find_parent(meta, elem)
+        if parent is not None:
+            parent.remove(elem)
+
+
+def _set_dc_text_element(meta, tag_local, value, replace_all=True):
+    """Set a dc: text element. If replace_all, removes existing ones first."""
+    if replace_all:
+        _remove_all_dc_elements(meta, tag_local)
+
+    if value and value.strip():
+        metadata = meta
+        new_elem = ET.SubElement(metadata, "{%s}%s" % (DC_NS, tag_local))
+        new_elem.text = value.strip()
+    return
+
+
+def _set_meta_element(meta, name, content):
+    """Set or update an opf:meta[name=...] element."""
+    for m in meta.findall(".//{%s}meta" % OPF_NS):
+        if m.get("name") == name:
+            m.set("content", content)
+            return m
+    # Create new
+    m = ET.SubElement(meta, "{%s}meta" % OPF_NS)
+    m.set("name", name)
+    m.set("content", content)
+    return m
+
+
+def _get_meta_content(meta, name):
+    """Get content from an opf:meta[name=...] element."""
+    for m in meta.findall(".//{%s}meta" % OPF_NS):
+        if m.get("name") == name:
+            return m.get("content", "")
+    return None
+
+
+def _resolve_target(epub_path, output_path, backup_suffix):
+    """
+    Resolve the output target path and whether we need a temp file.
+    Returns (target, temp_path, backup_path).
+    """
+    if output_path:
+        target = output_path
+        if backup_suffix:
+            backup_path = epub_path + backup_suffix if target != epub_path + backup_suffix else None
+            if backup_path and os.path.abspath(backup_path) != os.path.abspath(output_path):
+                shutil.copy2(epub_path, backup_path)
+            else:
+                backup_path = None
+        else:
+            backup_path = None
+        return target, None, backup_path
+    else:
+        # In-place modification: use a temp file
+        if backup_suffix:
+            backup_path = epub_path + backup_suffix
+            shutil.copy2(epub_path, backup_path)
+        else:
+            backup_path = None
+        # Create temp file in same directory for atomic rename
+        temp_fd, temp_path = tempfile.mkstemp(
+            suffix=".epub", dir=os.path.dirname(os.path.abspath(epub_path)) or None
+        )
+        os.close(temp_fd)
+        # Remove the empty temp file so zipfile can create it fresh
+        os.remove(temp_path)
+        return epub_path, temp_path, backup_path
+
+
+def _finalize_write(target, temp_path, backup_path):
+    """
+    If temp_path was used, move it to target. Remove backup if appropriate.
+    Returns the final output path.
+    """
+    if temp_path and temp_path != target:
+        shutil.move(temp_path, target)
+    return target
+
+
+def export_opf(epub_path, output_path=None):
+    """
+    Export the OPF XML from an EPUB file.
+
+    Returns JSON: {"ok": true, "opf": "<xml string>", "path_in_epub": "..."}
+    If output_path is provided, writes the XML to that file path.
+    """
+    try:
+        with zipfile.ZipFile(epub_path, "r") as z:
+            opf_name = _find_opf_path(z)
+            if not opf_name:
+                return {"ok": False, "error": "No OPF file found in EPUB"}
+            opf_data = z.read(opf_name)
+            opf_str = opf_data.decode("utf-8", errors="replace")
+            # Pretty-print the XML
+            try:
+                dom = minidom.parseString(opf_str)
+                pretty = dom.toprettyxml(indent="  ", encoding="utf-8")
+                if isinstance(pretty, bytes):
+                    pretty = pretty.decode("utf-8")
+            except Exception:
+                pretty = opf_str
+            result = {
+                "ok": True,
+                "opf": pretty,
+                "path_in_epub": opf_name,
+            }
+            if output_path:
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write(pretty)
+                result["written_path"] = output_path
+            return result
+    except Exception as e:
+        return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
+
+
+def import_opf(epub_path, opf_path_or_xml, output_path=None, backup_suffix=None):
+    """
+    Import OPF XML into an EPUB file, replacing the existing OPF.
+
+    Args:
+        epub_path: Path to the source EPUB
+        opf_path_or_xml: Either a file path containing OPF XML, or raw XML string
+        output_path: If provided, write to this path; otherwise modify in-place
+        backup_suffix: If provided, create a backup with this suffix before modifying
+
+    Returns JSON: {"ok": true, "output_path": "...", "backup_path": "..."}
+    """
+    try:
+        # Read the new OPF content
+        if os.path.isfile(opf_path_or_xml):
+            with open(opf_path_or_xml, "r", encoding="utf-8") as f:
+                new_opf_str = f.read()
+        else:
+            new_opf_str = opf_path_or_xml
+
+        # Validate it's parseable XML
+        try:
+            ET.fromstring(new_opf_str)
+        except ET.ParseError as e:
+            return {"ok": False, "error": "Invalid OPF XML: %s" % e}
+
+        with zipfile.ZipFile(epub_path, "r") as zin:
+            opf_name = _find_opf_path(zin)
+            if not opf_name:
+                return {"ok": False, "error": "No OPF file found in EPUB"}
+
+            target, temp_path, backup_path = _resolve_target(
+                epub_path, output_path, backup_suffix
+            )
+            write_path = temp_path if temp_path else target
+
+            # Read all entries into memory first (source stays open for reading)
+            entries = []
+            for item in zin.namelist():
+                data = zin.read(item)
+                if item == opf_name:
+                    entries.append((item, new_opf_str.encode("utf-8")))
+                elif item == "mimetype":
+                    entries.append((item, data, zipfile.ZIP_STORED))
+                else:
+                    entries.append((item, data))
+
+            # Write to temp or target
+            with zipfile.ZipFile(write_path, "w", zipfile.ZIP_DEFLATED) as zout:
+                for entry in entries:
+                    if len(entry) == 3:
+                        zout.writestr(entry[0], entry[1], entry[2])
+                    else:
+                        zout.writestr(entry[0], entry[1])
+
+            final_path = _finalize_write(target, temp_path, backup_path)
+
+            result = {"ok": True, "output_path": final_path, "path_in_epub": opf_name}
+            if backup_path:
+                result["backup_path"] = backup_path
+            return result
+    except Exception as e:
+        return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
+
+
+def read_metadata_fields(epub_path):
+    """
+    Read structured metadata fields from an EPUB's OPF.
+
+    Returns JSON: {"ok": true, "metadata": {"title": ..., "authors": [...], ...}}
+    """
+    try:
+        with zipfile.ZipFile(epub_path, "r") as z:
+            opf_name = _find_opf_path(z)
+            if not opf_name:
+                return {"ok": False, "error": "No OPF file found in EPUB"}
+            opf_data = z.read(opf_name)
+            root = ET.fromstring(opf_data)
+
+            meta = _get_all_metadata_elements(root)
+            if meta is None:
+                return {"ok": False, "error": "No metadata element found in OPF"}
+
+            result = {
+                "title": "",
+                "authors": [],
+                "languages": [],
+                "publisher": "",
+                "description": "",
+                "tags": [],
+                "series": "",
+                "series_index": "",
+                "rating": "",
+                "identifiers": {},
+                "isbn": "",
+                "pubdate": "",
+                "rights": "",
+            }
+
+            # Title
+            title_elem = meta.find(".//{%s}title" % DC_NS)
+            if title_elem is not None and title_elem.text:
+                result["title"] = title_elem.text.strip()
+
+            # Authors (creators)
+            for creator in meta.findall(".//{%s}creator" % DC_NS):
+                if creator.text:
+                    result["authors"].append(creator.text.strip())
+
+            # Languages
+            for lang in meta.findall(".//{%s}language" % DC_NS):
+                if lang.text:
+                    result["languages"].append(lang.text.strip())
+
+            # Publisher
+            pub_elem = meta.find(".//{%s}publisher" % DC_NS)
+            if pub_elem is not None and pub_elem.text:
+                result["publisher"] = pub_elem.text.strip()
+
+            # Description
+            desc_elem = meta.find(".//{%s}description" % DC_NS)
+            if desc_elem is not None and desc_elem.text:
+                result["description"] = desc_elem.text.strip()
+
+            # Tags (subjects)
+            for subject in meta.findall(".//{%s}subject" % DC_NS):
+                if subject.text:
+                    result["tags"].append(subject.text.strip())
+
+            # Series and series_index (Calibre-specific metadata)
+            for m in meta.findall(".//{%s}meta" % OPF_NS):
+                name = m.get("name", "")
+                content = m.get("content", "")
+                if name == "calibre:series":
+                    result["series"] = content
+                elif name == "calibre:series_index":
+                    result["series_index"] = content
+                elif name == "calibre:rating":
+                    result["rating"] = content
+
+            # Also check for dc:date
+            date_elem = meta.find(".//{%s}date" % DC_NS)
+            if date_elem is not None and date_elem.text:
+                result["pubdate"] = date_elem.text.strip()
+
+            # Rights
+            rights_elem = meta.find(".//{%s}rights" % DC_NS)
+            if rights_elem is not None and rights_elem.text:
+                result["rights"] = rights_elem.text.strip()
+
+            # Identifiers
+            uid = root.get("unique-identifier", "")
+            for ident in meta.findall(".//{%s}identifier" % DC_NS):
+                ident_id = ident.get("id", "")
+                if ident.text:
+                    result["identifiers"][ident_id or "id"] = ident.text.strip()
+                    if uid and ident_id == uid:
+                        result["identifiers"]["_primary_id"] = ident_id
+
+            # ISBN: look for identifier containing ISBN
+            for ident in meta.findall(".//{%s}identifier" % DC_NS):
+                if ident.text and ident.text.lower().startswith("isbn"):
+                    result["isbn"] = ident.text.replace("ISBN:", "").strip()
+
+            return {"ok": True, "metadata": result, "path_in_epub": opf_name}
+    except Exception as e:
+        return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
+
+
+def write_metadata(epub_path, fields, output_path=None, backup_suffix=None):
+    """
+    Write structured metadata fields to an EPUB's OPF.
+
+    Args:
+        epub_path: Path to the source EPUB
+        fields: dict with any of: title, authors, languages, publisher,
+                description, tags, series, series_index, rating,
+                isbn, pubdate, rights
+        output_path: If provided, write to this path; otherwise modify in-place
+        backup_suffix: If provided, create a backup with this suffix
+
+    Returns JSON: {"ok": true, "output_path": "...", "changed_fields": [...]}
+    """
+    try:
+        # Accept fields as either a dict or a JSON string
+        if isinstance(fields, str):
+            import json as _json
+            fields = _json.loads(fields)
+        changed_fields = []
+
+        with zipfile.ZipFile(epub_path, "r") as zin:
+            opf_name = _find_opf_path(zin)
+            if not opf_name:
+                return {"ok": False, "error": "No OPF file found in EPUB"}
+            opf_data = zin.read(opf_name)
+            root = ET.fromstring(opf_data)
+            meta = _ensure_metadata_element(root)
+
+            relpath = opf_name.rsplit("/", 1)[0] + "/" if "/" in opf_name else ""
+
+            # Title
+            if "title" in fields and fields["title"] is not None:
+                _set_dc_text_element(meta, "title", fields["title"])
+                changed_fields.append("title")
+
+            # Authors
+            if "authors" in fields and fields["authors"] is not None:
+                _remove_all_dc_elements(meta, "creator")
+                for author in fields["authors"]:
+                    if author and author.strip():
+                        elem = ET.SubElement(meta, "{%s}creator" % DC_NS)
+                        elem.text = author.strip()
+                        elem.set("id", "creator")
+                changed_fields.append("authors")
+
+            # Languages
+            if "languages" in fields and fields["languages"] is not None:
+                _remove_all_dc_elements(meta, "language")
+                for lang in fields["languages"]:
+                    if lang and lang.strip():
+                        elem = ET.SubElement(meta, "{%s}language" % DC_NS)
+                        elem.text = lang.strip()
+                changed_fields.append("languages")
+
+            # Publisher
+            if "publisher" in fields and fields["publisher"] is not None:
+                _remove_all_dc_elements(meta, "publisher")
+                if fields["publisher"].strip():
+                    _set_dc_text_element(meta, "publisher", fields["publisher"])
+                changed_fields.append("publisher")
+
+            # Description
+            if "description" in fields and fields["description"] is not None:
+                _remove_all_dc_elements(meta, "description")
+                if fields["description"].strip():
+                    _set_dc_text_element(meta, "description", fields["description"])
+                changed_fields.append("description")
+
+            # Tags (subjects)
+            if "tags" in fields and fields["tags"] is not None:
+                _remove_all_dc_elements(meta, "subject")
+                for tag in fields["tags"]:
+                    if tag and tag.strip():
+                        elem = ET.SubElement(meta, "{%s}subject" % DC_NS)
+                        elem.text = tag.strip()
+                changed_fields.append("tags")
+
+            # Series (Calibre-specific)
+            if "series" in fields and fields["series"] is not None:
+                _set_meta_element(meta, "calibre:series", fields["series"])
+                changed_fields.append("series")
+            if "series_index" in fields and fields["series_index"] is not None:
+                _set_meta_element(meta, "calibre:series_index", str(fields["series_index"]))
+                changed_fields.append("series_index")
+
+            # Rating (Calibre-specific)
+            if "rating" in fields and fields["rating"] is not None:
+                _set_meta_element(meta, "calibre:rating", str(fields["rating"]))
+                changed_fields.append("rating")
+
+            # ISBN
+            if "isbn" in fields and fields["isbn"] is not None:
+                isbn = fields["isbn"].strip()
+                if isbn:
+                    existing_id = None
+                    for ident in meta.findall(".//{%s}identifier" % DC_NS):
+                        if ident.text and "isbn" in ident.text.lower():
+                            existing_id = ident
+                            break
+                    if existing_id is not None:
+                        existing_id.text = "ISBN:%s" % isbn
+                    else:
+                        elem = ET.SubElement(meta, "{%s}identifier" % DC_NS)
+                        elem.text = "ISBN:%s" % isbn
+                changed_fields.append("isbn")
+
+            # Pubdate
+            if "pubdate" in fields and fields["pubdate"] is not None:
+                _remove_all_dc_elements(meta, "date")
+                if fields["pubdate"].strip():
+                    elem = ET.SubElement(meta, "{%s}%s" % (DC_NS, "date"))
+                    elem.text = fields["pubdate"].strip()
+                changed_fields.append("pubdate")
+
+            # Rights
+            if "rights" in fields and fields["rights"] is not None:
+                _remove_all_dc_elements(meta, "rights")
+                if fields["rights"].strip():
+                    _set_dc_text_element(meta, "rights", fields["rights"])
+                changed_fields.append("rights")
+
+            # Serialize the modified OPF
+            opf_bytes = ET.tostring(root, encoding="utf-8")
+            try:
+                dom = minidom.parseString(opf_bytes)
+                opf_str = dom.toprettyxml(indent="  ", encoding="utf-8")
+                if isinstance(opf_str, bytes):
+                    opf_str = opf_str.decode("utf-8")
+                opf_bytes = opf_str.encode("utf-8")
+            except Exception:
+                pass
+
+            target, temp_path, backup_path = _resolve_target(
+                epub_path, output_path, backup_suffix
+            )
+            write_path = temp_path if temp_path else target
+
+            # Read all entries into memory first
+            entries = []
+            for item in zin.namelist():
+                data = zin.read(item)
+                if item == opf_name:
+                    entries.append((item, opf_bytes))
+                elif item == "mimetype":
+                    entries.append((item, data, zipfile.ZIP_STORED))
+                else:
+                    entries.append((item, data))
+
+            # Write to temp or target
+            with zipfile.ZipFile(write_path, "w", zipfile.ZIP_DEFLATED) as zout:
+                for entry in entries:
+                    if len(entry) == 3:
+                        zout.writestr(entry[0], entry[1], entry[2])
+                    else:
+                        zout.writestr(entry[0], entry[1])
+
+            final_path = _finalize_write(target, temp_path, backup_path)
+
+            return {
+                "ok": True,
+                "output_path": final_path,
+                "changed_fields": changed_fields,
+                "path_in_epub": opf_name,
+            }
+    except Exception as e:
+        return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
+
+
+def replace_cover(epub_path, image_data, image_mime, output_path=None, backup_suffix=None):
+    """
+    Replace the cover image in an EPUB file.
+
+    Args:
+        epub_path: Path to the source EPUB
+        image_data: Raw image bytes
+        image_mime: MIME type (e.g. "image/jpeg", "image/png")
+        output_path: If provided, write to this path; otherwise modify in-place
+        backup_suffix: If provided, create a backup with this suffix
+
+    Returns JSON: {"ok": true, "output_path": "...", "cover_path_in_epub": "...", ...}
+    """
+    try:
+        # Determine a reasonable filename for the new cover
+        ext = ".jpg"
+        if image_mime == "image/png":
+            ext = ".png"
+        elif image_mime == "image/gif":
+            ext = ".gif"
+        elif image_mime == "image/webp":
+            ext = ".webp"
+        new_cover_name = "cover" + ext
+
+        with zipfile.ZipFile(epub_path, "r") as zin:
+            opf_name = _find_opf_path(zin)
+            if not opf_name:
+                return {"ok": False, "error": "No OPF file found in EPUB"}
+            opf_data = zin.read(opf_name)
+            root = ET.fromstring(opf_data)
+
+            manifest_elem = root.find(".//{%s}manifest" % OPF_NS)
+            if manifest_elem is None:
+                manifest_elem = root.find("{%s}manifest" % OPF_NS)
+            if manifest_elem is None:
+                return {"ok": False, "error": "No manifest element found in OPF"}
+
+            meta = _get_all_metadata_elements(root)
+            if meta is None:
+                meta = _ensure_metadata_element(root)
+
+            # Determine OPF path prefix
+            relpath = opf_name.rsplit("/", 1)[0] + "/" if "/" in opf_name else ""
+            cover_full_path = relpath + new_cover_name if relpath else new_cover_name
+
+            # Find existing cover item reference
+            old_cover_href = None
+            cover_item_id = _find_manifest_cover_item_id(root)
+
+            if cover_item_id:
+                for item in manifest_elem.findall("{%s}item" % OPF_NS):
+                    if item.get("id") == cover_item_id:
+                        old_cover_href = item.get("href")
+                        # Update the href and media-type
+                        item.set("href", new_cover_name)
+                        item.set("media-type", image_mime)
+                        break
+            else:
+                # No cover found; need to add one
+                item = ET.SubElement(manifest_elem, "{%s}item" % OPF_NS)
+                item.set("id", "cover")
+                item.set("href", new_cover_name)
+                item.set("media-type", image_mime)
+                item.set("properties", "cover-image")
+
+                # Add cover meta tag (EPUB 2 style)
+                m = ET.SubElement(meta, "{%s}meta" % OPF_NS)
+                m.set("name", "cover")
+                m.set("content", "cover")
+
+            # Serialize modified OPF
+            opf_bytes = ET.tostring(root, encoding="utf-8")
+            try:
+                dom = minidom.parseString(opf_bytes)
+                opf_str = dom.toprettyxml(indent="  ", encoding="utf-8")
+                if isinstance(opf_str, bytes):
+                    opf_str = opf_str.decode("utf-8")
+                opf_bytes = opf_str.encode("utf-8")
+            except Exception:
+                pass
+
+            target, temp_path, backup_path = _resolve_target(
+                epub_path, output_path, backup_suffix
+            )
+            write_path = temp_path if temp_path else target
+
+            # Read all entries into memory, skipping old cover image
+            old_cover_zip_path = None
+            if old_cover_href:
+                old_cover_zip_path = relpath + old_cover_href if relpath else old_cover_href
+
+            entries = []
+            for item_name in zin.namelist():
+                data = zin.read(item_name)
+                if item_name == opf_name:
+                    entries.append((item_name, opf_bytes))
+                elif item_name == "mimetype":
+                    entries.append((item_name, data, zipfile.ZIP_STORED))
+                elif old_cover_zip_path and item_name == old_cover_zip_path:
+                    # Always skip old cover image — we'll write the new one later
+                    pass
+                else:
+                    entries.append((item_name, data))
+
+            # Write to temp or target
+            with zipfile.ZipFile(write_path, "w", zipfile.ZIP_DEFLATED) as zout:
+                for entry in entries:
+                    if len(entry) == 3:
+                        zout.writestr(entry[0], entry[1], entry[2])
+                    else:
+                        zout.writestr(entry[0], entry[1])
+                # Write the new cover image
+                zout.writestr(cover_full_path, image_data, compress_type=zipfile.ZIP_DEFLATED)
+
+            final_path = _finalize_write(target, temp_path, backup_path)
+
+            result = {
+                "ok": True,
+                "output_path": final_path,
+                "cover_path_in_epub": cover_full_path,
+                "old_cover_path": old_cover_href,
+                "old_cover_removed": old_cover_href is not None,
+            }
+            if backup_path:
+                result["backup_path"] = backup_path
+            return result
+    except Exception as e:
+        return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
+
+
+def get_metadata_summary(epub_path):
+    """
+    Get a quick metadata summary including OPF path and cover info.
+    """
+    try:
+        with zipfile.ZipFile(epub_path, "r") as z:
+            opf_name = _find_opf_path(z)
+            if not opf_name:
+                return {"ok": False, "error": "No OPF file found in EPUB"}
+            names = z.namelist()
+            # Find cover image
+            cover_info = {"path": None, "mime": None, "size": 0}
+            for name in names:
+                lower = name.lower()
+                if lower.endswith((".jpg", ".jpeg", ".png")):
+                    base = lower.split("/")[-1]
+                    if "cover" in base:
+                        cover_info = {
+                            "path": name,
+                            "mime": "image/jpeg" if lower.endswith((".jpg", ".jpeg")) else "image/png",
+                            "size": z.getinfo(name).file_size,
+                        }
+                        break
+            opf_bytes = z.read(opf_name)
+            root = ET.fromstring(opf_bytes)
+            uid = root.get("unique-identifier", "")
+            return {
+                "ok": True,
+                "opf_path": opf_name,
+                "unique_identifier_attr": uid,
+                "total_entries": len(names),
+                "cover": cover_info,
+            }
+    except Exception as e:
+        return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
+
+
+def pretty_print_opf(opf_path):
+    """Read and pretty-print an OPF file."""
+    try:
+        with open(opf_path, "r", encoding="utf-8") as f:
+            xml = f.read()
+        dom = minidom.parseString(xml)
+        return dom.toprettyxml(indent="  ")
+    except Exception as e:
+        return "Error: %s: %s" % (type(e).__name__, e)

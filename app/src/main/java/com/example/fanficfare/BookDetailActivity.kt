@@ -22,6 +22,8 @@ class BookDetailActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "BookDetailDiag"
+        const val EDIT_METADATA_REQUEST = 1001
+        const val REPLACE_COVER_REQUEST = 1002
     }
 
     private lateinit var bookTitle: String
@@ -102,6 +104,8 @@ class BookDetailActivity : AppCompatActivity() {
         findViewById<Button>(R.id.buttonForce).setOnClickListener { forceDownloadBook() }
         findViewById<Button>(R.id.buttonShare).setOnClickListener { shareBook() }
         findViewById<Button>(R.id.buttonDelete).setOnClickListener { deleteBook() }
+        findViewById<Button>(R.id.buttonEditMetadata).setOnClickListener { editMetadata() }
+        findViewById<Button>(R.id.buttonReplaceCover).setOnClickListener { replaceCover() }
     }
 
     private fun loadCoverFromEpub(epubFile: File, coverView: ImageView) {
@@ -373,6 +377,147 @@ class BookDetailActivity : AppCompatActivity() {
                 } else {
                     showError("Delete failed")
                 }
+            }
+        }.start()
+    }
+
+    private fun editMetadata() {
+        val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
+            showError("Bridge not available")
+            return
+        }
+        Thread {
+            val resultJson = try {
+                StorageBridge.withLocalEpub(this, bookPath) { localPath ->
+                    bridge.readEpubMetadata(localPath.absolutePath)
+                }
+            } catch (e: Exception) {
+                runOnUiThread { showError("Cannot read EPUB: ${e.message ?: e.javaClass.simpleName}") }
+                return@Thread
+            } ?: run {
+                runOnUiThread { showError("Cannot read EPUB from this location") }
+                return@Thread
+            }
+            runOnUiThread {
+                try {
+                    val result = JSONObject(resultJson)
+                    if (!result.optBoolean("ok")) {
+                        showError("Cannot read metadata: ${result.optString("error")}")
+                        return@runOnUiThread
+                    }
+                    val metadata = result.optJSONObject("metadata") ?: JSONObject()
+                    val authorsList = mutableListOf<String>()
+                    val authorsJson = metadata.optJSONArray("authors")
+                    if (authorsJson != null) {
+                        for (i in 0 until authorsJson.length()) {
+                            authorsList.add(authorsJson.getString(i))
+                        }
+                    }
+                    val intent = Intent(this, EditMetadataActivity::class.java).apply {
+                        putExtra("epub_path", bookPath)
+                        putExtra("title", metadata.optString("title", ""))
+                        putStringArrayListExtra("authors", ArrayList(authorsList))
+                        putExtra("language", metadata.optString("languages", ""))
+                        putExtra("publisher", metadata.optString("publisher", ""))
+                        putExtra("description", metadata.optString("description", ""))
+                        putExtra("tags", metadata.optString("tags", ""))
+                        putExtra("series", metadata.optString("series", ""))
+                        putExtra("series_index", metadata.optString("series_index", ""))
+                        putExtra("rating", metadata.optString("rating", ""))
+                        putExtra("isbn", metadata.optString("isbn", ""))
+                        putExtra("pubdate", metadata.optString("pubdate", ""))
+                        putExtra("rights", metadata.optString("rights", ""))
+                    }
+                    startActivityForResult(intent, EDIT_METADATA_REQUEST)
+                } catch (e: Exception) {
+                    showError("Failed to parse metadata: ${e.message ?: "unknown"}")
+                }
+            }
+        }.start()
+    }
+
+    private fun replaceCover() {
+        // Launch image picker to select a new cover image
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+        }
+        startActivityForResult(intent, REPLACE_COVER_REQUEST)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            EDIT_METADATA_REQUEST -> {
+                if (resultCode == RESULT_OK) {
+                    val title = data?.getStringExtra("title") ?: bookTitle
+                    val author = data?.getStringArrayListExtra("authors")?.joinToString(", ") ?: bookAuthor
+                    val path = data?.getStringExtra("output_path") ?: bookPath
+                    val modified = data?.getLongExtra("modified", System.currentTimeMillis()) ?: System.currentTimeMillis()
+                    finishWithResult(title, author, path, modified, bookSource)
+                }
+            }
+            REPLACE_COVER_REQUEST -> {
+                if (resultCode == RESULT_OK && data != null) {
+                    val uri = data.data
+                    if (uri != null) {
+                        replaceCoverWithImage(uri)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun replaceCoverWithImage(imageUri: Uri) {
+        val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
+            showError("Bridge not available")
+            return
+        }
+        Thread {
+            try {
+                val inputStream = contentResolver.openInputStream(imageUri)
+                val bytes = inputStream?.readBytes() ?: run {
+                    runOnUiThread { showError("Cannot read selected image") }
+                    return@Thread
+                }
+                inputStream?.close()
+
+                // Determine MIME type
+                val mime = contentResolver.getType(imageUri) ?: "image/jpeg"
+
+                // Encode as base64
+                val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+
+                // Use a temp file for the operation
+                val resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
+                    val outPath = localPath.absolutePath.replace(".epub", "_covered.epub")
+                    bridge.replaceEpubCover(localPath.absolutePath, base64, mime, outPath, ".bak")
+                }
+
+                if (resultJson == null) {
+                    runOnUiThread { showError("Cannot read EPUB from this location") }
+                    return@Thread
+                }
+
+                val result = JSONObject(resultJson)
+                if (result.optBoolean("ok")) {
+                    val outputPath = result.optString("output_path", "")
+                    val outputDir = SettingsActivity.getOutputDir(this)
+                    val source = File(outputPath)
+                    if (source.exists() && source.isFile) {
+                        val finalPath = StorageBridge.copyToOutputDir(this, source, outputDir)
+                        runOnUiThread {
+                            Toast.makeText(this, "Cover replaced: ${result.optString("cover_path_in_epub", "")}", Toast.LENGTH_LONG).show()
+                            finishWithResult(bookTitle, bookAuthor, finalPath, System.currentTimeMillis(), null)
+                        }
+                    } else {
+                        runOnUiThread { showError("Cover replacement failed: output file missing") }
+                    }
+                } else {
+                    runOnUiThread { showError("Cover replacement failed: ${result.optString("error")}") }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { showError("Cover replacement failed: ${e.message ?: e.javaClass.simpleName}") }
             }
         }.start()
     }

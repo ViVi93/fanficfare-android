@@ -79,6 +79,37 @@ class PythonBridge(private val context: Context) {
     fun downloadStoryList(pageUrl: String): String =
         safeCall("download_story_list", pageUrl)
 
+    fun exportEpubOpf(epubPath: String, outputPath: String? = null): String =
+        if (outputPath != null) safeCall("export_epub_opf", epubPath, outputPath)
+        else safeCall("export_epub_opf", epubPath)
+
+    fun importEpubOpf(epubPath: String, opfXml: String, outputPath: String? = null, backupSuffix: String? = null): String {
+        val args = mutableListOf<Any>(epubPath, opfXml)
+        if (outputPath != null) args.add(outputPath)
+        if (backupSuffix != null) args.add(backupSuffix)
+        return safeCall("import_epub_opf", *args.toTypedArray())
+    }
+
+    fun readEpubMetadata(epubPath: String): String =
+        safeCall("read_epub_metadata", epubPath)
+
+    fun writeEpubMetadata(epubPath: String, fieldsJson: String, outputPath: String? = null, backupSuffix: String? = null): String {
+        val args = mutableListOf<Any>(epubPath, fieldsJson)
+        if (outputPath != null) args.add(outputPath)
+        if (backupSuffix != null) args.add(backupSuffix)
+        return safeCall("write_epub_metadata", *args.toTypedArray())
+    }
+
+    fun replaceEpubCover(epubPath: String, imageDataBase64: String, imageMime: String, outputPath: String? = null, backupSuffix: String? = null): String {
+        val args = mutableListOf<Any>(epubPath, imageDataBase64, imageMime)
+        if (outputPath != null) args.add(outputPath)
+        if (backupSuffix != null) args.add(backupSuffix)
+        return safeCall("replace_epub_cover", *args.toTypedArray())
+    }
+
+    fun getEpubMetadataSummary(epubPath: String): String =
+        safeCall("get_epub_metadata_summary", epubPath)
+
     fun getInitError(): String? = initError
 
     fun getFanFicFareError(): String? {

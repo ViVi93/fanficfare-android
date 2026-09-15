@@ -813,3 +813,110 @@ def download_story_list(page_url):
     except Exception as e:
         _download_debug_write("download_story_list EXCEPTION {}: {}".format(type(e).__name__, e))
         return json.dumps({"ok": False, "error": str(e), "detail": "{}: {}".format(type(e).__name__, e)})
+
+
+# ---- EPUB Metadata & Cover Editor ----
+# Wrapper functions that delegate to the self-contained epub_editor module.
+# These provide the same capabilities as calibre's epubmeta tool:
+#   - export_opf: extract OPF XML for viewing/editing
+#   - import_opf: write back edited OPF XML
+#   - read_metadata: read structured metadata fields
+#   - write_metadata: edit structured metadata fields
+#   - replace_cover: replace the cover image
+
+
+def _ensure_epub_editor():
+    """Import the epub_editor module, adding SRC_DIR to path if needed.
+    Raises ImportError if the module cannot be loaded.
+    """
+    try:
+        import epub_editor
+        return epub_editor
+    except ImportError:
+        if SRC_DIR not in sys.path:
+            sys.path.insert(0, SRC_DIR)
+        import epub_editor
+        return epub_editor
+
+
+def export_epub_opf(epub_path, output_path=None):
+    """Export OPF XML from an EPUB file for viewing or editing."""
+    try:
+        module = _ensure_epub_editor()
+        result = module.export_opf(epub_path, output_path)
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+def import_epub_opf(epub_path, opf_path_or_xml, output_path=None, backup_suffix=None):
+    """Import OPF XML back into an EPUB file."""
+    try:
+        module = _ensure_epub_editor()
+        result = module.import_opf(epub_path, opf_path_or_xml, output_path, backup_suffix)
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+def read_epub_metadata(epub_path):
+    """Read structured metadata fields from an EPUB's OPF."""
+    try:
+        module = _ensure_epub_editor()
+        result = module.read_metadata_fields(epub_path)
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+def write_epub_metadata(epub_path, fields_json, output_path=None, backup_suffix=None):
+    """
+    Write structured metadata fields to an EPUB's OPF.
+
+    Args:
+        epub_path: Path to the source EPUB
+        fields_json: JSON string of metadata fields dict
+        output_path: If provided, write to this path; otherwise modify in-place
+        backup_suffix: If provided, create a backup with this suffix
+    """
+    try:
+        fields = json.loads(fields_json) if isinstance(fields_json, str) else fields_json
+    except (json.JSONDecodeError, TypeError) as e:
+        return json.dumps({"ok": False, "error": "Invalid fields JSON: %s" % e})
+    try:
+        module = _ensure_epub_editor()
+        result = module.write_metadata(epub_path, fields, output_path, backup_suffix)
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+def replace_epub_cover(epub_path, image_data, image_mime, output_path=None, backup_suffix=None):
+    """
+    Replace the cover image in an EPUB file.
+
+    Args:
+        epub_path: Path to the source EPUB
+        image_data: Base64-encoded image data string
+        image_mime: MIME type (e.g. "image/jpeg", "image/png")
+        output_path: If provided, write to this path; otherwise modify in-place
+        backup_suffix: If provided, create a backup with this suffix
+    """
+    try:
+        import base64
+        raw_image_data = base64.b64decode(image_data)
+        module = _ensure_epub_editor()
+        result = module.replace_cover(epub_path, raw_image_data, image_mime, output_path, backup_suffix)
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+def get_epub_metadata_summary(epub_path):
+    """Get a quick metadata summary including OPF path and cover info."""
+    try:
+        module = _ensure_epub_editor()
+        result = module.get_metadata_summary(epub_path)
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})

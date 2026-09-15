@@ -19,7 +19,7 @@ jobs:
           distribution: temurin
           java-version: 17
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
       - name: Install SDK packages
         run: |
           yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
@@ -35,12 +35,25 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
-          echo "$SIGNING_KEY_STORE_BASE64" | base64 -d > signing.jks
-          ./gradlew assembleRelease \
-            -PSIGNING_KEY_STORE_PATH="$(pwd)/signing.jks" \
-            -PSIGNING_KEY_ALIAS="$SIGNING_KEY_ALIAS" \
-            -PSIGNING_STORE_PASSWORD="$SIGNING_STORE_PASSWORD" \
-            -PSIGNING_KEY_PASSWORD="$SIGNING_KEY_PASSWORD"
+          if [ -z "$SIGNING_KEY_STORE_BASE64" ]; then
+            echo "WARNING: Signing secrets not found. Building unsigned release." 
+            echo "UNSIGNED=true" >> $GITHUB_ENV
+          else
+            echo "$SIGNING_KEY_STORE_BASE64" | base64 -d > signing.jks
+            echo "UNSIGNED=false" >> $GITHUB_ENV
+          fi
+      - name: Build release APK
+        if: github.event_name == 'push'
+        run: |
+          if [ "$UNSIGNED" = "true" ]; then
+            ./gradlew assembleRelease --verbose
+          else
+            ./gradlew assembleRelease \
+              -PSIGNING_KEY_STORE_PATH="$(pwd)/signing.jks" \
+              -PSIGNING_KEY_ALIAS="$SIGNING_KEY_ALIAS" \
+              -PSIGNING_STORE_PASSWORD="$SIGNING_STORE_PASSWORD" \
+              -PSIGNING_KEY_PASSWORD="$SIGNING_KEY_PASSWORD"
+          fi
       - name: Build debug APK
         if: github.event_name != 'push'
         run: ./gradlew assembleDebug

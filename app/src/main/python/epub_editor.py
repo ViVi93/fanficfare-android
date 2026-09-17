@@ -281,6 +281,240 @@ def import_opf(epub_path, opf_path_or_xml, output_path=None, backup_suffix=None)
         return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
 
 
+# ---------------------------------------------------------------------------
+# EPUB 3 refinement helpers (subtitle, contributor roles/file-as)
+# ---------------------------------------------------------------------------
+
+def _get_meta_property_refines(meta):
+    """Build a dict mapping refines-target-id → {property: value}.
+
+    Scans all <meta> elements that have a ``refines`` attribute and
+    ``property`` attribute, grouping them by the element they refine.
+    For EPUB 3-style <meta property="..."], the value is the element text.
+    """
+    result = {}
+    for m in meta.findall(".//{%s}meta" % OPF_NS):
+        refines = m.get("refines", "")
+        prop = m.get("property", "")
+        if not refines or not prop:
+            continue
+        # strips leading '#' from refines value
+        target_id = refines.lstrip("#")
+        # EPUB 3 <meta property="..."> uses element text as the value.
+        # If text is empty, fall back to content attribute (mixed usage).
+        value = (m.text or "").strip() if m.text else m.get("content", "")
+        if not value:
+            value = m.get("content", "")
+        result.setdefault(target_id, {})[prop] = value
+    return result
+
+
+def _find_title_with_id(meta):
+    """Find the primary dc:title element and return it (or None).
+
+    Also works when the title has no id — the caller can assign one when
+    writing.
+    """
+    return meta.find(".//{%s}title" % DC_NS)
+
+
+def _read_subtitle(meta):
+    """Read an EPUB 3 subtitle from the metadata element.
+
+    Looks for a dc:title element with a sibling <meta property="title-type"
+    refines="#<title-id>">subtitle</meta>.
+
+    Returns the subtitle string, or empty string if not found.
+    """
+    refines_map = _get_meta_property_refines(meta)
+    # Check all dc:title elements for subtitle refinements.
+    for title_elem in meta.findall(".//{%s}title" % DC_NS):
+        title_id = title_elem.get("id", "")
+        if not title_id:
+            continue
+        props = refines_map.get(title_id, {})
+        if props.get("title-type", "") == "subtitle":
+            # The subtitle is the text of this title element.
+            if title_elem.text and title_elem.text.strip():
+                return title_elem.text.strip()
+    return ""
+
+
+def _read_contributors(meta):
+    """Read dc:contributor elements with their role and file-as refinements.
+
+    Returns a list of dicts: [{'name': str, 'role': str, 'file_as': str}, ...]
+    Preserves contributor order. Missing role/file_as are represented as empty
+    strings.
+    """
+    refines_map = _get_meta_property_refines(meta)
+    contributors = []
+    for elem in meta.findall(".//{%s}contributor" % DC_NS):
+        contrib_id = elem.get("id", "")
+        props = refines_map.get(contrib_id, {}) if contrib_id else {}
+        name = elem.text.strip() if elem.text else ""
+        role = props.get("role", "")
+        file_as = props.get("file-as", "")
+        # Only include if there's actually a name.
+        if name:
+            contributors.append({
+                'name': name,
+                'role': role,
+                'file_as': file_as,
+            })
+    return contributors
+
+
+# ---------------------------------------------------------------------------
+# EPUB 3 refinement write helpers
+# ---------------------------------------------------------------------------
+
+def _ensure_element_id(elem, meta):
+    """Ensure an XML element has an 'id' attribute, assigning one if missing.
+    Returns the id string.  *meta* is passed so we can scan siblings."""
+    elem_id = elem.get("id")
+    if elem_id:
+        return elem_id
+    # Generate a stable id based on element tag.
+    tag_local = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+    # Collect existing ids among siblings to avoid collisions.
+    existing_ids = set()
+    for sibling in list(meta):
+        existing_ids.add(sibling.get("id", ""))
+    idx = 1
+    elem_id = "%s-%d" % (tag_local, idx)
+    while elem_id in existing_ids:
+        idx += 1
+        elem_id = "%s-%d" % (tag_local, idx)
+    elem.set("id", elem_id)
+    return elem_id
+
+
+def _find_or_create_meta_refinement(meta, target_id, property_name):
+    """Find or create a <meta property=... refines=...> element.
+
+    Returns the meta element. If a matching refinement already exists,
+    returns it (so its content can be updated).
+    """
+    for m in meta.findall(".//{%s}meta" % OPF_NS):
+        if m.get("refines", "").lstrip("#") == target_id and m.get("property") == property_name:
+            return m
+    # Create new.
+    m = ET.SubElement(meta, "{%s}meta" % OPF_NS)
+    m.set("refines", "#" + target_id)
+    m.set("property", property_name)
+    return m
+
+
+def _remove_all_refinements_for(meta, target_id):
+    """Remove all <meta refines="#target_id"> elements."""
+    for m in list(meta.findall(".//{%s}meta" % OPF_NS)):
+        if m.get("refines", "").lstrip("#") == target_id:
+            parent = _find_parent(meta, m)
+            if parent is not None:
+                parent.remove(m)
+
+
+def _remove_all_contributors(meta):
+    """Remove all dc:contributor elements and their associated refinements."""
+    for elem in list(meta.findall(".//{%s}contributor" % DC_NS)):
+        contrib_id = elem.get("id", "")
+        if contrib_id:
+            _remove_all_refinements_for(meta, contrib_id)
+        parent = _find_parent(meta, elem)
+        if parent is not None:
+            parent.remove(elem)
+
+
+def _remove_subtitle(meta):
+    """Remove subtitle dc:title element(s) and their title-type refinement metas.
+
+    A subtitle is a dc:title element that has an associated
+    <meta property="title-type" refines="#<title-id>">subtitle</meta>.
+    """
+    refines_map = _get_meta_property_refines(meta)
+    for title_elem in list(meta.findall(".//{%s}title" % DC_NS)):
+        title_id = title_elem.get("id", "")
+        if not title_id:
+            continue
+        props = refines_map.get(title_id, {})
+        if props.get("title-type", "") == "subtitle":
+            # Remove the refinement meta(s) for this title.
+            for m in list(meta.findall(".//{%s}meta" % OPF_NS)):
+                if m.get("refines", "").lstrip("#") == title_id:
+                    parent = _find_parent(meta, m)
+                    if parent is not None:
+                        parent.remove(m)
+            # Remove the subtitle title element itself.
+            tp = _find_parent(meta, title_elem)
+            if tp is not None:
+                tp.remove(title_elem)
+
+
+def _write_subtitle(meta, subtitle):
+    """Write or update a subtitle as an EPUB 3 title-type refinement.
+
+    If *subtitle* is empty/whitespace, removes any existing subtitle.
+    Otherwise, removes any existing subtitle, then creates a new dc:title
+    element containing the subtitle text, gives it a stable id, and adds
+    a <meta property="title-type" refines="#<id>">subtitle</meta>.
+    """
+    subtitle = subtitle.strip() if isinstance(subtitle, str) else ''
+
+    # Always remove existing subtitle first (idempotent).
+    _remove_subtitle(meta)
+
+    if not subtitle:
+        return
+
+    # Create the subtitle dc:title element.
+    subtitle_elem = ET.SubElement(meta, "{%s}title" % DC_NS)
+    subtitle_elem.text = subtitle
+    subtitle_id = _ensure_element_id(subtitle_elem, meta)
+
+    # Add the refinement meta: <meta property="title-type" refines="#<id>">subtitle</meta>
+    ref_meta = _find_or_create_meta_refinement(meta, subtitle_id, "title-type")
+    ref_meta.text = "subtitle"
+
+
+def _write_contributors(meta, contributors):
+    """Write dc:contributor elements with optional role and file-as refinements.
+
+    *contributors* is a list of dicts: [{'name': str, 'role': str, 'file_as': str}].
+    Removes any existing contributors first to avoid duplicates. Preserves order.
+    Does not write empty refinements (role/file_as left blank are skipped).
+    """
+    # Remove all existing contributors and their refinements.
+    _remove_all_contributors(meta)
+
+    for contrib in contributors:
+        if not isinstance(contrib, dict):
+            contrib = {'name': str(contrib), 'role': '', 'file_as': ''}
+        name = contrib.get('name', '')
+        if not name or not isinstance(name, str) or not name.strip():
+            continue
+        name = name.strip()
+        role = contrib.get('role', '')
+        file_as = contrib.get('file_as', '')
+
+        elem = ET.SubElement(meta, "{%s}contributor" % DC_NS)
+        elem.text = name
+        elem_id = _ensure_element_id(elem, meta)
+
+        if role and isinstance(role, str):
+            role = role.strip()
+            if role:
+                role_meta = _find_or_create_meta_refinement(meta, elem_id, "role")
+                role_meta.set("scheme", "marc:relators")
+                role_meta.text = role
+
+        if file_as and isinstance(file_as, str):
+            file_as = file_as.strip()
+            if file_as:
+                fa_meta = _find_or_create_meta_refinement(meta, elem_id, "file-as")
+                fa_meta.text = file_as
+
+
 def read_metadata_fields(epub_path):
     """
     Read structured metadata fields from an EPUB's OPF.
@@ -313,12 +547,20 @@ def read_metadata_fields(epub_path):
                 "isbn": "",
                 "pubdate": "",
                 "rights": "",
+                "subtitle": "",
+                "contributors": [],
             }
 
             # Title
             title_elem = meta.find(".//{%s}title" % DC_NS)
             if title_elem is not None and title_elem.text:
                 result["title"] = title_elem.text.strip()
+
+            # Subtitle (EPUB 3 title-type refinement)
+            result["subtitle"] = _read_subtitle(meta)
+
+            # Contributors (dc:contributor with optional role/file-as)
+            result["contributors"] = _read_contributors(meta)
 
             # Authors (creators)
             for creator in meta.findall(".//{%s}creator" % DC_NS):
@@ -420,6 +662,16 @@ def write_metadata(epub_path, fields, output_path=None, backup_suffix=None):
             if "title" in fields and fields["title"] is not None:
                 _set_dc_text_element(meta, "title", fields["title"])
                 changed_fields.append("title")
+
+            # Subtitle (EPUB 3 title-type refinement)
+            if "subtitle" in fields and fields["subtitle"] is not None:
+                _write_subtitle(meta, fields["subtitle"])
+                changed_fields.append("subtitle")
+
+            # Contributors (dc:contributor with optional role/file-as)
+            if "contributors" in fields and fields["contributors"] is not None:
+                _write_contributors(meta, fields["contributors"])
+                changed_fields.append("contributors")
 
             # Authors
             if "authors" in fields and fields["authors"] is not None:
@@ -567,6 +819,8 @@ def replace_cover(epub_path, image_data, image_mime, output_path=None, backup_su
 
     Returns JSON: {"ok": true, "output_path": "...", "cover_path_in_epub": "...", ...}
     """
+    # Track temp path for cleanup on failure (same pattern as write_metadata_and_cover)
+    _temp_path = None
     try:
         # Determine a reasonable filename for the new cover
         ext = ".jpg"
@@ -638,6 +892,7 @@ def replace_cover(epub_path, image_data, image_mime, output_path=None, backup_su
             target, temp_path, backup_path = _resolve_target(
                 epub_path, output_path, backup_suffix
             )
+            _temp_path = temp_path  # for cleanup on failure
             write_path = temp_path if temp_path else target
 
             # Read all entries into memory, skipping old cover image
@@ -669,6 +924,7 @@ def replace_cover(epub_path, image_data, image_mime, output_path=None, backup_su
                 zout.writestr(cover_full_path, image_data, compress_type=zipfile.ZIP_DEFLATED)
 
             final_path = _finalize_write(target, temp_path, backup_path)
+            _temp_path = None  # successfully renamed; no cleanup needed
 
             result = {
                 "ok": True,
@@ -681,6 +937,328 @@ def replace_cover(epub_path, image_data, image_mime, output_path=None, backup_su
                 result["backup_path"] = backup_path
             return result
     except Exception as e:
+        # Clean up the temp file if it was created but not renamed.
+        # The original EPUB is never touched on this path.
+        if _temp_path is not None and os.path.exists(_temp_path):
+            try:
+                os.remove(_temp_path)
+            except Exception:
+                pass
+        return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
+
+
+def _apply_metadata_to_opf(root, fields):
+    """Apply structured metadata fields to a parsed OPF XML root (in-place).
+
+    Extracted from write_metadata() so it can be reused by the atomic
+    write_metadata_and_cover() function.  Returns the list of changed
+    field names.
+    """
+    meta = _ensure_metadata_element(root)
+    changed_fields = []
+
+    # Title
+    if "title" in fields and fields["title"] is not None:
+        _set_dc_text_element(meta, "title", fields["title"])
+        changed_fields.append("title")
+
+    # Subtitle (EPUB 3 title-type refinement)
+    if "subtitle" in fields and fields["subtitle"] is not None:
+        _write_subtitle(meta, fields["subtitle"])
+        changed_fields.append("subtitle")
+
+    # Contributors (dc:contributor with optional role/file-as)
+    if "contributors" in fields and fields["contributors"] is not None:
+        _write_contributors(meta, fields["contributors"])
+        changed_fields.append("contributors")
+
+    # Authors
+    if "authors" in fields and fields["authors"] is not None:
+        _remove_all_dc_elements(meta, "creator")
+        for author in fields["authors"]:
+            if author and author.strip():
+                elem = ET.SubElement(meta, "{%s}creator" % DC_NS)
+                elem.text = author.strip()
+                elem.set("id", "creator")
+        changed_fields.append("authors")
+
+    # Languages
+    if "languages" in fields and fields["languages"] is not None:
+        _remove_all_dc_elements(meta, "language")
+        for lang in fields["languages"]:
+            if lang and lang.strip():
+                elem = ET.SubElement(meta, "{%s}language" % DC_NS)
+                elem.text = lang.strip()
+        changed_fields.append("languages")
+
+    # Publisher
+    if "publisher" in fields and fields["publisher"] is not None:
+        _remove_all_dc_elements(meta, "publisher")
+        if fields["publisher"].strip():
+            _set_dc_text_element(meta, "publisher", fields["publisher"])
+        changed_fields.append("publisher")
+
+    # Description
+    if "description" in fields and fields["description"] is not None:
+        _remove_all_dc_elements(meta, "description")
+        if fields["description"].strip():
+            _set_dc_text_element(meta, "description", fields["description"])
+        changed_fields.append("description")
+
+    # Tags (subjects)
+    if "tags" in fields and fields["tags"] is not None:
+        _remove_all_dc_elements(meta, "subject")
+        for tag in fields["tags"]:
+            if tag and tag.strip():
+                elem = ET.SubElement(meta, "{%s}subject" % DC_NS)
+                elem.text = tag.strip()
+        changed_fields.append("tags")
+
+    # Series (Calibre-specific)
+    if "series" in fields and fields["series"] is not None:
+        _set_meta_element(meta, "calibre:series", fields["series"])
+        changed_fields.append("series")
+    if "series_index" in fields and fields["series_index"] is not None:
+        _set_meta_element(meta, "calibre:series_index", str(fields["series_index"]))
+        changed_fields.append("series_index")
+
+    # Rating (Calibre-specific)
+    if "rating" in fields and fields["rating"] is not None:
+        _set_meta_element(meta, "calibre:rating", str(fields["rating"]))
+        changed_fields.append("rating")
+
+    # ISBN
+    if "isbn" in fields and fields["isbn"] is not None:
+        isbn = fields["isbn"].strip()
+        if isbn:
+            existing_id = None
+            for ident in meta.findall(".//{%s}identifier" % DC_NS):
+                if ident.text and "isbn" in ident.text.lower():
+                    existing_id = ident
+                    break
+            if existing_id is not None:
+                existing_id.text = "ISBN:%s" % isbn
+            else:
+                elem = ET.SubElement(meta, "{%s}identifier" % DC_NS)
+                elem.text = "ISBN:%s" % isbn
+        changed_fields.append("isbn")
+
+    # Pubdate
+    if "pubdate" in fields and fields["pubdate"] is not None:
+        _remove_all_dc_elements(meta, "date")
+        if fields["pubdate"].strip():
+            elem = ET.SubElement(meta, "{%s}%s" % (DC_NS, "date"))
+            elem.text = fields["pubdate"].strip()
+        changed_fields.append("pubdate")
+
+    # Rights
+    if "rights" in fields and fields["rights"] is not None:
+        _remove_all_dc_elements(meta, "rights")
+        if fields["rights"].strip():
+            _set_dc_text_element(meta, "rights", fields["rights"])
+        changed_fields.append("rights")
+
+    return changed_fields
+
+
+def _apply_cover_to_opf(root, opf_name, image_data, image_mime):
+    """Apply a cover image to a parsed OPF XML root (in-place).
+
+    Extracted from replace_cover() so it can be reused by the atomic
+    write_metadata_and_cover() function.
+
+    Returns (old_cover_zip_path, cover_full_path) where old_cover_zip_path
+    is None if no existing cover was found.
+    """
+    manifest_elem = root.find(".//{%s}manifest" % OPF_NS)
+    if manifest_elem is None:
+        manifest_elem = root.find("{%s}manifest" % OPF_NS)
+
+    meta = _get_all_metadata_elements(root)
+    if meta is None:
+        meta = _ensure_metadata_element(root)
+
+    # Determine OPF path prefix
+    relpath = opf_name.rsplit("/", 1)[0] + "/" if "/" in opf_name else ""
+
+    # Determine new cover filename
+    ext = ".jpg"
+    if image_mime == "image/png":
+        ext = ".png"
+    elif image_mime == "image/gif":
+        ext = ".gif"
+    elif image_mime == "image/webp":
+        ext = ".webp"
+    new_cover_name = "cover" + ext
+    cover_full_path = relpath + new_cover_name if relpath else new_cover_name
+
+    # Find existing cover item reference
+    old_cover_href = None
+    cover_item_id = _find_manifest_cover_item_id(root)
+
+    if cover_item_id:
+        for item in manifest_elem.findall("{%s}item" % OPF_NS):
+            if item.get("id") == cover_item_id:
+                old_cover_href = item.get("href")
+                item.set("href", new_cover_name)
+                item.set("media-type", image_mime)
+                break
+    else:
+        # No cover found; need to add one
+        item = ET.SubElement(manifest_elem, "{%s}item" % OPF_NS)
+        item.set("id", "cover")
+        item.set("href", new_cover_name)
+        item.set("media-type", image_mime)
+        item.set("properties", "cover-image")
+
+        # Add cover meta tag (EPUB 2 style)
+        m = ET.SubElement(meta, "{%s}meta" % OPF_NS)
+        m.set("name", "cover")
+        m.set("content", "cover")
+
+    old_cover_zip_path = None
+    if old_cover_href:
+        old_cover_zip_path = relpath + old_cover_href if relpath else old_cover_href
+
+    return old_cover_zip_path, cover_full_path
+
+
+def _serialize_opf(root):
+    """Serialize the OPF XML root to bytes with pretty-printing."""
+    opf_bytes = ET.tostring(root, encoding="utf-8")
+    try:
+        dom = minidom.parseString(opf_bytes)
+        opf_str = dom.toprettyxml(indent="  ", encoding="utf-8")
+        if isinstance(opf_str, bytes):
+            opf_str = opf_str.decode("utf-8")
+        opf_bytes = opf_str.encode("utf-8")
+    except Exception:
+        pass
+    return opf_bytes
+
+
+def _build_entry_list(zin, opf_name, opf_bytes, old_cover_zip_path=None):
+    """Read all entries from the source zip into memory, substituting the
+    modified OPF and skipping the old cover image.
+
+    Returns a list of tuples: (name, data) or (name, data, compress_type).
+    """
+    entries = []
+    for item_name in zin.namelist():
+        data = zin.read(item_name)
+        if item_name == opf_name:
+            entries.append((item_name, opf_bytes))
+        elif item_name == "mimetype":
+            entries.append((item_name, data, zipfile.ZIP_STORED))
+        elif old_cover_zip_path and item_name == old_cover_zip_path:
+            # Skip old cover image — new one is appended separately
+            pass
+        else:
+            entries.append((item_name, data))
+    return entries
+
+
+def write_metadata_and_cover(epub_path, fields, image_data=None, image_mime=None,
+                              output_path=None, backup_suffix=None):
+    """Write metadata and (optionally) a cover to an EPUB in a single atomic operation.
+
+    Unlike calling write_metadata() then replace_cover(), this function reads
+    the EPUB once, applies both changes to the same in-memory entry list, and
+    writes the result in a single zip write followed by an atomic temp-file
+    rename.  This ensures the EPUB is never left in a partially-written state
+    (metadata written but cover failed, etc.).
+
+    Args:
+        epub_path: Path to the source EPUB.
+        fields: dict of metadata fields (same format as write_metadata).
+        image_data: Raw image bytes, or None to skip cover replacement.
+        image_mime: MIME type for the cover image, or None.
+        output_path: If provided, write to this path; otherwise modify in-place.
+        backup_suffix: If provided, create a backup with this suffix.
+
+    Returns JSON: {"ok": true, "output_path": "...", "changed_fields": [...],
+    "metadata_written": bool, "cover_written": bool, "cover_path_in_epub": "..."}
+    """
+    # Track temp path for cleanup on failure
+    _temp_path = None
+    try:
+        # Accept fields as either a dict or a JSON string
+        if isinstance(fields, str):
+            import json as _json
+            fields = _json.loads(fields)
+
+        cover_ok = False
+        old_cover_zip_path = None
+        cover_full_path = None
+
+        with zipfile.ZipFile(epub_path, "r") as zin:
+            opf_name = _find_opf_path(zin)
+            if not opf_name:
+                return {"ok": False, "error": "No OPF file found in EPUB"}
+
+            opf_data = zin.read(opf_name)
+            root = ET.fromstring(opf_data)
+
+            # Apply metadata changes to the XML tree
+            changed_fields = _apply_metadata_to_opf(root, fields)
+
+            # Apply cover changes to the XML tree (if requested)
+            if image_data is not None and image_mime:
+                old_cover_zip_path, cover_full_path = _apply_cover_to_opf(
+                    root, opf_name, image_data, image_mime
+                )
+                cover_ok = True
+
+            # Serialize the modified OPF
+            opf_bytes = _serialize_opf(root)
+
+            # Build the entry list (substituting OPF, skipping old cover)
+            entries = _build_entry_list(zin, opf_name, opf_bytes, old_cover_zip_path)
+
+            # If cover was added/changed, append the new cover image
+            if cover_ok and image_data and cover_full_path:
+                entries.append((cover_full_path, image_data))
+
+            target, temp_path, backup_path = _resolve_target(
+                epub_path, output_path, backup_suffix
+            )
+            _temp_path = temp_path  # for cleanup on failure
+            write_path = temp_path if temp_path else target
+
+            # Write all entries in a single zip write
+            with zipfile.ZipFile(write_path, "w", zipfile.ZIP_DEFLATED) as zout:
+                for entry in entries:
+                    if len(entry) == 3:
+                        zout.writestr(entry[0], entry[1], entry[2])
+                    else:
+                        zout.writestr(entry[0], entry[1])
+
+            final_path = _finalize_write(target, temp_path, backup_path)
+            _temp_path = None  # successfully renamed; no cleanup needed
+
+            result = {
+                "ok": True,
+                "output_path": final_path,
+                "changed_fields": changed_fields,
+                "metadata_written": True,
+                "cover_written": cover_ok,
+                "path_in_epub": opf_name,
+            }
+            if cover_ok and cover_full_path:
+                result["cover_path_in_epub"] = cover_full_path
+                result["old_cover_removed"] = old_cover_zip_path is not None
+            if backup_path:
+                result["backup_path"] = backup_path
+            return result
+
+    except Exception as e:
+        # Clean up the temp file if it was created but not renamed.
+        # The original EPUB is never touched on this path.
+        if _temp_path is not None and os.path.exists(_temp_path):
+            try:
+                os.remove(_temp_path)
+            except Exception:
+                pass
         return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
 
 

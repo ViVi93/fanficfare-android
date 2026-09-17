@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:layout_marginTop="8dp">
+
+    <TextView
+        android:id="@+id/textFieldLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <TextView
+        android:id="@+id/textFieldCurrent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="14sp"
+        android:textColor="?attr/colorOnSurface"
+        android:background="?attr/colorSurfaceContainer"
+        android:padding="4dp"
+        android:layout_marginTop="2dp" />
+
+    <TextView
+        android:id="@+id/textFieldOnline"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="14sp"
+        android:textColor="?attr/colorOnSecondaryContainer"
+        android:background="?attr/colorSecondaryContainer"
+        android:padding="4dp"
+        android:layout_marginTop="2dp" />
+
+</LinearLayout>

@@ -110,6 +110,38 @@ class PythonBridge(private val context: Context) {
     fun getEpubMetadataSummary(epubPath: String): String =
         safeCall("get_epub_metadata_summary", epubPath)
 
+    // --- Phase 7: metadata preview / cover selection bridge adapters ---
+
+    fun lookupOnlineMetadata(title: String, author: String, isbn: String): String =
+        safeCall("lookup_online_metadata", title, author, isbn)
+
+    fun diffMetadata(currentJson: String, onlineJson: String): String =
+        safeCall("diff_metadata", currentJson, onlineJson)
+
+    fun extractCoverCandidates(resultsJson: String): String =
+        safeCall("extract_cover_candidates", resultsJson)
+
+    fun downloadCover(url: String, timeout: Int = 15): String =
+        safeCall("download_cover", url, timeout)
+
+    fun applyMetadataAndCover(
+        epubPath: String,
+        fieldsJson: String,
+        imageDataBase64: String? = null,
+        imageMime: String? = null,
+        outputPath: String? = null,
+        backupSuffix: String? = null,
+    ): String {
+        val args = mutableListOf<Any>(epubPath, fieldsJson)
+        if (imageDataBase64 != null) args.add(imageDataBase64)
+        else args.add("")
+        if (imageMime != null) args.add(imageMime)
+        else args.add("")
+        if (outputPath != null) args.add(outputPath)
+        if (backupSuffix != null) args.add(backupSuffix)
+        return safeCall("apply_metadata_and_cover", *args.toTypedArray())
+    }
+
     fun getInitError(): String? = initError
 
     fun getFanFicFareError(): String? {

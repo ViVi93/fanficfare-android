@@ -78,6 +78,14 @@ def run_tests():
         ('read_metadata', test_get_metadata_fn),
         ('replace_cover', test_replace_cover_fn),
         ('full_roundtrip', test_full_roundtrip_fn),
+        ('atomic_meta_only', test_write_metadata_and_cover_metadata_only_fn),
+        ('atomic_meta_and_cover', test_write_metadata_and_cover_both_fn),
+        ('atomic_cover_only', test_write_metadata_and_cover_cover_only_fn),
+        ('atomic_combined_one_write', test_combined_atomic_single_write_fn),
+        ('atomic_failure_original_untouched', test_combined_failure_preserves_original_fn),
+        ('temp_cleanup_on_failure', test_temp_cleanup_on_failure_fn),
+        ('replace_cover_temp_cleanup_on_failure', test_replace_cover_temp_cleanup_on_failure_fn),
+        ('replace_cover_temp_cleanup_on_zip_error', test_replace_cover_temp_cleanup_on_zip_error_fn),
     ]
     passed = 0
     failed = 0
@@ -174,6 +182,228 @@ def test_full_roundtrip_fn(ee):
     result3 = ee.read_metadata_fields(path)
     assert result3['metadata']['title'] == 'Roundtrip Title', "title=%s" % result3['metadata']['title']
     os.unlink(path)
+
+def test_write_metadata_and_cover_metadata_only_fn(ee):
+    """Atomic write with metadata only (no cover) should succeed."""
+    path = tempfile.mktemp(suffix='.epub')
+    create_test_epub(path)
+    fields = {'title': 'Atomic Meta Title', 'publisher': 'Atomic Publisher'}
+    result = ee.write_metadata_and_cover(path, fields, image_data=None, image_mime=None,
+                                          output_path=None, backup_suffix='.bak')
+    assert result['ok'], "write_metadata_and_cover failed: %s" % result.get('error', '')
+    assert result['metadata_written'], "metadata_written should be True"
+    assert not result['cover_written'], "cover_written should be False"
+    assert 'title' in result['changed_fields']
+    md = ee.read_metadata_fields(path)
+    assert md['metadata']['title'] == 'Atomic Meta Title', "title=%s" % md['metadata']['title']
+    assert md['metadata']['publisher'] == 'Atomic Publisher', "publisher=%s" % md['metadata']['publisher']
+    # Original cover should still be present
+    with zipfile.ZipFile(path, 'r') as zf:
+        assert 'cover.jpg' in zf.namelist(), "cover.jpg should still be in EPUB"
+    os.unlink(path)
+    if os.path.exists(path + '.bak'):
+        os.unlink(path + '.bak')
+
+def test_write_metadata_and_cover_both_fn(ee):
+    """Atomic write with both metadata and cover should succeed in one pass."""
+    path = tempfile.mktemp(suffix='.epub')
+    create_test_epub(path)
+    fields = {'title': 'Atomic Both Title', 'publisher': 'Atomic Both Publisher'}
+    new_jpeg = base64.b64decode('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBGcG')
+    result = ee.write_metadata_and_cover(path, fields, image_data=new_jpeg,
+                                          image_mime='image/jpeg',
+                                          output_path=None, backup_suffix='.bak')
+    assert result['ok'], "write_metadata_and_cover failed: %s" % result.get('error', '')
+    assert result['metadata_written'], "metadata_written should be True"
+    assert result['cover_written'], "cover_written should be True"
+    assert 'title' in result['changed_fields']
+    # Verify metadata was updated
+    md = ee.read_metadata_fields(path)
+    assert md['metadata']['title'] == 'Atomic Both Title', "title=%s" % md['metadata']['title']
+    # Verify cover image is the new one
+    with zipfile.ZipFile(path, 'r') as zf:
+        names = zf.namelist()
+        assert 'cover.jpg' in names, "cover.jpg not in EPUB: %s" % names
+        cover_data = zf.read('cover.jpg')
+        assert cover_data == new_jpeg, "cover image data does not match"
+    os.unlink(path)
+    if os.path.exists(path + '.bak'):
+        os.unlink(path + '.bak')
+
+def test_write_metadata_and_cover_cover_only_fn(ee):
+    """Atomic write with cover only (no metadata fields) should succeed."""
+    path = tempfile.mktemp(suffix='.epub')
+    create_test_epub(path)
+    new_jpeg = base64.b64decode('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBGcG')
+    result = ee.write_metadata_and_cover(path, {}, image_data=new_jpeg,
+                                          image_mime='image/jpeg',
+                                          output_path=None, backup_suffix='.bak')
+    assert result['ok'], "write_metadata_and_cover failed: %s" % result.get('error', '')
+    assert result['metadata_written'], "metadata_written should be True (OPF rewritten)"
+    assert result['cover_written'], "cover_written should be True"
+    # Original title should be preserved
+    md = ee.read_metadata_fields(path)
+    assert md['metadata']['title'] == 'Test Book Title', "title should be unchanged"
+    # Cover image should be updated
+    with zipfile.ZipFile(path, 'r') as zf:
+        cover_data = zf.read('cover.jpg')
+        assert cover_data == new_jpeg, "cover image data does not match"
+    os.unlink(path)
+    if os.path.exists(path + '.bak'):
+        os.unlink(path + '.bak')
+
+
+def test_combined_atomic_single_write_fn(ee):
+    """Verify that metadata + cover is written through ONE zip write,
+    not separate write_metadata + replace_cover calls.
+    The output should have both new title and new cover in the same EPUB.
+    """
+    path = tempfile.mktemp(suffix='.epub')
+    create_test_epub(path)
+    new_jpeg = base64.b64decode('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBGcG')
+    fields = {'title': 'Combined Single Write Title'}
+    result = ee.write_metadata_and_cover(
+        path, fields, image_data=new_jpeg, image_mime='image/jpeg',
+        output_path=None, backup_suffix='.bak',
+    )
+    assert result['ok'], "write_metadata_and_cover failed: %s" % result.get('error', '')
+    assert result['metadata_written'], "metadata should be written"
+    assert result['cover_written'], "cover should be written"
+    assert result.get('old_cover_removed', False), "old cover should be removed"
+    # Verify both were applied atomically
+    md = ee.read_metadata_fields(path)
+    assert md['metadata']['title'] == 'Combined Single Write Title'
+    with zipfile.ZipFile(path, 'r') as zf:
+        names = zf.namelist()
+        assert 'cover.jpg' in names, "cover.jpg should be in EPUB"
+        assert zf.read('cover.jpg') == new_jpeg, "cover should be the new image"
+    os.unlink(path)
+    if os.path.exists(path + '.bak'):
+        os.unlink(path + '.bak')
+
+
+def test_combined_failure_preserves_original_fn(ee):
+    """If the combined write fails, the original EPUB must be untouched
+    and no partial state should exist.
+    """
+    path = tempfile.mktemp(suffix='.epub')
+    create_test_epub(path)
+    # Save original content
+    with zipfile.ZipFile(path, 'r') as zf:
+        original_entries = {name: zf.read(name) for name in zf.namelist()}
+
+    # Trigger a failure by passing a non-existent epub_path
+    bad_path = path + '_does_not_exist'
+    result = ee.write_metadata_and_cover(
+        bad_path, {'title': 'Should Fail'}, image_data=b'', image_mime='image/jpeg',
+        output_path=None, backup_suffix=None,
+    )
+    assert not result['ok'], "should fail for non-existent file"
+    assert 'error' in result, "should have error key"
+
+    # Original file must be unchanged
+    with zipfile.ZipFile(path, 'r') as zf:
+        for name in zf.namelist():
+            assert zf.read(name) == original_entries[name], \
+                "original file entry %s was modified" % name
+
+    os.unlink(path)
+
+
+def test_temp_cleanup_on_failure_fn(ee):
+    """If a write fails after the temp file is created, the temp file
+    must be cleaned up — no orphaned temp files should remain.
+    """
+    path = tempfile.mktemp(suffix='.epub')
+    create_test_epub(path)
+    dir_name = os.path.dirname(path)
+
+    # Count temp files before
+    temp_before = [f for f in os.listdir(dir_name) if f.endswith('.epub') and f != os.path.basename(path)]
+
+    # Trigger a failure: pass a path that exists but as a directory won't work,
+    # so instead pass invalid fields that will cause _apply_metadata_to_opf to fail.
+    # Actually, _apply_metadata_to_opf is very lenient. Let's cause failure by
+    # using a non-existent file.
+    bad_path = path + '_no_exist'
+    result = ee.write_metadata_and_cover(
+        bad_path, {'title': 'Test'}, output_path=None, backup_suffix=None,
+    )
+    assert not result['ok'], "should fail for non-existent file"
+
+    # Count temp files after — should not increase (no orphaned temps)
+    temp_after = [f for f in os.listdir(dir_name) if f.endswith('.epub') and f != os.path.basename(path)]
+    assert len(temp_after) == len(temp_before), \
+        "temp file leaked: before=%d after=%d" % (len(temp_before), len(temp_after))
+
+    os.unlink(path)
+
+def test_replace_cover_temp_cleanup_on_failure_fn(ee):
+    """replace_cover() must clean up temp files on failure, just like
+    write_metadata_and_cover(). If a failure occurs after the temp file is
+    created, no orphaned temp file should remain and the original EPUB
+    must be untouched.
+    """
+    path = tempfile.mktemp(suffix='.epub')
+    create_test_epub(path)
+    dir_name = os.path.dirname(path)
+
+    # Count temp files before
+    temp_before = [f for f in os.listdir(dir_name) if f.endswith('.epub') and f != os.path.basename(path)]
+
+    # Trigger a failure by passing a non-existent epub_path.
+    # _resolve_target will attempt tempfile.mkstemp in dirname(bad_path),
+    # which will raise FileNotFoundError — caught by the outer try/except.
+    bad_path = path + '_no_exist'
+    result = ee.replace_cover(
+        bad_path, b'\xff\xd8\xff\xe0', 'image/jpeg', output_path=None, backup_suffix=None,
+    )
+    assert not result['ok'], "should fail for non-existent file"
+    assert 'error' in result, "should have error key"
+
+    # Count temp files after — should not increase (no orphaned temps)
+    temp_after = [f for f in os.listdir(dir_name) if f.endswith('.epub') and f != os.path.basename(path)]
+    assert len(temp_after) == len(temp_before), \
+        "temp file leaked: before=%d after=%d" % (len(temp_before), len(temp_after))
+
+    # Original file must be unchanged
+    with zipfile.ZipFile(path, 'r') as zf:
+        assert 'cover.jpg' in zf.namelist(), "cover.jpg should still be in original EPUB"
+
+    os.unlink(path)
+
+def test_replace_cover_temp_cleanup_on_zip_error_fn(ee):
+    """replace_cover() must clean up temp files even when the failure occurs
+    during the zip write (after temp file creation). We simulate this by
+    passing a valid epub_path but then triggering a ZIP write error via
+    a non-writable target directory.
+    """
+    path = tempfile.mktemp(suffix='.epub')
+    create_test_epub(path)
+    dir_name = os.path.dirname(path)
+
+    temp_before = [f for f in os.listdir(dir_name) if f.endswith('.epub') and f != os.path.basename(path)]
+
+    # Use output_path as a directory (will fail on zipfile write)
+    # but we can't easily make a directory with .epub suffix. Instead,
+    # pass output_path pointing to an existing directory to trigger OSError.
+    dir_target = tempfile.mkdtemp(suffix='.epub_dir')
+    result = ee.replace_cover(
+        path, b'\xff\xd8\xff\xe0', 'image/jpeg',
+        output_path=dir_target, backup_suffix=None,
+    )
+    assert not result['ok'], "should fail when output_path is a directory"
+
+    temp_after = [f for f in os.listdir(dir_name) if f.endswith('.epub') and f != os.path.basename(path)]
+    assert len(temp_after) == len(temp_before), \
+        "temp file leaked: before=%d after=%d" % (len(temp_before), len(temp_after))
+
+    # Original file must still be intact
+    with zipfile.ZipFile(path, 'r') as zf:
+        assert 'cover.jpg' in zf.namelist(), "cover.jpg should still be in original EPUB"
+
+    os.unlink(path)
+    os.rmdir(dir_target)
 
 if __name__ == '__main__':
     sys.exit(run_tests())

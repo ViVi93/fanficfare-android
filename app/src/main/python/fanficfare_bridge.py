@@ -920,3 +920,204 @@ def get_epub_metadata_summary(epub_path):
         return json.dumps(result)
     except Exception as e:
         return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 bridge adapters: metadata preview, cover preview, and apply.
+# These are thin wrappers around existing Phase 5 / 6 APIs.  They do NOT
+# reimplement or redesign the underlying Python functionality.
+# ---------------------------------------------------------------------------
+
+def _ensure_metadata_providers():
+    """Import metadata_providers, adding SRC_DIR to path if needed."""
+    import metadata_providers
+    return metadata_providers
+
+def _ensure_cover_manager():
+    """Import cover_manager, adding SRC_DIR to path if needed."""
+    import cover_manager
+    return cover_manager
+
+def _ensure_metadata_diff():
+    """Import metadata_diff, adding SRC_DIR to path if needed."""
+    import metadata_diff
+    return metadata_diff
+
+
+def lookup_online_metadata(title, author, isbn):
+    """Look up online metadata for a book.
+
+    Delegates to Phase 5 ``metadata_providers.lookup_metadata``.
+    Accepts an ISBN-preferred query; falls back to title+author.
+
+    Returns JSON: ``{"ok": true, "results": [...]}`` where each result is
+    a serialised ``ProviderResult`` dict with normalised metadata.
+    """
+    try:
+        mp = _ensure_metadata_providers()
+        query = mp.MetadataQuery(title=title, author=author, isbn=isbn)
+        if not query.is_empty():
+            results = mp.lookup_metadata(query)
+            serialised = [dict(r) for r in results]
+            return json.dumps({"ok": True, "results": serialised})
+        return json.dumps({"ok": True, "results": []})
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+def diff_metadata(current_json, online_json):
+    """Diff two metadata dicts using Phase 3 ``metadata_diff``.
+
+    Args:
+        current_json: JSON string of the current EPUB metadata.
+        online_json: JSON string of the online metadata.
+
+    Returns JSON: ``{"ok": true, "diff": {...}, "has_changed": bool, "changes": [...]}``.
+    """
+    try:
+        md = _ensure_metadata_diff()
+        current = json.loads(current_json) if isinstance(current_json, str) else current_json
+        online = json.loads(online_json) if isinstance(online_json, str) else online_json
+        diff_result = md.diff_metadata(current, online)
+        return json.dumps({
+            "ok": True,
+            "diff": diff_result.get("diff", {}),
+            "has_changed": md.has_changed(diff_result),
+            "changes": md.get_changes(diff_result),
+        })
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+def extract_cover_candidates(results_json):
+    """Extract cover candidates from Phase 5 provider results.
+
+    Args:
+        results_json: JSON string of a list of ``ProviderResult`` dicts
+                      (as returned by ``lookup_online_metadata``).
+
+    Returns JSON: ``{"ok": true, "candidates": [...]}`` where each candidate
+    is a serialised ``CoverCandidate`` dict.
+    """
+    try:
+        cm = _ensure_cover_manager()
+        results = json.loads(results_json) if isinstance(results_json, str) else results_json
+        # ProviderResult is a dict subclass with an .ok property.  When results
+        # arrive as JSON from the Android bridge they are plain dicts, so we
+        # reconstruct ProviderResult objects to restore the property accessors
+        # that cover_manager relies on (e.g. result.ok).
+        mp = _ensure_metadata_providers()
+        provider_results = []
+        for r in results:
+            if isinstance(r, mp.ProviderResult):
+                provider_results.append(r)
+            else:
+                provider_results.append(mp.ProviderResult(
+                    provider=r.get("provider", ""),
+                    metadata=r.get("metadata", {}),
+                    source_id=r.get("source_id", ""),
+                    source_url=r.get("source_url", ""),
+                    error=r.get("error", ""),
+                ))
+        candidates = cm.extract_cover_candidates(provider_results)
+        ranked = cm.rank_cover_candidates(candidates)
+        return json.dumps({"ok": True, "candidates": [dict(c) for c in ranked]})
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+def download_cover(url, timeout=15):
+    """Download and validate a cover image (Phase 6).
+
+    Returns JSON: ``{"ok": true, "image_data": "<base64>", "mime_type": "...",
+    "width": N, "height": N, "url": "..."}`` on success, or
+    ``{"ok": false, "error": "...", "error_type": "..."}`` on failure.
+    """
+    cm = None
+    try:
+        cm = _ensure_cover_manager()
+        raw = cm.download_cover(url, timeout=timeout)
+        import base64 as _b64
+        return json.dumps({
+            "ok": True,
+            "url": url,
+            "image_data": _b64.b64encode(raw["data"]).decode("ascii"),
+            "mime_type": raw["mime_type"],
+            "width": raw["width"],
+            "height": raw["height"],
+        })
+    except Exception as e:
+        error_type = "cover_error"
+        if cm is not None:
+            if isinstance(e, cm.CoverDownloadTimeout):
+                error_type = "timeout"
+            elif isinstance(e, cm.CoverDownloadHTTPError):
+                error_type = "http_error"
+            elif isinstance(e, cm.CoverValidationError):
+                error_type = "validation_error"
+        return json.dumps({
+            "ok": False,
+            "error": str(e),
+            "error_type": error_type,
+        })
+
+
+def apply_metadata_and_cover(epub_path, fields_json, image_data_base64=None,
+                              image_mime=None, output_path=None,
+                              backup_suffix=None):
+    """Apply metadata (and optionally a cover) to an EPUB in a single atomic write.
+
+    Uses Phase 4.1+ ``epub_editor.write_metadata_and_cover`` which reads the
+    EPUB once, applies both metadata and cover changes to the same in-memory
+    entry list, and writes the result in a single zip write followed by an
+    atomic temp-file rename.  This guarantees the EPUB is never left in a
+    partially-written state (e.g. metadata written but cover failed).
+
+    Does NOT auto-apply — the caller (UI) must have received explicit user
+    confirmation.
+
+    Returns JSON: ``{"ok": true, "metadata_written": bool,
+    "cover_written": bool, "output_path": "...", "changed_fields": [...]}``.
+    """
+    try:
+        module = _ensure_epub_editor()
+        fields = json.loads(fields_json) if isinstance(fields_json, str) else fields_json
+
+        # Defensive: reject applying a result that has no metadata fields
+        # and no cover image — this catches the case where a failed provider
+        # result (empty metadata) is accidentally passed through from the UI.
+        if not fields and not (image_data_base64 and image_mime):
+            return json.dumps({
+                "ok": False,
+                "error": "No metadata or cover to apply (result may be a failed provider result)",
+                "metadata_written": False,
+                "cover_written": False,
+            })
+
+        raw_image = None
+        if image_data_base64 and image_mime:
+            import base64 as _b64
+            raw_image = _b64.b64decode(image_data_base64)
+            cm = _ensure_cover_manager()
+            # Validate before applying — reuse Phase 6 validation
+            cm.validate_image_content(raw_image)
+
+        # Single atomic write — metadata + cover applied in one pass
+        result = module.write_metadata_and_cover(
+            epub_path, fields,
+            image_data=raw_image,
+            image_mime=image_mime,
+            output_path=output_path,
+            backup_suffix=backup_suffix,
+        )
+
+        return json.dumps({
+            "ok": result.get("ok", False),
+            "metadata_written": result.get("metadata_written", False),
+            "cover_written": result.get("cover_written", False),
+            "output_path": result.get("output_path", epub_path),
+            "changed_fields": result.get("changed_fields", []),
+            "metadata_error": result.get("error", ""),
+        })
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})

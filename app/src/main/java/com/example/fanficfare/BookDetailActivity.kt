@@ -24,6 +24,7 @@ class BookDetailActivity : AppCompatActivity() {
         private const val TAG = "BookDetailDiag"
         const val EDIT_METADATA_REQUEST = 1001
         const val REPLACE_COVER_REQUEST = 1002
+        const val PREVIEW_METADATA_REQUEST = 1003
     }
 
     private lateinit var bookTitle: String
@@ -106,6 +107,7 @@ class BookDetailActivity : AppCompatActivity() {
         findViewById<Button>(R.id.buttonDelete).setOnClickListener { deleteBook() }
         findViewById<Button>(R.id.buttonEditMetadata).setOnClickListener { editMetadata() }
         findViewById<Button>(R.id.buttonReplaceCover).setOnClickListener { replaceCover() }
+        findViewById<Button>(R.id.buttonPreviewOnline).setOnClickListener { previewOnlineMetadata() }
     }
 
     private fun loadCoverFromEpub(epubFile: File, coverView: ImageView) {
@@ -445,10 +447,23 @@ class BookDetailActivity : AppCompatActivity() {
         startActivityForResult(intent, REPLACE_COVER_REQUEST)
     }
 
+    private fun previewOnlineMetadata() {
+        // Launch MetadataPreviewActivity for user to preview online metadata
+        // and cover candidates before explicitly applying.
+        val intent = Intent(this, MetadataPreviewActivity::class.java).apply {
+            putExtra("epub_path", bookPath)
+            putExtra("title", bookTitle)
+            putExtra("author", bookAuthor)
+            putExtra("url", bookUrl)
+            putExtra("isbn", "")
+        }
+        startActivityForResult(intent, PREVIEW_METADATA_REQUEST)
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
-            EDIT_METADATA_REQUEST -> {
+            EDIT_METADATA_REQUEST, PREVIEW_METADATA_REQUEST -> {
                 if (resultCode == RESULT_OK) {
                     val title = data?.getStringExtra("title") ?: bookTitle
                     val author = data?.getStringArrayListExtra("authors")?.joinToString(", ") ?: bookAuthor
@@ -506,6 +521,11 @@ class BookDetailActivity : AppCompatActivity() {
                     val source = File(outputPath)
                     if (source.exists() && source.isFile) {
                         val finalPath = StorageBridge.copyToOutputDir(this, source, outputDir)
+                        // Clean up the local _covered.epub working file now that
+                        // it has been persisted to the user's output directory.
+                        // This mirrors the Phase 10 cleanup pattern in
+                        // MetadataPreviewActivity.applyMetadataAndCoverSafely.
+                        source.delete()
                         runOnUiThread {
                             Toast.makeText(this, "Cover replaced: ${result.optString("cover_path_in_epub", "")}", Toast.LENGTH_LONG).show()
                             finishWithResult(bookTitle, bookAuthor, finalPath, System.currentTimeMillis(), null)

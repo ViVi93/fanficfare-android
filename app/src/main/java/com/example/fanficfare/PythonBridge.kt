@@ -94,17 +94,17 @@ class PythonBridge(private val context: Context) {
         safeCall("read_epub_metadata", epubPath)
 
     fun writeEpubMetadata(epubPath: String, fieldsJson: String, outputPath: String? = null, backupSuffix: String? = null): String {
-        val args = mutableListOf<Any>(epubPath, fieldsJson)
-        if (outputPath != null) args.add(outputPath)
-        if (backupSuffix != null) args.add(backupSuffix)
-        return safeCall("write_epub_metadata", *args.toTypedArray())
+        // Always pass outputPath and backupSuffix as explicit positional args.
+        // The old conditional approach skipped them when null, causing
+        // backupSuffix to land in Python's output_path parameter — producing
+        // a relative path like ".metadata_edit_bak" written to the read-only
+        // Python cwd, triggering OSError: [Errno 30] Read-only file system.
+        return safeCall("write_epub_metadata", epubPath, fieldsJson, outputPath, backupSuffix)
     }
 
     fun replaceEpubCover(epubPath: String, imageDataBase64: String, imageMime: String, outputPath: String? = null, backupSuffix: String? = null): String {
-        val args = mutableListOf<Any>(epubPath, imageDataBase64, imageMime)
-        if (outputPath != null) args.add(outputPath)
-        if (backupSuffix != null) args.add(backupSuffix)
-        return safeCall("replace_epub_cover", *args.toTypedArray())
+        // Always pass outputPath and backupSuffix — see writeEpubMetadata comment.
+        return safeCall("replace_epub_cover", epubPath, imageDataBase64, imageMime, outputPath, backupSuffix)
     }
 
     fun getEpubMetadataSummary(epubPath: String): String =
@@ -132,14 +132,8 @@ class PythonBridge(private val context: Context) {
         outputPath: String? = null,
         backupSuffix: String? = null,
     ): String {
-        val args = mutableListOf<Any>(epubPath, fieldsJson)
-        if (imageDataBase64 != null) args.add(imageDataBase64)
-        else args.add("")
-        if (imageMime != null) args.add(imageMime)
-        else args.add("")
-        if (outputPath != null) args.add(outputPath)
-        if (backupSuffix != null) args.add(backupSuffix)
-        return safeCall("apply_metadata_and_cover", *args.toTypedArray())
+        // All args passed explicitly (null → Python None via safeCall's Any? vararg)
+        return safeCall("apply_metadata_and_cover", epubPath, fieldsJson, imageDataBase64 ?: "", imageMime ?: "", outputPath, backupSuffix)
     }
 
     fun getInitError(): String? = initError
@@ -191,7 +185,7 @@ class PythonBridge(private val context: Context) {
         }
     }
 
-    private fun safeCall(method: String, vararg args: Any): String {
+    private fun safeCall(method: String, vararg args: Any?): String {
         val mod = module
         if (mod == null) {
             return JSONObject().put("ok", false).put("error", "Bridge init failed: $initError").toString()

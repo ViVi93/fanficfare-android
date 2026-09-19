@@ -30,6 +30,10 @@
         android:title="Diagnostics"
         app:showAsAction="never" />
     <item
+        android:id="@+id/action_queue"
+        android:title="Queue"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_sort"
         android:title="Sort"
         app:showAsAction="never" />

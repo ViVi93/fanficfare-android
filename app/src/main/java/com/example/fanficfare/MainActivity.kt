@@ -216,6 +216,10 @@ class MainActivity : AppCompatActivity() {
                         startActivity(Intent(this, DiagnosticsActivity::class.java))
                         true
                     }
+                    R.id.action_queue -> {
+                        startActivity(Intent(this, DownloadQueueActivity::class.java))
+                        true
+                    }
                     R.id.action_refresh_all -> {
                         refreshAllBooks()
                         true

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="12dp"
+    android:layout_marginVertical="6dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="1dp">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="14dp">
+
+        <!-- Status icon -->
+        <ImageView
+            android:id="@+id/iconStatus"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_marginEnd="8dp"
+            android:src="@android:drawable/stat_sys_download"
+            android:tint="?attr/colorOnSurfaceVariant"
+            app:layout_constraintBottom_toTopOf="@+id/textTitle"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Title (URL host or filename) -->
+        <TextView
+            android:id="@+id/textTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Story Title"
+            android:textSize="@dimen/m3_title_medium"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            app:layout_constraintBottom_toTopOf="@+id/textMeta"
+            app:layout_constraintEnd_toStartOf="@+id/buttonRetry"
+            app:layout_constraintStart_toEndOf="@id/iconStatus"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Meta (type + timestamp) -->
+        <TextView
+            android:id="@+id/textMeta"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Download · Jan 1, 12:00"
+            android:textSize="@dimen/m3_body_small"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            app:layout_constraintBottom_toTopOf="@+id/textError"
+            app:layout_constraintEnd_toStartOf="@+id/buttonRetry"
+            app:layout_constraintStart_toEndOf="@id/iconStatus"
+            app:layout_constraintTop_toBottomOf="@id/textTitle"
+            android:layout_marginTop="2dp" />
+
+        <!-- Status badge background -->
+        <View
+            android:id="@+id/statusBadgeBackground"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            app:layout_constraintBottom_toBottomOf="@+id/textMeta"
+            app:layout_constraintEnd_toStartOf="@+id/textStatus"
+            app:layout_constraintStart_toEndOf="@+id/textMeta"
+            app:layout_constraintTop_toTopOf="@+id/textMeta" />
+
+        <!-- Status text -->
+        <TextView
+            android:id="@+id/textStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:text="Queued"
+            android:textSize="@dimen/m3_label_small"
+            android:textStyle="bold"
+            app:layout_constraintBottom_toBottomOf="@+id/textMeta"
+            app:layout_constraintStart_toStartOf="@+id/statusBadgeBackground"
+            app:layout_constraintTop_toTopOf="@+id/textMeta" />
+
+        <!-- Error message -->
+        <TextView
+            android:id="@+id/textError"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Error details..."
+            android:textColor="?attr/colorOnError"
+            android:textSize="@dimen/m3_body_small"
+            android:maxLines="3"
+            android:ellipsize="end"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/buttonRetry"
+            app:layout_constraintStart_toStartOf="@+id/textMeta"
+            app:layout_constraintTop_toBottomOf="@id/textMeta" />
+
+        <!-- Retry button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/retry"
+            style="@style/Widget.Material3.Button.TextButton"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/buttonRemove"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Remove button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonRemove"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text="@string/remove"
+            style="@style/Widget.Material3.Button.TextButton"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>

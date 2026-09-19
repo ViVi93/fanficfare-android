@@ -480,6 +480,26 @@ class BookRepository(private val context: Context) {
         }
     }
 
+    fun cancelJob(job: DownloadJobEntity) {
+        DiagnosticLog.append(context, "Queue.Cancel", "jobId=${job.id} type=${job.type}")
+        scope.launch(Dispatchers.IO) {
+            try {
+                val current = downloadJobDao.getById(job.id)
+                if (current != null) {
+                    downloadJobDao.update(
+                        current.copy(
+                            status = "cancelled",
+                            finishedAt = System.currentTimeMillis()
+                        )
+                    )
+                    DiagnosticLog.append(context, "Queue.Cancel", "db_updated jobId=${job.id}")
+                }
+            } catch (e: Exception) {
+                DiagnosticLog.appendException(context, "Queue.Cancel", "db_failed", e)
+            }
+        }
+    }
+
     fun hasRunningJob(): Boolean {
         val jobs = _latestJobs.value ?: return false
         return jobs.any { it.status == "running" || it.status == "queued" }

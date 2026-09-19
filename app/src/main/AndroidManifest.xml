@@ -47,6 +47,7 @@
         <activity android:name=".MetadataPreviewActivity" />
         <activity android:name=".SettingsActivity" />
         <activity android:name=".DiagnosticsActivity" />
+        <activity android:name=".DownloadQueueActivity" />
         <activity android:name=".AddFromPageActivity" />
 
         <provider

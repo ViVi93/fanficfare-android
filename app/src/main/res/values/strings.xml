@@ -8,4 +8,22 @@
     <string name="empty_add_from_page_title">No stories found</string>
     <string name="empty_add_from_page_subtitle">Paste a page URL above and tap \"Fetch stories\" to get started</string>
     <string name="empty_add_from_page_desc">Illustration of a document with a search icon</string>
+    <!-- Queue screen -->
+    <string name="queue_title">Download Queue</string>
+    <string name="empty_queue_title">Queue is empty</string>
+    <string name="empty_queue_subtitle">Books that are downloading, failed, or queued will appear here. Failed books can be retried.</string>
+    <string name="retry">Retry</string>
+    <string name="remove">Remove</string>
+    <string name="retry_failed_toast">Retrying download…</string>
+    <string name="job_unknown_title">Unknown story</string>
+    <string name="job_type_download">Download</string>
+    <string name="job_type_update">Update</string>
+    <string name="job_type_force_download">Force download</string>
+    <string name="job_type_metadata">Metadata</string>
+    <string name="status_queued">Queued</string>
+    <string name="status_running">Running</string>
+    <string name="status_failed">Failed</string>
+    <string name="status_cancelled">Cancelled</string>
+    <string name="status_complete">Complete</string>
+    <string name="queue_removed_toast">Removed from queue</string>
 </resources>

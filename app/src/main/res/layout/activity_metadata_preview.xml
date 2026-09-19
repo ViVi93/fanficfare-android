@@ -162,55 +162,67 @@
         </LinearLayout>
     </ScrollView>
 
-    <!-- Action buttons -->
+    <!-- Action buttons — two rows of two -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="8dp">
+        android:layout_marginTop="8dp"
+        android:orientation="vertical">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/buttonApplyMetadata"
-            android:layout_width="0dp"
+        <!-- Row 1: primary actions -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:text="Apply Metadata"
-            style="@style/Widget.Material3.Button.ElevatedButton" />
+            android:orientation="horizontal">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/buttonApplyCover"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:text="Apply Cover"
-            style="@style/Widget.Material3.Button.ElevatedButton" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/buttonApplyMetadata"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:singleLine="true"
+                android:text="Apply Metadata"
+                style="@style/Widget.Material3.Button.ElevatedButton" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/buttonApplyBoth"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:text="Apply All"
-            style="@style/Widget.Material3.Button.OutlinedButton" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/buttonApplyCover"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:singleLine="true"
+                android:text="Apply Cover"
+                style="@style/Widget.Material3.Button.ElevatedButton" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/buttonCancel"
-            android:layout_width="0dp"
+        </LinearLayout>
+
+        <!-- Row 2: secondary actions -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:text="Cancel"
-            style="@style/Widget.Material3.Button.OutlinedButton" />
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/buttonApplyBoth"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:singleLine="true"
+                android:text="Apply All"
+                style="@style/Widget.Material3.Button.OutlinedButton" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/buttonCancel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:singleLine="true"
+                android:text="Cancel"
+                style="@style/Widget.Material3.Button.OutlinedButton" />
+
+        </LinearLayout>
 
     </LinearLayout>
 

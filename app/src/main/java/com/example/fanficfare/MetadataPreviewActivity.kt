@@ -329,11 +329,18 @@ class MetadataPreviewActivity : AppCompatActivity() {
         val container = findViewById<LinearLayout>(R.id.coverCandidateContainer)
         container.removeAllViews()
 
-        if (resultsJson.length() == 0 || !isResultOk(selectedResultIndex)) return
+        // Build a JSONArray of ALL valid (ok) results — not just the selected one.
+        // This lets the user see cover candidates from every provider that
+        // returned one, rather than only from the currently selected provider.
+        val allResults = JSONArray()
+        for (i in 0 until resultsJson.length()) {
+            if (isResultOk(i)) {
+                allResults.put(resultsJson.getJSONObject(i))
+            }
+        }
+        if (allResults.length() == 0) return
 
-        val raw = bridge.extractCoverCandidates(
-            JSONArray().put(resultsJson.getJSONObject(selectedResultIndex)).toString()
-        )
+        val raw = bridge.extractCoverCandidates(allResults.toString())
         try {
             val result = JSONObject(raw)
             if (!result.optBoolean("ok")) {

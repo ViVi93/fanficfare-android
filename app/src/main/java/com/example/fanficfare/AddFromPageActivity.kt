@@ -380,20 +380,32 @@ class AddFromPageActivity : AppCompatActivity() {
                         }
                     })
 
-                for (url in urlToIndex.keys) {
-                    if (processedUrls.contains(url)) continue
-                    if (remaining.isEmpty()) break
+                // Enqueue all remaining metadata jobs in a single batch instead of
+                // one-at-a-time in a tight loop.  The per-URL approach caused:
+                //   1. N separate DB inserts → N observer notifications for the
+                //      RecyclerView (via LibraryViewModel) → O(n²) DiffUtil churn.
+                //   2. N simultaneous WorkManager jobs spinning up Chaquopy
+                //      Python interpreters → CPU/network saturation → app
+                //      disconnects from the debugger (appears as "connection drop").
+                val remainingUrls = urlToIndex.keys.filter { url ->
+                    urlToIndex[url]?.let { remaining.contains(it) } == true &&
+                    !processedUrls.contains(url)
+                }
+                if (remainingUrls.isNotEmpty()) {
+                    val repo = BookRepository(this@AddFromPageActivity)
                     try {
                         withContext(Dispatchers.IO) {
-                            BookRepository(this@AddFromPageActivity).enqueueMetadata(url)
+                            repo.enqueueMetadataBatch(remainingUrls)
                         }
-                        DiagnosticLog.append(this@AddFromPageActivity, "AddFromPage", "enqueued_metadata url=$url")
+                        DiagnosticLog.append(this@AddFromPageActivity, "AddFromPage", "batch_enqueued count=${remainingUrls.size}")
                     } catch (e: Exception) {
-                        Log.w("AddFromPage", "enqueueMetadata failed", e)
-                        DiagnosticLog.append(this@AddFromPageActivity, "AddFromPage", "enqueue_failed url=$url error=${e.message}")
-                        val idx = urlToIndex[url]
-                        if (idx != null) {
-                            applyMeta(idx, null)
+                        Log.w("AddFromPage", "enqueueMetadataBatch failed", e)
+                        DiagnosticLog.append(this@AddFromPageActivity, "AddFromPage", "batch_enqueue_failed error=${e.message}")
+                        for (url in remainingUrls) {
+                            val idx = urlToIndex[url]
+                            if (idx != null && remaining.contains(idx)) {
+                                applyMeta(idx, null)
+                            }
                         }
                     }
                 }

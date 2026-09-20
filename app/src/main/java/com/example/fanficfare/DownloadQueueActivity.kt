@@ -54,10 +54,12 @@ class DownloadQueueActivity : AppCompatActivity() {
 
         val db = AppDatabase.getInstance(this)
         db.downloadJobDao().observeAll().observe(this) { allJobs ->
-            // Show all jobs EXCEPT successfully completed ones — they move to the library
-            // Sort by most recent first
+            // Show download/update/force_download jobs that are not yet successful.
+            // Metadata-fetch jobs (type == "metadata") are internal background lookups
+            // and should NOT appear in the download queue — they are tracked
+            // separately in AddFromPageActivity via observer callbacks.
             val visible = allJobs
-                .filter { it.status != "success" }
+                .filter { it.type != "metadata" && it.status != "success" && it.status != "cancelled" }
                 .sortedByDescending { it.createdAt }
             adapter.submitList(visible.toList())
             if (visible.isEmpty()) {

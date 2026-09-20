@@ -14,6 +14,9 @@ interface DownloadJobDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(job: DownloadJobEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(jobs: List<DownloadJobEntity>): List<Long>
+
     @Update
     suspend fun update(job: DownloadJobEntity)
 

@@ -68,12 +68,30 @@ class DiagnosticsActivity : AppCompatActivity() {
         statusText.text = "Python: ${if (python != null) "started" else "missing"}\n" +
             "Module: ${if (module != null) "loaded" else "missing"}\n" +
             "Log file: ${DiagnosticLog.getFile(this).absolutePath}"
-        val info = packageManager.getPackageInfo(packageName, 0)
-        appVersionText.text = "App version: ${info.versionName ?: "?"} (${info.versionCode})"
+        try {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            appVersionText.text = "App version: ${info.versionName ?: "?"} (${info.versionCode})"
+        } catch (e: Exception) {
+            appVersionText.text = "App version: unavailable"
+        }
     }
 
     private fun showLog() {
-        logText.text = DiagnosticLog.getText(this).ifBlank { "No log entries" }
+        // Run on background thread to avoid ANR on very large log files
+        Thread {
+            val result = DiagnosticLog.getTail(this, 30)
+            runOnUiThread {
+                if (result.lines.isBlank()) {
+                    logText.text = "No log entries"
+                } else {
+                    if (result.totalCount > 30) {
+                        logText.text = result.lines + "\n\n(truncated to last 30 of ${result.totalCount} lines — use Share to export the full log)"
+                    } else {
+                        logText.text = result.lines
+                    }
+                }
+            }
+        }.start()
     }
 
     private fun runImportDiagnostics() {

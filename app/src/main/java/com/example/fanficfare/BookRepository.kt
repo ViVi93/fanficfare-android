@@ -340,7 +340,7 @@ class BookRepository(private val context: Context) {
             ExistingWorkPolicy.KEEP,
             work
         )
-        downloadJobDao.update(job.copy(id = jobId, workId = work.id.toString()))
+        downloadJobDao.update(job.copy(id = jobId, workId = requestWorkId))
         return jobId
     }
 
@@ -375,7 +375,7 @@ class BookRepository(private val context: Context) {
             ExistingWorkPolicy.KEEP,
             work
         )
-        downloadJobDao.update(job.copy(id = jobId, workId = work.id.toString()))
+        downloadJobDao.update(job.copy(id = jobId, workId = requestWorkId))
         return jobId
     }
 
@@ -410,7 +410,7 @@ class BookRepository(private val context: Context) {
             ExistingWorkPolicy.KEEP,
             work
         )
-        downloadJobDao.update(job.copy(id = jobId, workId = work.id.toString()))
+        downloadJobDao.update(job.copy(id = jobId, workId = requestWorkId))
         return jobId
     }
 
@@ -441,8 +441,73 @@ class BookRepository(private val context: Context) {
             .addTag("fanficfare_metadata")
             .build()
         WorkManager.getInstance(context).enqueue(work)
-        downloadJobDao.update(job.copy(id = jobId, workId = work.id.toString()))
+        downloadJobDao.update(job.copy(id = jobId, workId = requestWorkId))
         return jobId
+    }
+
+    /**
+     * Batch-enqueue metadata fetch jobs for multiple URLs.
+     *
+     * This avoids the "connection drop" bug that occurs when AddFromPageActivity
+     * enqueues metadata jobs one-at-a-time in a tight loop: each enqueue creates
+     * a separate DB row + WorkManager request, and the rapid-fire inserts trigger
+     * a cascade of observer callbacks (LibraryViewModel → DiffUtil → RecyclerView)
+     * that overwhelm the UI thread with O(n²) work.
+     *
+     * Strategy:
+     *   1. Insert ALL job entities in a single DB transaction (one observer
+     *      notification instead of N).
+     *   2. Enqueue WorkManager requests in small batches with a short delay
+     *      between batches, so the WorkManager scheduler and Chaquopy Python
+     *      runtime are not overwhelmed by dozens of simultaneous jobs.
+     */
+    suspend fun enqueueMetadataBatch(urls: List<String>): List<Long> = withContext(Dispatchers.IO) {
+        if (urls.isEmpty()) return@withContext emptyList()
+
+        val now = System.currentTimeMillis()
+        val entities = urls.map { url ->
+            DownloadJobEntity(
+                bookId = 0,
+                type = "metadata",
+                status = "queued",
+                inputUrl = url,
+                createdAt = now
+            )
+        }
+
+        // Single transaction — one observer notification for all rows
+        val jobIds = downloadJobDao.insertAll(entities)
+        DiagnosticLog.append(context, "MetadataBatch", "enqueued total=${urls.size} jobIds=$jobIds")
+
+        val batchSize = 5
+        urls.forEachIndexed { index, url ->
+            if (index > 0 && index % batchSize == 0) {
+                kotlinx.coroutines.delay(200)
+            }
+            val requestWorkId = java.util.UUID.randomUUID().toString()
+            val work = OneTimeWorkRequestBuilder<FanFicFareWorker>()
+                .setInputData(
+                    workDataOf(
+                        FanFicFareWorker.KEY_TYPE to "metadata",
+                        FanFicFareWorker.KEY_URL to url,
+                        FanFicFareWorker.KEY_WORK_ID to requestWorkId
+                    )
+                )
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                .addTag("fanficfare_metadata")
+                .build()
+            val jobId = jobIds[index]
+            WorkManager.getInstance(context).enqueue(work)
+            downloadJobDao.update(
+                entities[index].copy(id = jobId, workId = requestWorkId)
+            )
+        }
+        jobIds.toList()
     }
 
     suspend fun getJob(jobId: Long): DownloadJobEntity? = downloadJobDao.getById(jobId)

@@ -163,16 +163,33 @@ class FanFicFareWorker(
         }
         if (recovery != null) return recovery
 
-        val job = DownloadJobEntity(
-            bookId = bookId,
-            type = type,
-            status = "running",
-            inputUrl = url.ifBlank { null },
-            inputPath = inputPath.ifBlank { null },
-            createdAt = System.currentTimeMillis()
-        )
-        val jobId = jobDao.insert(job)
-        logWorker("doWork", "job_inserted id=$jobId")
+        // CRITICAL: Update the existing job (found by workId) rather than inserting
+        // a new one.  The original enqueueDownload/enqueueMetadata/etc. already
+        // created a job row with status="queued".  If we insert a NEW row here,
+        // the original row stays stuck at "queued" forever and shows up in the
+        // Download Queue even after the download completes successfully.
+        var job: DownloadJobEntity
+        var jobId: Long
+        if (existingJob != null) {
+            job = existingJob.copy(
+                status = "running",
+                createdAt = existingJob.createdAt
+            )
+            jobDao.update(job)
+            jobId = existingJob.id
+            logWorker("doWork", "updated_existing_job id=$jobId")
+        } else {
+            job = DownloadJobEntity(
+                bookId = bookId,
+                type = type,
+                status = "running",
+                inputUrl = url.ifBlank { null },
+                inputPath = inputPath.ifBlank { null },
+                createdAt = System.currentTimeMillis()
+            )
+            jobId = jobDao.insert(job)
+            logWorker("doWork", "job_inserted id=$jobId")
+        }
 
         return try {
             if (isStopped) {

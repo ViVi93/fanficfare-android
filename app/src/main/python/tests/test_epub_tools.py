@@ -33,7 +33,7 @@ import xml.etree.ElementTree as ET
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-MODULE_NAMES = ('epub_xml', 'epub_container', 'epub_tools')
+MODULE_NAMES = ('epub_xml', 'epub_container', 'epub_merge', 'epub_tools')
 
 
 # ---------------------------------------------------------------------------
@@ -568,6 +568,193 @@ def test_container_remove_item_fn(ctx):
     assert_sane(staged2)
 
 
+def test_merge_plan_import_fn(ctx):
+    """plan_import maps a source into the merged namespace without mutating
+    anything: opf/ncx/nav skipped, everything else namespaced and unique.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    # fic_simple ships both a toc.ncx and an EPUB3 nav.xhtml, so the skip
+    # rules for each can be exercised.
+    base_src = staging_copy(paths['fic_multidir'])
+    src_paths = [paths['fic_simple']]
+
+    with c_mod.EpubContainer(base_src) as base, \
+            c_mod.EpubContainer(src_paths[0]) as src:
+        before_base = set(base.entries())
+        before_src_manifest = dict(src.mime_map)
+
+        plan = m_mod.plan_import(base, src, 1)
+        assert plan.prefix.startswith('merged/'), plan.prefix
+        assert plan.index == 1
+
+        # opf / ncx / nav must not be imported (the OPF is only a manifest item
+        # in some producers, so check the map rather than the skip list)
+        skipped = set(plan.skipped)
+        assert src.opf_name not in plan.name_map, 'the source OPF must not be imported'
+        assert any(src.media_type_of(n) == 'application/x-dtbncx+xml' for n in skipped), \
+            'the source NCX must be skipped'
+        assert any('nav' in src.properties_of(n).split() for n in skipped), \
+            'the source nav document must be skipped'
+
+        # every other manifest item must be mapped, under the prefix
+        for name in src.mime_map:
+            if name in skipped:
+                assert name not in plan.name_map, name
+            else:
+                assert plan.name_map[name] == plan.prefix + name, name
+
+        # cover images are imported: a titlepage often links to its own cover
+        assert not any('cover' in n for n in skipped), skipped
+
+        # spine order is preserved, with linearity
+        assert [n for n, _l in plan.spine] == \
+            [n for _r, n, _l in src.spine_iter()], plan.spine
+        assert all(isinstance(l, bool) for _n, l in plan.spine)
+
+        # nothing was mutated
+        assert set(base.entries()) == before_base, 'plan_import must not mutate base'
+        assert dict(src.mime_map) == before_src_manifest
+
+        # the plan is collision-free against the base
+        assert not (set(plan.name_map.values()) & before_base), \
+            'planned names must not collide with existing entries'
+
+
+def test_merge_two_books_fn(ctx):
+    """Merging two books produces one valid book: both sources' chapters in the
+    spine, source files untouched, links rewritten to the imported copies.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_simple'])
+    second = staging_copy(paths['fic_nested'])
+    first_before = zip_bytes(first)
+    second_before = zip_bytes(second)
+
+    out = os.path.join(os.path.dirname(first), 'merged.epub')
+    result = m_mod.merge_books([first, second], output_path=out)
+    assert result['ok'], result
+    assert result['sources_merged'] == 2, result
+    assert result['spine_before'] == 5, result
+    assert result['spine_after'] == 8, result
+    assert result['entries_added'] > 0, result
+    assert_sane(out)
+
+    # sources must not have been touched
+    assert zip_bytes(first) == first_before, 'the base source was modified'
+    assert zip_bytes(second) == second_before, 'the second source was modified'
+
+    # both sources' content is present, second source namespaced
+    merged = zip_bytes(out)
+    imported = sorted(n for n in merged if n.startswith('merged/'))
+    assert imported, 'the second source should be namespaced under merged/'
+    assert 'merged/1/OEBPS/text/part1.xhtml' in merged, imported
+    assert b'First chapter text' in merged['merged/1/OEBPS/text/part1.xhtml']
+
+    # source 2's documents are all after source 1's in the spine
+    with c_mod.EpubContainer(out) as c:
+        spine = [name for _r, name, _l in c.spine_iter()]
+        assert spine[:5] == [n for n in spine if not n.startswith('merged/')][:5]
+        assert all(n.startswith('merged/1/') for n in spine[5:]), spine
+        # the base's own TOC entries survive
+        assert any(n == 'OEBPS/text/chapter1.xhtml' for n, _f in c.toc_targets())
+        # imported documents are link-consistent
+        assert c.media_type_of('merged/1/OEBPS/text/part1.xhtml') == \
+            'application/xhtml+xml'
+
+
+def test_merge_resource_collision_fn(ctx):
+    """Two sources containing the same resource path must both survive, and each
+    document must reference its own copy.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    # fic_links and fic_multidir both ship OEBPS/images/pic.png
+    first = staging_copy(paths['fic_links'])
+    second = staging_copy(paths['fic_multidir'])
+    out = os.path.join(os.path.dirname(first), 'collide.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out)
+    assert result['ok'], result
+    assert_sane(out)
+
+    merged = zip_bytes(out)
+    pics = [n for n in merged if n.endswith('images/pic.png')]
+    assert len(pics) >= 2, \
+        'both sources\' copies of pic.png must survive: %r' % pics
+    assert 'OEBPS/images/pic.png' in pics, pics
+    assert any(n.startswith('merged/1/') for n in pics), pics
+
+    # each imported document must reference its own namespaced copy
+    imported_doc = 'merged/1/OEBPS/text/a.xhtml'
+    assert imported_doc in merged, sorted(
+        n for n in merged if n.startswith('merged/'))
+    with c_mod.EpubContainer(out) as c:
+        root = c.parsed(imported_doc)
+        resolved = []
+        for elem in root.iter():
+            for attr in ('href', 'src'):
+                url = elem.get(attr)
+                if not url or url.startswith('#'):
+                    continue
+                resolved.append((url, c.href_to_name(url, imported_doc)))
+        assert resolved, 'the imported document should carry links'
+        for url, target in resolved:
+            assert target in merged, '%s -> %s is dangling' % (url, target)
+        image_targets = [t for _u, t in resolved if t.endswith('.png')]
+        assert image_targets, resolved
+        assert all(t.startswith('merged/1/') for t in image_targets), \
+            'imported docs must use their own copies, got %r' % image_targets
+
+
+def test_merge_metadata_and_output_fn(ctx):
+    """Metadata overrides, the default output path, and input validation."""
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    # too few sources
+    bad = m_mod.merge_books([paths['fic_simple']])
+    assert not bad['ok'], 'a single source must be rejected'
+    assert 'two' in bad['error'], bad['error']
+    empty = m_mod.merge_books([])
+    assert not empty['ok']
+
+    # a non-EPUB input must be reported, not raised
+    junk = os.path.join(os.path.dirname(staging_copy(paths['fic_simple'])), 'junk.epub')
+    with open(junk, 'wb') as handle:
+        handle.write(b'not a zip at all')
+    broken = m_mod.merge_books([paths['fic_simple'], junk])
+    assert not broken['ok'], broken
+    assert 'error' in broken
+
+    # default output path: beside the base, and the base stays untouched
+    first = staging_copy(paths['fic_simple'])
+    second = staging_copy(paths['fic_nested'])
+    before = zip_bytes(first)
+    result = m_mod.merge_books([first, second], title='Collected Works',
+                               author='Collected Author')
+    assert result['ok'], result
+    expected_out = os.path.join(os.path.dirname(first), 'fic_simple (merged).epub')
+    assert result['output_path'] == expected_out, result['output_path']
+    assert zip_bytes(first) == before, 'the base must not be written in place'
+    assert_sane(expected_out)
+
+    with c_mod.EpubContainer(expected_out) as c:
+        root = c.parsed(c.opf_name)
+        titles = [e.text for e in root.iter() if e.tag.endswith('}title')]
+        creators = [e.text for e in root.iter() if e.tag.endswith('}creator')]
+        assert 'Collected Works' in titles, titles
+        assert 'Collected Author' in creators, creators
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
@@ -585,6 +772,11 @@ def run_tests():
         ('container_replace_links', test_container_replace_links_fn),
         ('container_spine_mutation', test_container_spine_mutation_fn),
         ('container_remove_item', test_container_remove_item_fn),
+        # --- epub_merge (library-level merge) ------------------------------
+        ('merge_plan_import', test_merge_plan_import_fn),
+        ('merge_two_books', test_merge_two_books_fn),
+        ('merge_resource_collision', test_merge_resource_collision_fn),
+        ('merge_metadata_and_output', test_merge_metadata_and_output_fn),
     ]
 
     passed = 0

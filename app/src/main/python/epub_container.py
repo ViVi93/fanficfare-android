@@ -192,6 +192,20 @@ class EpubContainer:
             if media_type in CSS_TYPES:
                 yield name
 
+    def entries(self):
+        """Every entry name currently known: original plus added."""
+        seen = list(self._zip_names)
+        known = set(seen)
+        for name in self._new_files:
+            if name not in known:
+                seen.append(name)
+                known.add(name)
+        return seen
+
+    def properties_of(self, name):
+        """The manifest ``properties`` attribute for an entry ('' if none)."""
+        return self._properties_by_name.get(name, '')
+
     def item_id_of(self, name):
         item = self._items_by_name.get(name)
         return item.get('id') if item is not None else None
@@ -427,6 +441,42 @@ class EpubContainer:
                     continue
                 fragment = url.split('#', 1)[1] if '#' in url else ''
                 out.append((self.href_to_name(url, toc_name), fragment))
+        return out
+
+    def toc_entries(self):
+        """``[(label, zipname, fragment)]`` flattened from the TOC, in order.
+
+        Prefers the NCX and falls back to the EPUB3 nav document, so the same
+        book does not yield every entry twice.
+        """
+        toc_names = self._toc_doc_names()
+        ncx = [n for n in toc_names if self.media_type_of(n) == NCX_TYPE]
+        chosen = ncx or toc_names
+        out = []
+        for toc_name in chosen:
+            root = self.parsed(toc_name)
+            for elem in root.iter():
+                local = localname(elem.tag)
+                if local == 'navPoint':
+                    label, url = '', None
+                    for child in elem.iter():
+                        child_local = localname(child.tag)
+                        if not label and child_local == 'text' and child.text:
+                            label = child.text.strip()
+                        if child_local == 'content' and child.get('src'):
+                            url = child.get('src')
+                            break
+                    if not url:
+                        continue
+                elif local == 'a':
+                    url = elem.get('href')
+                    if not url:
+                        continue
+                    label = ''.join(elem.itertext()).strip()
+                else:
+                    continue
+                fragment = url.split('#', 1)[1] if '#' in url else ''
+                out.append((label or url, self.href_to_name(url, toc_name), fragment))
         return out
 
     def _fix_toc_for_removed(self, removed_name, rebase):

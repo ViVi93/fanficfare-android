@@ -283,7 +283,7 @@ def build_fic_dupids(path):
             '<a name="legacy-anchor"></a>\n'
             '<p><a href="#top">Back to top</a></p>' % (i, _para(i))
         )
-        b.add_doc('text/chapter%d.xhtml' % i, body, title='Chapter %d' % i)
+        b.add_doc('OEBPS/text/chapter%d.xhtml' % i, body, title='Chapter %d' % i)
     b.set_ncx([('Chapter %d' % i, 'text/chapter%d.xhtml#toc' % i) for i in range(1, 6)])
     return b.write(path)
 
@@ -304,8 +304,8 @@ def build_fic_entities(path):
         '<p>Ampersand &amp; quote &quot; stay intact.</p>\n'
         '</body>\n</html>\n'
     )
-    b.add_doc('text/chapter1.xhtml', None, raw=raw_bad)
-    b.add_doc('text/chapter2.xhtml',
+    b.add_doc('OEBPS/text/chapter1.xhtml', None, raw=raw_bad)
+    b.add_doc('OEBPS/text/chapter2.xhtml',
               '<h2 id="ch2">Chapter 2</h2>\n<p>Numeric&#160;entity is valid XML.</p>',
               title='Chapter 2')
     b.set_ncx([('Chapter 1', 'text/chapter1.xhtml#ch1'),
@@ -317,7 +317,7 @@ def build_fic_nested(path):
     """3-deep nesting with two h2 split points inside one wrapper."""
     b = EpubBuilder(version='2.0', title='Nested Fic',
                     identifier='urn:uuid:fixture-nested')
-    b.add_doc('text/part1.xhtml', (
+    b.add_doc('OEBPS/text/part1.xhtml', (
         '<div class="part">\n'
         '  <div class="chapter">\n'
         '    <h2 id="ch1">Chapter One</h2>\n'
@@ -326,10 +326,10 @@ def build_fic_nested(path):
         '    <p>Second chapter text.</p>\n'
         '  </div>\n'
         '</div>'), title='Part One')
-    b.add_doc('text/part2.xhtml',
+    b.add_doc('OEBPS/text/part2.xhtml',
               '<h2 id="ch3">Chapter Three</h2>\n<p>Third chapter text.</p>',
               title='Part Two')
-    b.add_doc('text/part3.xhtml',
+    b.add_doc('OEBPS/text/part3.xhtml',
               '<h2 id="ch4">Chapter Four</h2>\n<p>Fourth chapter text.</p>',
               title='Part Three')
     navpoints = [('One', 'text/part1.xhtml#ch1'), ('Two', 'text/part1.xhtml#ch2'),
@@ -396,7 +396,7 @@ def build_fic_big(path, chapters=60, filler=40):
                     identifier='urn:uuid:fixture-big')
     block = '<p>%s</p>\n' % ('Lorem ipsum dolor sit amet, consectetur adipiscing elit. ' * 20)
     for i in range(1, chapters + 1):
-        b.add_doc('text/chapter%d.xhtml' % i,
+        b.add_doc('OEBPS/text/chapter%d.xhtml' % i,
                   ('<h2 id="ch%d">Chapter %d</h2>\n' % (i, i)) + (block * filler),
                   title='Chapter %d' % i)
     b.set_ncx([('Chapter %d' % i, 'text/chapter%d.xhtml#ch%d' % (i, i))
@@ -408,11 +408,11 @@ def build_fic_table(path):
     """An h2 inside a <table>, which must make splitting abort."""
     b = EpubBuilder(version='2.0', title='Table Fic',
                     identifier='urn:uuid:fixture-table')
-    b.add_doc('text/chapter1.xhtml', (
+    b.add_doc('OEBPS/text/chapter1.xhtml', (
         '<h2 id="ch1">Chapter One</h2>\n<p>Normal heading.</p>\n'
         '<table>\n<tr><td><h2 id="inside">Inside a table</h2></td></tr>\n</table>'),
         title='Chapter One')
-    b.add_doc('text/chapter2.xhtml',
+    b.add_doc('OEBPS/text/chapter2.xhtml',
               '<h2 id="ch2">Chapter Two</h2>\n<p>Second.</p>', title='Chapter Two')
     b.set_ncx([('One', 'text/chapter1.xhtml#ch1'), ('Two', 'text/chapter2.xhtml#ch2')])
     return b.write(path)

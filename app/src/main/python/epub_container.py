@@ -443,6 +443,10 @@ class EpubContainer:
                 out.append((self.href_to_name(url, toc_name), fragment))
         return out
 
+    def toc_doc_names(self):
+        """NCX and EPUB3 nav documents, in manifest order."""
+        return self._toc_doc_names()
+
     def toc_entries(self):
         """``[(label, zipname, fragment)]`` flattened from the TOC, in order.
 

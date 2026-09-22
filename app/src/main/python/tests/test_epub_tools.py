@@ -753,6 +753,81 @@ def test_merge_titlepage_cover_reference_fn(ctx):
             "the base book's cover must win, got %r" % covers
 
 
+def test_merge_toc_nesting_fn(ctx):
+    """Each source becomes its own TOC section: NCX and nav both nest, the
+    base's entries survive underneath a base section, and every section target
+    resolves.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    # fic_simple has both toc.ncx and nav.xhtml, so both mirrors get exercised
+    first = staging_copy(paths['fic_simple'])
+    second = staging_copy(paths['fic_nested'])
+    third = staging_copy(paths['fic_multidir'])
+    out = os.path.join(os.path.dirname(first), 'toc.epub')
+
+    result = m_mod.merge_books([first, second, third], output_path=out)
+    assert result['ok'], result
+    assert result['sources_merged'] == 3, result
+    assert result['toc_sections'] >= 2, \
+        'expected sections in NCX and nav, got %r' % result['toc_sections']
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        targets = {n for n, _f in c.toc_targets()}
+        # every source's chapters are reachable from the TOC now
+        for expect in ('OEBPS/text/chapter3.xhtml',
+                       'merged/1/OEBPS/text/part1.xhtml',
+                       'merged/2/OEBPS/text/a.xhtml'):
+            assert expect in targets, '%s missing from TOC: %r' % (expect, sorted(targets))
+
+        # NCX: the base's entries are nested under a section, not top level
+        ncx = [n for n in c.toc_doc_names() if c.media_type_of(n) == 'application/x-dtbncx+xml']
+        assert ncx, 'the fixture base should still have an NCX'
+        ncx_name = ncx[0]
+        root = c.parsed(ncx_name)
+        navmap = [e for e in root.iter() if c_mod.localname(e.tag) == 'navMap'][0]
+        top = [e for e in navmap if c_mod.localname(e.tag) == 'navPoint']
+        assert len(top) == 3, 'expected 3 top-level sections, got %d' % len(top)
+
+        def label(node):
+            for text in node.iter():
+                if c_mod.localname(text.tag) == 'text' and text.text:
+                    return text.text.strip()
+            return ''
+
+        labels = [label(node) for node in top]
+        assert 'Simple Fic' in labels, labels
+        assert 'Nested Fic' in labels, labels
+        # the base's own chapters sit under the base section
+        base_section = top[labels.index('Simple Fic')]
+        base_children = [e for e in base_section if c_mod.localname(e.tag) == 'navPoint']
+        assert len(base_children) == 5, 'base section should hold 5 chapters'
+        # the second source's section holds its TOC entries (part1 has two
+        # chapters, so 4 entries across 3 documents)
+        nested_section = top[labels.index('Nested Fic')]
+        nested_children = [e for e in nested_section if c_mod.localname(e.tag) == 'navPoint']
+        assert len(nested_children) == 4, \
+            'nested source should hold 4 TOC entries, got %d' % len(nested_children)
+
+        # playOrder must be a clean 1..N sequence after renumbering
+        orders = [int(e.get('playOrder')) for e in root.iter()
+                  if c_mod.localname(e.tag) == 'navPoint']
+        assert orders == list(range(1, len(orders) + 1)), orders
+
+        # nav.xhtml mirrors the same shape
+        nav_names = [n for n in c.toc_doc_names() if n not in ncx]
+        assert nav_names, 'the fixture base should still have a nav document'
+        nav_root = c.parsed(nav_names[0])
+        nav = [e for e in nav_root.iter() if c_mod.localname(e.tag) == 'nav'][0]
+        outer_ol = [ch for ch in nav if c_mod.localname(ch.tag) == 'ol'][0]
+        outer_items = [ch for ch in outer_ol if c_mod.localname(ch.tag) == 'li']
+        assert len(outer_items) == 3, \
+            'nav should have 3 top-level sections, got %d' % len(outer_items)
+
+
 def test_merge_metadata_and_output_fn(ctx):
     """Metadata overrides, the default output path, and input validation."""
     c_mod = require(ctx, 'epub_container')
@@ -815,6 +890,7 @@ def run_tests():
         ('merge_plan_import', test_merge_plan_import_fn),
         ('merge_two_books', test_merge_two_books_fn),
         ('merge_titlepage_cover_reference', test_merge_titlepage_cover_reference_fn),
+        ('merge_toc_nesting', test_merge_toc_nesting_fn),
         ('merge_resource_collision', test_merge_resource_collision_fn),
         ('merge_metadata_and_output', test_merge_metadata_and_output_fn),
     ]

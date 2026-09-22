@@ -33,10 +33,10 @@ import os
 import xml.etree.ElementTree as ET
 
 from epub_container import (NCX_TYPE, OEB_DOCS, ContainerError, EpubContainer)
-from epub_xml import DC_NS, localname
+from epub_xml import DC_NS, NCX_NS, XHTML_NS, localname
 
 __all__ = ['merge_books', 'plan_import', 'import_source', 'ImportPlan',
-           'ImportPlanError']
+           'nest_toc', 'ImportPlanError']
 
 
 class ImportPlanError(ContainerError):
@@ -225,6 +225,168 @@ def apply_metadata(base, title=None, author=None):
     return changed
 
 
+def _unique_id(existing, prefix='section'):
+    """An id not already used in the document."""
+    n = 0
+    while True:
+        n += 1
+        candidate = '%s-%d' % (prefix, n)
+        if candidate not in existing:
+            existing.add(candidate)
+            return candidate
+
+
+def _ncx_navpoint(label, src, point_id):
+    """A fresh ``<navPoint><navLabel><text/><content src=/></navPoint>``."""
+    node = ET.Element('{%s}navPoint' % NCX_NS)
+    node.set('id', point_id)
+    node.set('playOrder', '0')      # renumbered once the tree is complete
+    nav_label = ET.SubElement(node, '{%s}navLabel' % NCX_NS)
+    text = ET.SubElement(nav_label, '{%s}text' % NCX_NS)
+    text.text = label
+    content = ET.SubElement(node, '{%s}content' % NCX_NS)
+    content.set('src', src)
+    return node
+
+
+def _nav_list_item(label, href, inner_ol=None):
+    """A fresh ``<li><a href="">label</a><ol>…</ol></li>`` for a nav document."""
+    item = ET.Element('{%s}li' % XHTML_NS)
+    anchor = ET.SubElement(item, '{%s}a' % XHTML_NS)
+    anchor.set('href', href)
+    anchor.text = label
+    if inner_ol is not None:
+        item.append(inner_ol)
+    return item
+
+
+def _toc_href(base, toc_name, target):
+    """href for a ``(zipname, fragment)`` target as seen from the TOC document."""
+    zipname, fragment = target
+    href = base.name_to_href(zipname, toc_name)
+    return href + ('#' + fragment if fragment else '')
+
+
+def _first_target(entries, fallback_zipname):
+    """``(zipname, fragment)`` of the first TOC entry, else a bare fallback."""
+    for _label, zipname, fragment in entries:
+        return zipname, fragment
+    return fallback_zipname, ''
+
+
+def _nest_ncx(base, toc_name, base_label, base_target, groups):
+    """Wrap existing navPoints in a base section, then append one per source."""
+    root = base.parsed(toc_name)
+    navmap = None
+    for elem in root.iter():
+        if localname(elem.tag) == 'navMap':
+            navmap = elem
+            break
+    if navmap is None:
+        return 0
+
+    existing_ids = {e.get('id') for e in root.iter() if e.get('id')}
+    existing_children = [c for c in list(navmap) if localname(c.tag) == 'navPoint']
+
+    section = _ncx_navpoint(base_label, _toc_href(base, toc_name, base_target),
+                            _unique_id(existing_ids))
+    for child in existing_children:
+        navmap.remove(child)
+        section.append(child)
+    navmap.append(section)
+    added = 1
+
+    for group in groups:
+        parent = _ncx_navpoint(group['label'],
+                               _toc_href(base, toc_name, group['target']),
+                               _unique_id(existing_ids))
+        for label, zipname, fragment in group['children']:
+            parent.append(_ncx_navpoint(label,
+                                        _toc_href(base, toc_name, (zipname, fragment)),
+                                        _unique_id(existing_ids, 'point')))
+        navmap.append(parent)
+        added += 1
+
+    play_order = 0
+    for elem in root.iter():
+        if localname(elem.tag) == 'navPoint':
+            play_order += 1
+            elem.set('playOrder', str(play_order))
+
+    base.dirty(toc_name)
+    return added
+
+
+def _nest_nav(base, toc_name, base_label, base_target, groups):
+    """Mirror the NCX nesting into an EPUB3 nav document."""
+    root = base.parsed(toc_name)
+    nav = ol = None
+    for elem in root.iter():
+        if localname(elem.tag) == 'nav':
+            nav = elem
+            break
+    if nav is None:
+        return 0
+    for child in nav:
+        if localname(child.tag) == 'ol':
+            ol = child
+            break
+    if ol is None:
+        return 0
+
+    existing_items = [c for c in list(ol) if localname(c.tag) == 'li']
+
+    inner = ET.Element('{%s}ol' % XHTML_NS)
+    for item in existing_items:
+        ol.remove(item)
+        inner.append(item)
+    ol.append(_nav_list_item(base_label,
+                             _toc_href(base, toc_name, base_target),
+                             inner if len(inner) else None))
+    added = 1
+
+    for group in groups:
+        inner = ET.Element('{%s}ol' % XHTML_NS)
+        for label, zipname, fragment in group['children']:
+            inner.append(_nav_list_item(label,
+                                        _toc_href(base, toc_name, (zipname, fragment))))
+        ol.append(_nav_list_item(group['label'],
+                                 _toc_href(base, toc_name, group['target']),
+                                 inner if len(inner) else None))
+        added += 1
+
+    base.dirty(toc_name)
+    return added
+
+
+def nest_toc(base, groups, base_label=None, base_target=None):
+    """Give every source its own TOC section, mirroring NCX and nav.
+
+    ``groups`` is one dict per imported source, in spine order:
+    ``{'label': str, 'target': (zipname, fragment), 'children': [(label, zipname,
+    fragment), ...]}``. The base book's own entries are wrapped in a section of
+    their own so the merged TOC reads as one section per source (the
+    ``anthology_merge_keepsingletocs`` shape). Returns the number of sections
+    added to each TOC document.
+    """
+    base_label = base_label or _title_of(base) or 'Part 1'
+    if base_target is None:
+        entries = base.toc_entries()
+        fallback = next((name for _r, name, _l in base.spine_iter()), base.opf_name)
+        base_target = _first_target(entries, fallback)
+
+    toc_names = base.toc_doc_names()
+    ncx_names = [n for n in toc_names if base.media_type_of(n) == NCX_TYPE]
+    nav_names = [n for n in toc_names if n not in ncx_names]
+
+    added = 0
+    for name in ncx_names:
+        added += _nest_ncx(base, name, base_label, base_target, groups)
+    for name in nav_names:
+        added += _nest_nav(base, name, base_label, base_target, groups)
+    return added
+
+
 def default_output_path(base_path):
     """A ``... (merged).epub`` path next to the base book."""
     root, ext = os.path.splitext(base_path)
@@ -259,10 +421,14 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
             opened.append(container)
             others.append((i, container))
 
-        spine_before = len(list(base.spine_iter()))
+        spine_names = [name for _r, name, _l in base.spine_iter()]
+        spine_before = len(spine_names)
+        base_target = _first_target(base.toc_entries(),
+                                    spine_names[0] if spine_names else base.opf_name)
         entries_added = 0
         warnings = []
         imported = 0
+        groups = []
 
         for n, (i, src) in enumerate(others, start=1):
             plan = plan_import(base, src, n)
@@ -271,11 +437,22 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
                 continue
             entries_added += import_source(base, src, plan)
             imported += 1
+            children = [(label, plan.name_map[target], fragment)
+                        for label, target, fragment in plan.toc]
+            first_doc = plan.name_map[plan.spine[0][0]]
+            groups.append({
+                'label': plan.source_title,
+                'target': _first_target(children, first_doc),
+                'children': children,
+            })
 
         if not imported:
             return {'ok': False, 'error': 'no source had anything to merge'}
 
+        # Metadata first, so the base's TOC section picks up a title override.
         apply_metadata(base, title, author)
+        toc_sections = nest_toc(base, groups, base_label=title or None,
+                                base_target=base_target)
 
         target = output_path or default_output_path(paths[base_index])
         result = base.commit(output_path=target)
@@ -287,6 +464,7 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
             'entries_added': entries_added,
             'spine_before': spine_before,
             'spine_after': len(list(base.spine_iter())),
+            'toc_sections': toc_sections,
             'warnings': warnings,
         })
         return result

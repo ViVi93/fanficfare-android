@@ -85,23 +85,11 @@ def _ensure_metadata_element(root):
     return meta
 
 
-def _find_parent(root, target):
-    """Find the parent element of target by searching from root."""
-    if root is target:
-        return None
-    for elem in root:
-        if elem is target:
-            return root
-        result = _find_parent(elem, target)
-        if result is not None:
-            return result
-    return None
-
-
 def _remove_all_dc_elements(meta, tag_local):
     """Remove all dc tag elements with the given local name."""
+    pm = epub_xml.parent_map(meta)
     for elem in list(meta.findall(".//{%s}%s" % (DC_NS, tag_local))):
-        parent = _find_parent(meta, elem)
+        parent = pm.get(elem)
         if parent is not None:
             parent.remove(elem)
 
@@ -410,20 +398,24 @@ def _find_or_create_meta_refinement(meta, target_id, property_name):
 
 def _remove_all_refinements_for(meta, target_id):
     """Remove all <meta refines="#target_id"> elements."""
+    pm = epub_xml.parent_map(meta)
     for m in list(meta.findall(".//{%s}meta" % OPF_NS)):
         if m.get("refines", "").lstrip("#") == target_id:
-            parent = _find_parent(meta, m)
+            parent = pm.get(m)
             if parent is not None:
                 parent.remove(m)
 
 
 def _remove_all_contributors(meta):
     """Remove all dc:contributor elements and their associated refinements."""
+    # One parent map serves the whole pass: the nested refinements call removes
+    # <meta> elements, never contributors, so contributor lookups stay valid.
+    pm = epub_xml.parent_map(meta)
     for elem in list(meta.findall(".//{%s}contributor" % DC_NS)):
         contrib_id = elem.get("id", "")
         if contrib_id:
             _remove_all_refinements_for(meta, contrib_id)
-        parent = _find_parent(meta, elem)
+        parent = pm.get(elem)
         if parent is not None:
             parent.remove(elem)
 
@@ -435,6 +427,7 @@ def _remove_subtitle(meta):
     <meta property="title-type" refines="#<title-id>">subtitle</meta>.
     """
     refines_map = _get_meta_property_refines(meta)
+    pm = epub_xml.parent_map(meta)
     for title_elem in list(meta.findall(".//{%s}title" % DC_NS)):
         title_id = title_elem.get("id", "")
         if not title_id:
@@ -444,11 +437,11 @@ def _remove_subtitle(meta):
             # Remove the refinement meta(s) for this title.
             for m in list(meta.findall(".//{%s}meta" % OPF_NS)):
                 if m.get("refines", "").lstrip("#") == title_id:
-                    parent = _find_parent(meta, m)
+                    parent = pm.get(m)
                     if parent is not None:
                         parent.remove(m)
             # Remove the subtitle title element itself.
-            tp = _find_parent(meta, title_elem)
+            tp = pm.get(title_elem)
             if tp is not None:
                 tp.remove(title_elem)
 

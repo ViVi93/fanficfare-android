@@ -2,6 +2,10 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
+        android:id="@+id/action_merge_selected"
+        android:title="@string/merge_action_selected"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_update_selected"
         android:title="Update Selected"
         app:showAsAction="never" />

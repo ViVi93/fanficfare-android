@@ -29,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private var pythonBridge: PythonBridge? = null
     private var selectedBook: BookItem? = null
     private val REQUEST_BOOK_DETAIL = 1003
+    private val REQUEST_MERGE_BOOKS = 1005
     private val REQUEST_POST_NOTIFICATIONS = 1004
 
     private lateinit var viewModel: LibraryViewModel
@@ -232,6 +233,10 @@ class MainActivity : AppCompatActivity() {
                         showSearchDialog()
                         true
                     }
+                    R.id.action_merge_selected -> {
+                        mergeSelectedBooks()
+                        true
+                    }
                     R.id.action_update_selected -> {
                         updateSelectedBooks()
                         true
@@ -369,6 +374,40 @@ class MainActivity : AppCompatActivity() {
             viewModel.enqueueUpdate(0, book.uriString)
         }
         clearSelectionMode()
+    }
+
+    /**
+     * Open the merge screen for the selected books.
+     *
+     * The adapter does not preserve the order books were tapped in, so the merge
+     * screen shows the list and lets it be reordered before merging.
+     */
+    private fun mergeSelectedBooks() {
+        val selected = bookAdapter.getSelectedBooks().filter { it.uriString.isNotBlank() }
+        if (selected.size < 2) {
+            toast("Select at least two books to merge")
+            return
+        }
+        val intent = Intent(this, MergeBooksActivity::class.java).apply {
+            putStringArrayListExtra(
+                MergeBooksActivity.EXTRA_PATHS,
+                ArrayList(selected.map { it.uriString })
+            )
+            putStringArrayListExtra(
+                MergeBooksActivity.EXTRA_TITLES,
+                ArrayList(selected.map { it.title })
+            )
+            putStringArrayListExtra(
+                MergeBooksActivity.EXTRA_AUTHORS,
+                ArrayList(selected.map { it.author })
+            )
+            putStringArrayListExtra(
+                MergeBooksActivity.EXTRA_COVERS,
+                ArrayList(selected.map { it.coverUriString ?: "" })
+            )
+        }
+        clearSelectionMode()
+        startActivityForResult(intent, REQUEST_MERGE_BOOKS)
     }
 
     private fun swapMenu(selecting: Boolean) {
@@ -669,6 +708,26 @@ class MainActivity : AppCompatActivity() {
                 syncBooks(viewModel.getBooksSnapshot())
                 viewModel.saveLibrary()
             }
+            return
+        }
+
+        if (requestCode == REQUEST_MERGE_BOOKS && resultCode == RESULT_OK && data != null) {
+            val path = data.getStringExtra("merged_path") ?: ""
+            if (path.isBlank()) return
+            val file = java.io.File(path)
+            val book = BookItem(
+                title = data.getStringExtra("title") ?: file.nameWithoutExtension,
+                author = data.getStringExtra("author") ?: "",
+                uriString = path,
+                lastModified = file.lastModified(),
+                sizeBytes = file.length(),
+                coverUriString = (data.getStringExtra("cover") ?: "").ifBlank { null },
+                chapters = data.getIntExtra("chapters", 0)
+            )
+            viewModel.addOrUpdate(book)
+            syncBooks(viewModel.getBooksSnapshot())
+            updateEmptyState()
+            viewModel.saveLibrary()
         }
     }
 

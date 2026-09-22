@@ -26,4 +26,26 @@
     <string name="status_cancelled">Cancelled</string>
     <string name="status_complete">Complete</string>
     <string name="queue_removed_toast">Removed from queue</string>
+
+    <!-- Merge books -->
+    <string name="merge_title">Merge books</string>
+    <string name="merge_action_selected">Merge selected</string>
+    <string name="merge_heading">Order the books to merge</string>
+    <string name="merge_loading">Reading book details…</string>
+    <string name="merge_title_hint">Title for the merged book</string>
+    <string name="merge_author_hint">Author for the merged book</string>
+    <string name="merge_action">Merge into one book</string>
+    <string name="merge_move_up">Move up</string>
+    <string name="merge_move_down">Move down</string>
+    <string name="merge_need_two">Select at least two books</string>
+    <string name="merge_running">Merging…</string>
+    <string name="merge_done">Merge complete</string>
+    <string name="merge_failed">Merge failed</string>
+    <string name="merge_failed_with">Merge failed: %1$s</string>
+    <string name="merge_preview_failed">Could not read the selected books</string>
+    <string name="merge_summary">%1$d chapters from %2$d books · about %3$d MB</string>
+    <string name="merge_row_meta">%1$d chapters · %2$d contents entries</string>
+    <string name="merge_index_base">%1$d · base</string>
+    <string name="merge_index_plain">%1$d</string>
+    <string name="merge_warn_first_no_toc">The first book has no table of contents, so the merged book will not get one.</string>
 </resources>

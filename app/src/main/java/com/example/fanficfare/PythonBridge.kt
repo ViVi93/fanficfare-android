@@ -110,6 +110,22 @@ class PythonBridge(private val context: Context) {
     fun getEpubMetadataSummary(epubPath: String): String =
         safeCall("get_epub_metadata_summary", epubPath)
 
+    // --- Merge books: combine several EPUBs into one new book ---
+
+    fun mergeBooksPreview(pathsJson: String, baseIndex: Int = 0): String =
+        safeCall("epub_merge_preview", pathsJson, baseIndex)
+
+    fun mergeBooks(
+        pathsJson: String,
+        outputPath: String? = null,
+        title: String? = null,
+        author: String? = null,
+        baseIndex: Int = 0,
+    ): String = safeCall("epub_merge_books", pathsJson, outputPath, title, author, baseIndex)
+
+    fun epubMetadataJson(epubPath: String): String =
+        safeCall("epub_metadata_json", epubPath)
+
     // --- Phase 7: metadata preview / cover selection bridge adapters ---
 
     fun lookupOnlineMetadata(title: String, author: String, isbn: String): String =

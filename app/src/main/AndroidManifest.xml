@@ -43,6 +43,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".BookDetailActivity" />
+        <activity android:name=".MergeBooksActivity" />
         <activity android:name=".EditMetadataActivity" />
         <activity android:name=".MetadataPreviewActivity" />
         <activity android:name=".SettingsActivity" />

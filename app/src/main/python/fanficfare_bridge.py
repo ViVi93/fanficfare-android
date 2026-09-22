@@ -886,6 +886,17 @@ def epub_merge_books(paths_json, output_path=None, title=None, author=None,
         return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
 
 
+def epub_metadata_json(epub_path):
+    """Metadata for a single EPUB as JSON (the raw dict is not JSON-serializable
+    for the Kotlin side, which needs a string it can parse)."""
+    try:
+        return json.dumps(_extract_epub_metadata(epub_path))
+    except Exception as e:
+        return json.dumps({"title": os.path.basename(epub_path).replace(".epub", ""),
+                           "author": "", "url": "", "chapters": 0, "cover": None,
+                           "error": "%s: %s" % (type(e).__name__, e)})
+
+
 def export_epub_opf(epub_path, output_path=None):
     """Export OPF XML from an EPUB file for viewing or editing."""
     try:

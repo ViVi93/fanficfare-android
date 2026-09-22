@@ -412,6 +412,162 @@ def test_container_commit_roundtrip_fn(ctx):
     assert_sane(out)
 
 
+def test_container_replace_links_fn(ctx):
+    """replace_links visits href, src, xlink:href, inline style url() and
+    <style> element url(), and only dirties the document when something changed.
+    """
+    c_mod = require(ctx, 'epub_container')
+    paths = fixture_paths()
+    staged = staging_copy(paths['fic_links'])
+    xlink = '{http://www.w3.org/1999/xlink}href'
+
+    with c_mod.EpubContainer(staged) as c:
+        doc = 'OEBPS/text/links.xhtml'
+        assert c.replace_links(doc, lambda url: url) is False, \
+            'an identity replacer must report no change'
+        assert not c.is_dirty(doc), 'an identity replacer must not dirty the doc'
+
+        seen = []
+
+        def record_and_mark(url):
+            seen.append(url)
+            return url + '?x=1'
+
+        assert c.replace_links(doc, record_and_mark) is True
+        assert c.is_dirty(doc)
+
+        root = c.parsed(doc)
+        hrefs = [e.get('href') for e in root.iter() if e.get('href')]
+        srcs = [e.get('src') for e in root.iter() if e.get('src')]
+        xlinks = [e.get(xlink) for e in root.iter() if e.get(xlink)]
+        style_attr = [e.get('style') for e in root.iter() if e.get('style')]
+        style_text = [e.text for e in root.iter()
+                      if c_mod.localname(e.tag) == 'style' and e.text]
+
+        assert all(h.endswith('?x=1') for h in hrefs), hrefs
+        assert hrefs, 'href attributes must have been visited'
+        assert all(s.endswith('?x=1') for s in srcs), srcs
+        assert srcs, 'img src must have been visited'
+        assert xlinks and all(x.endswith('?x=1') for x in xlinks), \
+            'the inline SVG xlink:href must have been visited'
+        assert all('url(../images/pic.png?x=1)' in s for s in style_attr), style_attr
+        assert all('url("../images/pic.png?x=1")' in t for t in style_text), style_text
+        assert len(seen) >= 6, 'expected every link form to reach the replacer: %r' % seen
+
+
+def test_container_spine_mutation_fn(ctx):
+    """generate_item / insert_spine_item_after keep manifest, spine and the
+    written archive in sync; linearity is inherited from the source itemref.
+    """
+    c_mod = require(ctx, 'epub_container')
+    paths = fixture_paths()
+    staged = staging_copy(paths['fic_simple'])
+
+    with c_mod.EpubContainer(staged) as c:
+        before = [name for _ref, name, _lin in c.spine_iter()]
+        assert len(before) == 5, before
+
+        doc_a = 'OEBPS/text/inserted_a.xhtml'
+        c.add_file(doc_a, b'<html xmlns="http://www.w3.org/1999/xhtml">'
+                          b'<body><p>inserted a</p></body></html>')
+        item = c.generate_item(doc_a, 'application/xhtml+xml')
+        assert item.get('media-type') == 'application/xhtml+xml'
+        assert item.get('href') == 'text/inserted_a.xhtml', item.get('href')
+        assert c.media_type_of(doc_a) == 'application/xhtml+xml'
+        assert c.item_id_of(doc_a) == item.get('id')
+
+        pos = c.insert_spine_item_after(before[1], doc_a)
+        assert pos == 2, 'inserted after index 1 should land at index 2'
+        after = [name for _ref, name, _lin in c.spine_iter()]
+        assert after == before[:2] + [doc_a] + before[2:], after
+
+        try:
+            c.generate_item(doc_a, 'application/xhtml+xml')
+            raise AssertionError('registering the same entry twice must fail')
+        except c_mod.ContainerError:
+            pass
+
+        # linear="no" on the source must be inherited by the new itemref
+        doc_b = 'OEBPS/text/inserted_b.xhtml'
+        c.add_file(doc_b, b'<html xmlns="http://www.w3.org/1999/xhtml">'
+                          b'<body><p>inserted b</p></body></html>')
+        c.generate_item(doc_b, 'application/xhtml+xml')
+        source_ref = [ref for ref, name, _lin in c.spine_iter() if name == before[3]][0]
+        source_ref.set('linear', 'no')
+        c.dirty(c.opf_name)
+        c.insert_spine_item_after(before[3], doc_b)
+        new_refs = [ref for ref, name, _lin in c.spine_iter() if name == doc_b]
+        assert new_refs, 'doc_b should be in the spine'
+        assert new_refs[0].get('linear') == 'no', \
+            'linearity must be inherited from the source itemref'
+        assert not [lin for _r, n, lin in c.spine_iter() if n == doc_b][0], \
+            'spine_iter must report the inherited linearity'
+
+        # doc_b was inserted after before[3], so locate that entry in the
+        # already-updated spine rather than recomputing indices by hand.
+        expected = list(after)
+        expected.insert(after.index(before[3]) + 1, doc_b)
+
+        result = c.commit()
+        assert result['ok'], result
+    assert_sane(staged)
+
+    with c_mod.EpubContainer(staged) as reopened:
+        final = [name for _ref, name, _lin in reopened.spine_iter()]
+        assert final == expected, 'final %r != expected %r' % (final, expected)
+        assert reopened.exists(doc_a) and reopened.exists(doc_b)
+        assert reopened.media_type_of(doc_a) == 'application/xhtml+xml'
+
+
+def test_container_remove_item_fn(ctx):
+    """remove_item drops the manifest item, spine entry, file and TOC links,
+    and can repoint TOC entries instead of dropping them.
+    """
+    c_mod = require(ctx, 'epub_container')
+    paths = fixture_paths()
+
+    # 1. plain removal
+    staged = staging_copy(paths['fic_simple'])
+    victim = 'OEBPS/text/chapter3.xhtml'
+    with c_mod.EpubContainer(staged) as c:
+        assert any(n == victim for n, _f in c.toc_targets()), \
+            'precondition: the TOC should reference the victim'
+        c.remove_item(victim)
+        assert c.item_id_of(victim) is None
+        assert victim not in c.mime_map
+        assert not any(n == victim for _r, n, _l in c.spine_iter())
+        assert not any(n == victim for n, _f in c.toc_targets()), \
+            'TOC must not still reference the removed file'
+        result = c.commit()
+        assert result['ok'], result
+
+    with zipfile.ZipFile(staged) as z:
+        assert victim not in z.namelist(), 'the removed file must not be written'
+    assert_sane(staged)
+
+    # 2. repointing instead of dropping (what a merge does)
+    staged2 = staging_copy(paths['fic_simple'])
+    victim2 = 'OEBPS/text/chapter3.xhtml'
+    survivor = 'OEBPS/text/chapter4.xhtml'
+
+    with c_mod.EpubContainer(staged2) as c:
+        def rebase(url):
+            if 'chapter3.xhtml' not in url:
+                return url
+            return url.replace('chapter3.xhtml', 'chapter4.xhtml').replace('#ch3', '#ch4')
+
+        c.remove_item(victim2, rebase=rebase)
+        targets = c.toc_targets()
+        assert not any(n == victim2 for n, _f in targets), \
+            'no TOC entry may still point at the removed file'
+        survivors = [(n, f) for n, f in targets if n == survivor]
+        assert survivors, 'the TOC entry should have been repointed, not dropped'
+        assert all(f == 'ch4' for _n, f in survivors), survivors
+        result = c.commit()
+        assert result['ok'], result
+    assert_sane(staged2)
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
@@ -426,6 +582,9 @@ def run_tests():
         ('container_href_math', test_container_href_math_fn),
         ('container_document_cache', test_container_document_cache_fn),
         ('container_commit_roundtrip', test_container_commit_roundtrip_fn),
+        ('container_replace_links', test_container_replace_links_fn),
+        ('container_spine_mutation', test_container_spine_mutation_fn),
+        ('container_remove_item', test_container_remove_item_fn),
     ]
 
     passed = 0

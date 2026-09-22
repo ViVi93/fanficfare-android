@@ -36,6 +36,7 @@ import os
 import posixpath
 import re
 import shutil
+import xml.etree.ElementTree as ET
 import zipfile
 from urllib.parse import quote, unquote
 
@@ -61,6 +62,16 @@ OPF_TYPE = 'application/oebps-package+xml'
 XLINK_HREF = '{%s}href' % epub_xml.XLINK_NS
 
 _CSS_URL_RE = re.compile(r'url\(\s*([\'"]?)([^\'")]+)\1\s*\)')
+
+
+def rewrite_css_urls(text, replacer):
+    """Rewrite every ``url(...)`` in a CSS fragment through ``replacer``."""
+
+    def sub(match):
+        quote_char, url = match.group(1), match.group(2)
+        return 'url(%s%s%s)' % (quote_char, replacer(url), quote_char)
+
+    return _CSS_URL_RE.sub(sub, text)
 
 
 class ContainerError(Exception):
@@ -274,6 +285,231 @@ class EpubContainer:
 
     def is_dirty(self, name):
         return name in self._dirty
+
+    # -- link rewriting ---------------------------------------------------
+
+    def replace_links(self, name, replacer):
+        """Rewrite every URL reference in a document through ``replacer``.
+
+        Covers ``href``/``src``, SVG ``xlink:href``, inline ``style`` url() and
+        ``<style>`` element text. The replacer sees *all* URLs including
+        external ones, so it decides what to touch (this is calibre's contract
+        too). Returns True when something changed; the
+        document is marked dirty only in that case, so an identity replacer
+        leaves the bytes untouched.
+        """
+        root = self.parsed(name)
+        changed = False
+        for elem in root.iter():
+            for attr in ('href', 'src'):
+                url = elem.get(attr)
+                if url:
+                    new = replacer(url)
+                    if new != url:
+                        elem.set(attr, new)
+                        changed = True
+            xlink = elem.get(XLINK_HREF)
+            if xlink:
+                new = replacer(xlink)
+                if new != xlink:
+                    elem.set(XLINK_HREF, new)
+                    changed = True
+            style = elem.get('style')
+            if style and 'url(' in style:
+                new = rewrite_css_urls(style, replacer)
+                if new != style:
+                    elem.set('style', new)
+                    changed = True
+            if localname(elem.tag) == 'style' and elem.text and 'url(' in elem.text:
+                new = rewrite_css_urls(elem.text, replacer)
+                if new != elem.text:
+                    elem.text = new
+                    changed = True
+        if changed:
+            self.dirty(name)
+        return changed
+
+    # -- manifest / spine mutation ----------------------------------------
+    #
+    # These two, plus remove_item, are the only operations allowed to touch
+    # <manifest> and <spine>, so the indexes and the XML cannot drift apart.
+
+    def _next_item_id(self, prefix='item'):
+        while True:
+            self._id_counter += 1
+            candidate = '%s-%d' % (prefix, self._id_counter)
+            if candidate not in self._items_by_id:
+                return candidate
+
+    def generate_item(self, zipname, media_type, properties=None, item_id=None):
+        """Register a manifest item for the zip entry ``zipname``.
+
+        The argument is a zip entry name, not an href (matching how calibre's
+        split code calls it); the href is computed relative to the OPF.
+        """
+        if zipname in self._items_by_name:
+            raise ContainerError('%r is already in the manifest' % zipname)
+        if item_id is None:
+            item_id = self._next_item_id()
+        elif item_id in self._items_by_id:
+            raise ContainerError('manifest id %r already exists' % item_id)
+
+        item = ET.SubElement(self._manifest_elem, '{%s}item' % epub_xml.OPF_NS)
+        item.set('id', item_id)
+        item.set('href', self.name_to_href(zipname, self.opf_name))
+        item.set('media-type', media_type)
+        if properties:
+            item.set('properties', properties)
+
+        self._items.append(item)
+        self._items_by_id[item_id] = item
+        self._items_by_name[zipname] = item
+        self.mime_map[zipname] = media_type
+        self._properties_by_name[zipname] = properties or ''
+        self.dirty(self.opf_name)
+        return item
+
+    def insert_spine_item_after(self, name, new_name, linear=None):
+        """Insert a spine itemref for ``new_name`` straight after ``name``.
+
+        ``linear=None`` inherits the source itemref's linearity (calibre's
+        behaviour when splitting); pass True/False to force it.
+        """
+        new_id = self.item_id_of(new_name)
+        if new_id is None:
+            raise ContainerError('%r is not in the manifest' % new_name)
+        source_id = self.item_id_of(name)
+        index = None
+        for i, itemref in enumerate(self._spine_items):
+            if itemref.get('idref') == source_id:
+                index = i
+                break
+        if index is None:
+            raise ContainerError('%r is not in the spine' % name)
+
+        source = self._spine_items[index]
+        if linear is None:
+            linear = (source.get('linear') or 'yes').lower() != 'no'
+
+        itemref = ET.Element('{%s}itemref' % epub_xml.OPF_NS)
+        itemref.set('idref', new_id)
+        if not linear:
+            itemref.set('linear', 'no')
+
+        self._spine_items.insert(index + 1, itemref)
+        self._spine_elem.insert(list(self._spine_elem).index(source) + 1, itemref)
+        self.dirty(self.opf_name)
+        return index + 1
+
+    def _toc_doc_names(self):
+        """NCX and EPUB3 nav documents."""
+        out = []
+        for name, media_type in self.mime_map.items():
+            properties = self._properties_by_name.get(name) or ''
+            if media_type == NCX_TYPE or 'nav' in properties.split():
+                out.append(name)
+        return out
+
+    def toc_targets(self):
+        """``[(zipname, fragment)]`` for every NCX navPoint and nav link."""
+        out = []
+        for toc_name in self._toc_doc_names():
+            root = self.parsed(toc_name)
+            for elem in root.iter():
+                local = localname(elem.tag)
+                if local == 'content':
+                    url = elem.get('src')
+                elif local == 'a':
+                    url = elem.get('href')
+                else:
+                    continue
+                if not url:
+                    continue
+                fragment = url.split('#', 1)[1] if '#' in url else ''
+                out.append((self.href_to_name(url, toc_name), fragment))
+        return out
+
+    def _fix_toc_for_removed(self, removed_name, rebase):
+        """Repoint (via ``rebase``) or drop TOC entries for a removed file."""
+        for toc_name in self._toc_doc_names():
+            if rebase:
+                self.replace_links(toc_name, rebase)
+            root = self.parsed(toc_name)
+            pm = epub_xml.parent_map(root)
+            changed = False
+
+            # EPUB2: drop navPoints whose content now dangles.
+            contents = [e for e in root.iter() if localname(e.tag) == 'content']
+            for content in contents:
+                src = content.get('src')
+                if not src or self.href_to_name(src, toc_name) != removed_name:
+                    continue
+                navpoint = pm.get(content)
+                holder = pm.get(navpoint) if navpoint is not None else None
+                if holder is not None and navpoint in holder:
+                    holder.remove(navpoint)
+                    changed = True
+
+            # EPUB3: drop the list item, or just the link inside it.
+            for li in [e for e in root.iter() if localname(e.tag) == 'li']:
+                anchors = [a for a in li if localname(a.tag) == 'a']
+                dangling = [a for a in anchors
+                            if a.get('href')
+                            and self.href_to_name(a.get('href'), toc_name) == removed_name]
+                if not dangling:
+                    continue
+                parent = pm.get(li)
+                if parent is None or li not in parent:
+                    continue
+                if len(dangling) == len(anchors):
+                    parent.remove(li)
+                    changed = True
+                else:
+                    for a in dangling:
+                        li.remove(a)
+                    changed = True
+
+            if changed:
+                self.dirty(toc_name)
+
+    def remove_item(self, name, remove_from_spine=True, fix_toc=True, rebase=None):
+        """Remove a manifest item, its spine entry, its file and TOC links.
+
+        ``rebase`` is an optional ``url -> url`` callable (same shape as for
+        :meth:`replace_links`) used to repoint TOC entries that referenced the
+        removed file -- after a merge, point them at the surviving master file
+        instead of dropping them. Without it they are dropped.
+        """
+        item = self._items_by_name.get(name)
+        if item is None:
+            raise ContainerError('%r is not in the manifest' % name)
+        item_id = item.get('id')
+
+        if item in self._manifest_elem:
+            self._manifest_elem.remove(item)
+        self._items = [i for i in self._items if i is not item]
+        self._items_by_id.pop(item_id, None)
+        self._items_by_name.pop(name, None)
+        self.mime_map.pop(name, None)
+        self._properties_by_name.pop(name, None)
+
+        if remove_from_spine and item_id is not None:
+            for itemref in list(self._spine_items):
+                if itemref.get('idref') != item_id:
+                    continue
+                self._spine_items.remove(itemref)
+                if itemref in self._spine_elem:
+                    self._spine_elem.remove(itemref)
+
+        if fix_toc:
+            self._fix_toc_for_removed(name, rebase)
+
+        self._removed.add(name)
+        self._trees.pop(name, None)
+        self._new_files.pop(name, None)
+        self._dirty.discard(name)
+        self._name_set.discard(name)
+        self.dirty(self.opf_name)
 
     # -- serialization / commit -------------------------------------------
 

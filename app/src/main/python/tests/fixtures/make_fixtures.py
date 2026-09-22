@@ -48,6 +48,7 @@ XHTML_TMPL = (
 )
 
 EPUB_NS_ATTR = ' xmlns:epub="http://www.idpf.org/2007/ops"'
+XLINK_NS_ATTR = ' xmlns:xlink="http://www.w3.org/1999/xlink"'
 
 
 class EpubBuilder:
@@ -104,13 +105,17 @@ class EpubBuilder:
     # -- content ----------------------------------------------------------
 
     def add_doc(self, zipname, body, title='Chapter', head_extra='',
-                raw=None, epub3=False, properties=None, attrs=None):
+                raw=None, epub3=False, properties=None, attrs=None, extra_ns=''):
         """Add an XHTML document. Pass ``raw`` to write the document verbatim
-        (used for malformed markup and undefined entities)."""
+        (used for malformed markup and undefined entities). ``extra_ns`` adds
+        namespace declarations to the root element (e.g. xmlns:xlink) so the
+        document parses as strict XML instead of needing the html5lib fallback.
+        """
         if raw is None:
+            ns_extra = (EPUB_NS_ATTR if epub3 else '') + extra_ns
             data = XHTML_TMPL.format(
                 prolog='<?xml version="1.0" encoding="utf-8"?>\n',
-                ns_extra=EPUB_NS_ATTR if epub3 else '',
+                ns_extra=ns_extra,
                 title=title, head_extra=head_extra, body=body,
             )
         else:
@@ -380,7 +385,7 @@ def build_fic_epub3(path):
         '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">\n'
         '  <image xlink:href="../images/fig.png" width="10" height="10"/>\n'
         '</svg>'),
-        title='Chapter One', epub3=True,
+        title='Chapter One', epub3=True, extra_ns=XLINK_NS_ATTR,
         attrs={'media-overlay': smil_id} if smil_id else None)
     b.add_doc('OEBPS/text/chapter2.xhtml',
               '<h2 id="ch2" epub:type="chapter">Chapter Two</h2>\n<p>Second.</p>',
@@ -418,7 +423,36 @@ def build_fic_table(path):
     return b.write(path)
 
 
+def build_fic_links(path):
+    """Every link form the rewriter must handle: href, src, xlink:href and
+    url() in both an inline style attribute and a <style> element."""
+    b = EpubBuilder(version='3.0', title='Links Fic',
+                    identifier='urn:uuid:fixture-links')
+    b.add_image('OEBPS/images/pic.png')
+    b.add_image('OEBPS/images/bg.png')
+    b.add_style('OEBPS/styles/main.css',
+                'body { background: url(../images/bg.png); }\n')
+    b.add_doc('OEBPS/text/target.xhtml',
+              '<h2 id="t1">Target</h2>\n<p>target body</p>',
+              title='Target', epub3=True, extra_ns=XLINK_NS_ATTR)
+    b.add_doc('OEBPS/text/links.xhtml', (
+        '<h2 id="l1">Links</h2>\n'
+        '<p><a href="target.xhtml#t1">anchor</a></p>\n'
+        '<p><img src="../images/pic.png" alt="img"/></p>\n'
+        '<p style="background-image: url(../images/pic.png)">styled</p>\n'
+        '<style>div { background: url("../images/pic.png"); }</style>\n'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">\n'
+        '  <image xlink:href="../images/pic.png" width="10" height="10"/>\n'
+        '</svg>'),
+        title='Links', epub3=True, extra_ns=XLINK_NS_ATTR,
+        head_extra='<link rel="stylesheet" type="text/css" href="../styles/main.css"/>')
+    b.set_ncx([('Target', 'text/target.xhtml#t1'), ('Links', 'text/links.xhtml#l1')])
+    b.set_nav([('Target', 'text/target.xhtml#t1'), ('Links', 'text/links.xhtml#l1')])
+    return b.write(path)
+
+
 FIXTURES = {
+    'fic_links': build_fic_links,
     'fic_simple': build_fic_simple,
     'fic_dupids': build_fic_dupids,
     'fic_entities': build_fic_entities,

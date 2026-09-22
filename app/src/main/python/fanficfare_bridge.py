@@ -839,6 +839,53 @@ def _ensure_epub_editor():
         return epub_editor
 
 
+def _ensure_epub_merge():
+    """Import the epub_merge module, adding SRC_DIR to path if needed."""
+    try:
+        import epub_merge
+        return epub_merge
+    except ImportError:
+        if SRC_DIR not in sys.path:
+            sys.path.insert(0, SRC_DIR)
+        import epub_merge
+        return epub_merge
+
+
+def _epub_path_list(paths_json):
+    """Accept a JSON array (or newline separated string) of book paths."""
+    if isinstance(paths_json, str):
+        text = paths_json.strip()
+        if text.startswith('['):
+            return [p for p in json.loads(text) if p]
+        return [line.strip() for line in text.splitlines() if line.strip()]
+    return [p for p in (paths_json or []) if p]
+
+
+def epub_merge_preview(paths_json, base_index=0):
+    """Summarise a proposed merge so the UI can confirm before writing."""
+    try:
+        module = _ensure_epub_merge()
+        result = module.preview_merge(_epub_path_list(paths_json), base_index)
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
+def epub_merge_books(paths_json, output_path=None, title=None, author=None,
+                     base_index=0):
+    """Merge several EPUBs into one new book. Sources are never modified."""
+    try:
+        module = _ensure_epub_merge()
+        result = module.merge_books(_epub_path_list(paths_json),
+                                    output_path=output_path,
+                                    title=title or None,
+                                    author=author or None,
+                                    base_index=base_index)
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+
+
 def export_epub_opf(epub_path, output_path=None):
     """Export OPF XML from an EPUB file for viewing or editing."""
     try:

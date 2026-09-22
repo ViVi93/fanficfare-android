@@ -24,6 +24,7 @@ Run::
 """
 
 import importlib
+import json
 import os
 import sys
 import traceback
@@ -33,7 +34,8 @@ import xml.etree.ElementTree as ET
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-MODULE_NAMES = ('epub_xml', 'epub_container', 'epub_merge', 'epub_tools')
+MODULE_NAMES = ('epub_xml', 'epub_container', 'epub_merge', 'epub_tools',
+                'fanficfare_bridge')
 
 
 # ---------------------------------------------------------------------------
@@ -1063,6 +1065,100 @@ def test_merge_nested_toc_and_unicode_fn(ctx):
         assert doc in {n for n, _f in c.toc_targets()}, sorted(c.toc_targets())
 
 
+def test_bridge_merge_preview_fn(ctx):
+    """The bridge's preview returns what the confirmation screen needs, and
+    reports failures as data rather than raising.
+    """
+    m_mod = require(ctx, 'epub_merge')
+    bridge = require(ctx, 'fanficfare_bridge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_simple'])
+    second = staging_copy(paths['fic_nested'])
+
+    preview = json.loads(bridge.epub_merge_preview(json.dumps([first, second])))
+    assert preview['ok'], preview
+    assert preview['source_count'] == 2, preview
+    assert preview['chapters'] == 8, preview          # 5 + 3
+    assert preview['estimated_bytes'] > 0
+    assert preview['too_large'] is False
+    assert preview['default_title'] == 'Simple Fic', preview['default_title']
+    titles = [s['title'] for s in preview['sources']]
+    assert titles == ['Simple Fic', 'Nested Fic'], titles
+    assert preview['sources'][0]['is_base'] is True
+    assert preview['sources'][1]['is_base'] is False
+    assert all(s['chapters'] > 0 for s in preview['sources']), preview['sources']
+
+    # base_index moves both the flag and the defaults
+    preview2 = json.loads(bridge.epub_merge_preview(
+        json.dumps([first, second]), base_index=1))
+    assert preview2['default_title'] == 'Nested Fic', preview2['default_title']
+    assert preview2['sources'][1]['is_base'] is True
+
+    # failures come back as JSON, never as an exception
+    single = json.loads(bridge.epub_merge_preview(json.dumps([first])))
+    assert single['ok'] is False and 'two' in single['error'], single
+    bad_index = json.loads(bridge.epub_merge_preview(json.dumps([first, second]),
+                                                    base_index=9))
+    assert bad_index['ok'] is False and 'range' in bad_index['error'], bad_index
+    missing = json.loads(bridge.epub_merge_preview(json.dumps([first, first + '.nope'])))
+    assert missing['ok'] is False and missing['error'], missing
+
+    # a TOC-less first book is called out, because the merged book inherits that
+    notoc = staging_copy(paths['fic_notoc'])
+    warn = json.loads(bridge.epub_merge_preview(json.dumps([notoc, second])))
+    assert warn['ok'], warn
+    assert any('table of contents' in w for w in warn['warnings']), warn['warnings']
+
+    # the size guard refuses rather than trying to write a runaway book
+    real_cap = m_mod.MERGE_MAX_BYTES
+    try:
+        m_mod.MERGE_MAX_BYTES = 1
+        refused = json.loads(bridge.epub_merge_books(json.dumps([first, second]),
+                                                     output_path=first + '.out.epub'))
+        assert refused['ok'] is False, refused
+        assert 'limit' in refused['error'], refused
+    finally:
+        m_mod.MERGE_MAX_BYTES = real_cap
+
+
+def test_bridge_merge_writes_valid_book_fn(ctx):
+    """A merge driven through the bridge produces a structurally valid book and
+    leaves the sources untouched.
+    """
+    bridge = require(ctx, 'fanficfare_bridge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_simple'])
+    second = staging_copy(paths['fic_multidir'])
+    before_first, before_second = zip_bytes(first), zip_bytes(second)
+    out = os.path.join(os.path.dirname(first), 'bridged.epub')
+
+    result = json.loads(bridge.epub_merge_books(
+        json.dumps([first, second]), output_path=out,
+        title='Bridged Collection', author='Bridged Author'))
+    assert result['ok'], result
+    assert result['sources_merged'] == 2, result
+    assert result['output_path'] == out, result
+    assert_sane(out)
+
+    assert zip_bytes(first) == before_first, 'the base source was modified'
+    assert zip_bytes(second) == before_second, 'the second source was modified'
+
+    with zipfile.ZipFile(out) as z:
+        assert z.namelist()[0] == 'mimetype'
+        assert z.infolist()[0].compress_type == zipfile.ZIP_STORED
+
+    # newline-separated paths are accepted too (easier from Kotlin)
+    first3 = staging_copy(paths['fic_simple'])
+    second3 = staging_copy(paths['fic_nested'])
+    out2 = os.path.join(os.path.dirname(first3), 'bridged2.epub')
+    result2 = json.loads(bridge.epub_merge_books(
+        '\n'.join([first3, second3]), output_path=out2))
+    assert result2['ok'], result2
+    assert_sane(out2)
+
+
 def test_merge_metadata_and_output_fn(ctx):
     """Metadata overrides, the default output path, and input validation."""
     c_mod = require(ctx, 'epub_container')
@@ -1131,6 +1227,8 @@ def run_tests():
         ('external_urls_untouched', test_external_urls_untouched_fn),
         ('merge_toc_edge_shapes', test_merge_toc_edge_shapes_fn),
         ('merge_nested_toc_and_unicode', test_merge_nested_toc_and_unicode_fn),
+        ('bridge_merge_preview', test_bridge_merge_preview_fn),
+        ('bridge_merge_writes_valid_book', test_bridge_merge_writes_valid_book_fn),
         ('merge_resource_collision', test_merge_resource_collision_fn),
         ('merge_metadata_and_output', test_merge_metadata_and_output_fn),
     ]

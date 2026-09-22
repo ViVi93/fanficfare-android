@@ -419,6 +419,94 @@ def default_output_path(base_path):
     return '%s (merged)%s' % (root, ext or '.epub')
 
 
+def _author_of(container):
+    """dcterms creator of a container, or ''."""
+    try:
+        root = container.parsed(container.opf_name)
+    except Exception:
+        return ''
+    for elem in root.iter():
+        if elem.tag == '{%s}creator' % DC_NS and elem.text and elem.text.strip():
+            return elem.text.strip()
+    return ''
+
+
+#: Warn above this combined source size, refuse above the hard cap: the merged
+#: book is written entirely on the device and a runaway merge would fill storage.
+MERGE_WARN_BYTES = 100 * 1024 * 1024
+MERGE_MAX_BYTES = 1024 * 1024 * 1024
+
+
+def preview_merge(epub_paths, base_index=0):
+    """Summarise a proposed merge without writing anything.
+
+    Used by the confirmation screen so the user can see what will be combined
+    (and reorder it) before anything is written.
+    """
+    paths = [p for p in (epub_paths or []) if p]
+    if len(paths) < 2:
+        return {'ok': False,
+                'error': 'merging needs at least two EPUBs (got %d)' % len(paths)}
+    if not 0 <= base_index < len(paths):
+        return {'ok': False, 'error': 'base_index %r is out of range' % (base_index,)}
+
+    warnings = []
+    sources = []
+    opened = []
+    try:
+        for index, path in enumerate(paths):
+            try:
+                container = EpubContainer(path)
+            except ContainerError as e:
+                return {'ok': False, 'error': 'source %d: %s' % (index + 1, e)}
+            opened.append(container)
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                size = 0
+            sources.append({
+                'index': index,
+                'path': path,
+                'title': _title_of(container) or os.path.basename(path),
+                'author': _author_of(container),
+                'chapters': len([n for _r, n, _l in container.spine_iter()]),
+                'toc_entries': len(container.toc_entries()),
+                'has_toc': bool(container.toc_doc_names()),
+                'size_bytes': size,
+                'is_base': index == base_index,
+            })
+
+        total = sum(s['size_bytes'] for s in sources)
+        if not any(s['has_toc'] for s in sources):
+            warnings.append('No source has a table of contents, so the merged '
+                            'book will have none either.')
+        elif not sources[base_index]['has_toc']:
+            warnings.append('The first book has no table of contents, so the '
+                            'merged book will not get one.')
+        if total >= MERGE_WARN_BYTES:
+            warnings.append('Combined sources are %d MB; merging will take a '
+                            'while and produce a large book.' % (total // (1024 * 1024)))
+        if total >= MERGE_MAX_BYTES:
+            warnings.append('Combined sources exceed the %d MB limit.'
+                            % (MERGE_MAX_BYTES // (1024 * 1024)))
+
+        return {
+            'ok': True,
+            'sources': sources,
+            'source_count': len(sources),
+            'chapters': sum(s['chapters'] for s in sources),
+            'toc_entries': sum(s['toc_entries'] for s in sources),
+            'estimated_bytes': total,
+            'too_large': total >= MERGE_MAX_BYTES,
+            'warnings': warnings,
+            'default_title': sources[base_index]['title'],
+            'default_author': sources[base_index]['author'],
+        }
+    finally:
+        for container in opened:
+            container.close()
+
+
 def merge_books(epub_paths, output_path=None, title=None, author=None,
                 base_index=0):
     """Merge two or more EPUBs into one book.
@@ -433,6 +521,18 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
                 'error': 'merging needs at least two EPUBs (got %d)' % len(paths)}
     if not 0 <= base_index < len(paths):
         return {'ok': False, 'error': 'base_index %r is out of range' % (base_index,)}
+
+    total_bytes = 0
+    for path in paths:
+        try:
+            total_bytes += os.path.getsize(path)
+        except OSError:
+            pass
+    if total_bytes >= MERGE_MAX_BYTES:
+        return {'ok': False,
+                'error': 'sources total %d MB, above the %d MB merge limit'
+                         % (total_bytes // (1024 * 1024),
+                            MERGE_MAX_BYTES // (1024 * 1024))}
 
     opened = []
     try:

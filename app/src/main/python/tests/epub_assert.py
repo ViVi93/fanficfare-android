@@ -111,6 +111,9 @@ def anchors_of(root):
 
 
 def _is_external(url):
+    if url.startswith('//'):
+        # Protocol-relative: //host/path is external, not an archive-absolute path.
+        return True
     parsed = urlparse(url)
     return bool(parsed.scheme) and parsed.scheme.lower() in EXTERNAL_SCHEMES
 

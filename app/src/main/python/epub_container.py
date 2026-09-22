@@ -74,6 +74,30 @@ def rewrite_css_urls(text, replacer):
     return _CSS_URL_RE.sub(sub, text)
 
 
+_HIERARCHICAL_URL_RE = re.compile(r'^[A-Za-z][A-Za-z0-9+.\-]*://')
+_NON_HIERARCHICAL_SCHEMES = frozenset({
+    'mailto', 'tel', 'data', 'urn', 'about', 'blob', 'javascript', 'sms',
+})
+
+
+def is_external_url(url):
+    """True for references that cannot name an archive entry.
+
+    Covers ``scheme://...`` URLs, the non-hierarchical schemes above (``mailto:``,
+    ``data:`` ...) and protocol-relative ``//host/path`` -- none of which may be
+    mistaken for an archive-absolute path. A filename that merely contains a
+    colon (``ch1:2.xhtml``) is *not* treated as external.
+    """
+    if not url:
+        return False
+    if url.startswith('//'):
+        return True
+    if _HIERARCHICAL_URL_RE.match(url):
+        return True
+    name = url.split(':', 1)[0]
+    return name.lower() in _NON_HIERARCHICAL_SCHEMES
+
+
 class ContainerError(Exception):
     """Raised for malformed EPUBs and invalid structural operations."""
 
@@ -144,6 +168,11 @@ class EpubContainer:
             if not item_id or href is None:
                 continue
             zipname = self.href_to_name(href, self.opf_name)
+            if zipname is None:
+                # A manifest href naming no archive entry (external URL in a
+                # broken book): key it by the raw href so it stays addressable
+                # instead of landing under a None key.
+                zipname = href
             self._items_by_id[item_id] = item
             self._items_by_name[zipname] = item
             self.mime_map[zipname] = media_type
@@ -249,12 +278,16 @@ class EpubContainer:
     def href_to_name(self, href, base_name):
         """Resolve an href found in ``base_name`` to a zip entry name.
 
-        Fragments and query strings are dropped; percent-escapes are decoded;
-        a leading ``/`` is treated as absolute from the archive root (the OCF
-        convention).
+        Fragments and query strings are dropped; percent-escapes are decoded; a
+        leading ``/`` is treated as absolute from the archive root (the OCF
+        convention). Returns ``None`` for external and protocol-relative
+        references, so callers cannot mistake a remote URL for a missing local
+        file.
         """
         if not href:
             return base_name
+        if is_external_url(href):
+            return None
         path = href.split('#', 1)[0].split('?', 1)[0]
         path = unquote(path)
         if not path:
@@ -458,7 +491,10 @@ class EpubContainer:
                 if not url:
                     continue
                 fragment = url.split('#', 1)[1] if '#' in url else ''
-                out.append((self.href_to_name(url, toc_name), fragment))
+                target = self.href_to_name(url, toc_name)
+                if target is None:
+                    continue        # external link in a nav document
+                out.append((target, fragment))
         return out
 
     def toc_doc_names(self):
@@ -498,7 +534,10 @@ class EpubContainer:
                 else:
                     continue
                 fragment = url.split('#', 1)[1] if '#' in url else ''
-                out.append((label or url, self.href_to_name(url, toc_name), fragment))
+                target = self.href_to_name(url, toc_name)
+                if target is None:
+                    continue        # external link in a nav document
+                out.append((label or url, target, fragment))
         return out
 
     def _fix_toc_for_removed(self, removed_name, rebase):

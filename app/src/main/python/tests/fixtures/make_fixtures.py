@@ -154,7 +154,11 @@ class EpubBuilder:
         self._spine = list(zipnames)
 
     def set_ncx(self, navpoints, zipname='OEBPS/toc.ncx'):
-        """Add an EPUB2 NCX. ``navpoints`` is a list of (label, href)."""
+        """Add an EPUB2 NCX.
+
+        ``navpoints`` is a list of ``(label, href)`` pairs; an entry may instead
+        be ``(label, href, [children])`` to nest navPoints under a parent.
+        """
         self._add_item(zipname, 'application/x-dtbncx+xml')
         parts = [
             '<?xml version="1.0" encoding="UTF-8"?>',
@@ -163,11 +167,24 @@ class EpubBuilder:
             '  <docTitle><text>%s</text></docTitle>' % self.title,
             '  <navMap>',
         ]
-        for i, (label, href) in enumerate(navpoints, 1):
-            parts.append('    <navPoint id="np%d" playOrder="%d">' % (i, i))
-            parts.append('      <navLabel><text>%s</text></navLabel>' % label)
-            parts.append('      <content src="%s"/>' % href)
-            parts.append('    </navPoint>')
+        counter = [0]
+
+        def emit(entries, depth):
+            for entry in entries:
+                label, href = entry[0], entry[1]
+                children = entry[2] if len(entry) > 2 else []
+                counter[0] += 1
+                pad = '    ' * (depth + 1)
+                parts.append('%s<navPoint id="np%d" playOrder="%d">'
+                             % (pad, counter[0], counter[0]))
+                parts.append('%s  <navLabel><text>%s</text></navLabel>' % (pad, label))
+                if href:
+                    parts.append('%s  <content src="%s"/>' % (pad, href))
+                if children:
+                    emit(children, depth + 1)
+                parts.append('%s</navPoint>' % pad)
+
+        emit(navpoints, 0)
         parts += ['  </navMap>', '</ncx>', '']
         self._files[zipname] = ('\n'.join(parts).encode('utf-8'), False)
         self._ncx = True
@@ -528,7 +545,90 @@ def build_fic_media(path):
     return b.write(path)
 
 
+def build_fic_navonly(path):
+    """EPUB3 with a nav document but **no NCX** -- exercises the nav fallback."""
+    b = EpubBuilder(version='3.0', title='Nav Only Fic',
+                    identifier='urn:uuid:fixture-navonly')
+    b.add_doc('OEBPS/text/one.xhtml', '<h2 id="n1">Nav One</h2>\n<p>one</p>',
+              title='Nav One', epub3=True)
+    b.add_doc('OEBPS/text/two.xhtml', '<h2 id="n2">Nav Two</h2>\n<p>two</p>',
+              title='Nav Two', epub3=True)
+    b.set_nav([('Nav One', 'text/one.xhtml#n1'), ('Nav Two', 'text/two.xhtml#n2')])
+    return b.write(path)
+
+
+def build_fic_notoc(path):
+    """No NCX and no nav document at all -- a book with no table of contents."""
+    b = EpubBuilder(version='2.0', title='No TOC Fic',
+                    identifier='urn:uuid:fixture-notoc')
+    for i in (1, 2):
+        b.add_doc('OEBPS/text/plain%d.xhtml' % i,
+                  '<h2 id="t%d">Plain %d</h2>\n<p>plain body %d</p>' % (i, i, i),
+                  title='Plain %d' % i)
+    return b.write(path)
+
+
+def build_fic_external(path):
+    """External, protocol-relative and data: references that must not be rewritten."""
+    b = EpubBuilder(version='2.0', title='External Fic',
+                    identifier='urn:uuid:fixture-external')
+    b.add_image('OEBPS/images/local.png')
+    b.add_doc('OEBPS/text/ext.xhtml', (
+        '<h2 id="x1">External</h2>\n'
+        '<p><a href="http://example.com/story">http link</a></p>\n'
+        '<p><a href="https://example.com/secure#frag">https link</a></p>\n'
+        '<p><a href="mailto:someone@example.com">mail</a></p>\n'
+        '<p><img src="//cdn.example.com/pic.png" alt="protocol relative"/></p>\n'
+        '<p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="inline"/></p>\n'
+        '<p><img src="../images/local.png" alt="local"/></p>'),
+        title='External')
+    b.set_ncx([('External', 'text/ext.xhtml#x1')])
+    return b.write(path)
+
+
+def build_fic_tocnested(path):
+    """A source whose TOC has parent navPoints with children (two levels)."""
+    b = EpubBuilder(version='2.0', title='Nested TOC Fic',
+                    identifier='urn:uuid:fixture-tocnested')
+    for i in range(1, 5):
+        b.add_doc('OEBPS/text/c%d.xhtml' % i,
+                  '<h2 id="d%d">Chapter %d</h2>\n<p>nested toc body %d</p>'
+                  % (i, i, i), title='Chapter %d' % i)
+    b.set_ncx([
+        ('Part One', 'text/c1.xhtml#d1', [
+            ('Chapter 1', 'text/c1.xhtml#d1'),
+            ('Chapter 2', 'text/c2.xhtml#d2'),
+        ]),
+        ('Part Two', 'text/c3.xhtml#d3', [
+            ('Chapter 3', 'text/c3.xhtml#d3'),
+            ('Chapter 4', 'text/c4.xhtml#d4'),
+        ]),
+    ])
+    return b.write(path)
+
+
+def build_fic_unicode(path):
+    """Non-ASCII in the title, TOC labels, text and a filename."""
+    b = EpubBuilder(version='2.0', title='Caf\u00e9 \u2014 na\u00efve r\u00e9sum\u00e9',
+                    identifier='urn:uuid:fixture-unicode',
+                    author='\u5c71\u7530 \u592a\u90ce')
+    b.add_doc('OEBPS/text/caf\u00e9.xhtml',
+              '<h2 id="u2">\u30c1\u30e3\u30d7\u30bf\u30fc\uff11</h2>\n'
+              '<p>na\u00efve r\u00e9sum\u00e9 \u2014 \u201cquoted\u201d</p>',
+              title='\u30c1\u30e3\u30d7\u30bf\u30fc\uff11')
+    b.add_doc('OEBPS/text/plain.xhtml',
+              '<h2 id="u1">Plain</h2>\n<p>plain</p>', title='Plain')
+    b.set_ncx([('\u30c1\u30e3\u30d7\u30bf\u30fc\uff11', 'text/caf%C3%A9.xhtml#u2'),
+               ('Plain', 'text/plain.xhtml#u1')])
+    return b.write(path)
+
+
 FIXTURES = {
+    'fic_unicode': build_fic_unicode,
+    'fic_tocnested': build_fic_tocnested,
+    'fic_external': build_fic_external,
+    'fic_notoc': build_fic_notoc,
+    'fic_navonly': build_fic_navonly,
     'fic_media': build_fic_media,
     'fic_encoding': build_fic_encoding,
     'fic_titlepage': build_fic_titlepage,

@@ -908,6 +908,161 @@ def test_merge_preserves_properties_fn(ctx):
         assert doc in targets, sorted(targets)
 
 
+def test_external_urls_untouched_fn(ctx):
+    """External, protocol-relative and data: URLs must never be resolved to an
+    archive entry nor rewritten by a merge.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    externals = ('http://example.com/story', 'https://example.com/secure#frag',
+                 'mailto:someone@example.com',
+                 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+                 '//cdn.example.com/pic.png')
+    base = 'OEBPS/text/ext.xhtml'
+    with c_mod.EpubContainer(paths['fic_external']) as c:
+        for url in externals:
+            assert c_mod.is_external_url(url), url
+            assert c.href_to_name(url, base) is None, \
+                '%s must not resolve to an archive entry' % url
+        # a filename that merely contains a colon is not a scheme
+        assert not c_mod.is_external_url('ch1:2.xhtml')
+        assert c.href_to_name('../images/local.png', base) == 'OEBPS/images/local.png'
+
+    first = staging_copy(paths['fic_simple'])
+    second = staging_copy(paths['fic_external'])
+    out = os.path.join(os.path.dirname(first), 'external.epub')
+    result = m_mod.merge_books([first, second], output_path=out)
+    assert result['ok'], result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        imported = 'merged/1/OEBPS/text/ext.xhtml'
+        root = c.parsed(imported)
+        urls = [e.get('src') or e.get('href') for e in root.iter()
+                if e.get('src') or e.get('href')]
+        for url in externals:
+            assert url in urls, '%s was rewritten or dropped: %r' % (url, urls)
+        # ...while the internal reference is repointed at the imported copy
+        local = [u for u in urls if u.endswith('local.png')]
+        assert local, urls
+        assert c.href_to_name(local[0], imported).startswith('merged/1/'), local
+
+
+def test_merge_toc_edge_shapes_fn(ctx):
+    """nav-only sources contribute a TOC section; TOC-less sources contribute
+    none but stay in the spine; a TOC-less base stays TOC-less.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    # nav-only source: entries come from its nav document
+    first = staging_copy(paths['fic_simple'])
+    navonly = staging_copy(paths['fic_navonly'])
+    out = os.path.join(os.path.dirname(first), 'navonly.epub')
+    result = m_mod.merge_books([first, navonly], output_path=out)
+    assert result['ok'], result
+    assert_sane(out)
+    with c_mod.EpubContainer(out) as c:
+        targets = {n for n, _f in c.toc_targets()}
+        for expect in ('merged/1/OEBPS/text/one.xhtml', 'merged/1/OEBPS/text/two.xhtml'):
+            assert expect in targets, '%s missing: %r' % (expect, sorted(targets))
+
+    # TOC-less source: no section, but the chapters are still in the spine
+    first2 = staging_copy(paths['fic_simple'])
+    notoc = staging_copy(paths['fic_notoc'])
+    out2 = os.path.join(os.path.dirname(first2), 'notoc.epub')
+    result2 = m_mod.merge_books([first2, notoc], output_path=out2)
+    assert result2['ok'], result2
+    assert_sane(out2)
+    with c_mod.EpubContainer(out2) as c:
+        spine = [n for _r, n, _l in c.spine_iter()]
+        assert spine[5:] == ['merged/1/OEBPS/text/plain1.xhtml',
+                             'merged/1/OEBPS/text/plain2.xhtml'], spine
+        targets = {n for n, _f in c.toc_targets()}
+        assert 'OEBPS/text/chapter1.xhtml' in targets, 'the base TOC should survive'
+        # A TOC-less source still gets a section pointing at its first chapter,
+        # so it is reachable -- but it cannot contribute per-chapter entries.
+        assert 'merged/1/OEBPS/text/plain1.xhtml' in targets, sorted(targets)
+        assert 'merged/1/OEBPS/text/plain2.xhtml' not in targets, sorted(targets)
+
+        ncx = [n for n in c.toc_doc_names()
+               if c.media_type_of(n) == 'application/x-dtbncx+xml'][0]
+        root = c.parsed(ncx)
+        navmap = [e for e in root.iter() if c_mod.localname(e.tag) == 'navMap'][0]
+        sections = [e for e in navmap if c_mod.localname(e.tag) == 'navPoint']
+        assert len(sections) == 2, 'expected base + source sections, got %d' % len(sections)
+        empty = [s for s in sections
+                 if not [ch for ch in s if c_mod.localname(ch.tag) == 'navPoint']]
+        assert len(empty) == 1, 'only the TOC-less source should have no children'
+
+    # TOC-less base: there is nothing to nest into, so the merged book has no TOC
+    # and the imported chapters are reachable only through the spine. This is a
+    # known limitation, asserted so it cannot regress silently.
+    notoc_base = staging_copy(paths['fic_notoc'])
+    other = staging_copy(paths['fic_simple'])
+    out3 = os.path.join(os.path.dirname(notoc_base), 'notocbase.epub')
+    result3 = m_mod.merge_books([notoc_base, other], output_path=out3)
+    assert result3['ok'], result3
+    assert result3['toc_sections'] == 0, result3
+    assert_sane(out3)
+    with c_mod.EpubContainer(out3) as c:
+        assert not c.toc_doc_names(), 'a TOC-less base should stay TOC-less'
+        spine = [n for _r, n, _l in c.spine_iter()]
+        assert len(spine) == 7, spine          # 2 base chapters + 5 imported
+        assert spine[:2] == ['OEBPS/text/plain1.xhtml', 'OEBPS/text/plain2.xhtml'], spine
+
+
+def test_merge_nested_toc_and_unicode_fn(ctx):
+    """A source with a two-level TOC flattens into its section in order, and
+    non-ASCII labels and filenames survive a merge.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_simple'])
+    nested = staging_copy(paths['fic_tocnested'])
+    out = os.path.join(os.path.dirname(first), 'nestedtoc.epub')
+    result = m_mod.merge_books([first, nested], output_path=out)
+    assert result['ok'], result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        # the source's section, then its two-level TOC flattened in order
+        labels = [label for label, name, _f in c.toc_entries()
+                  if name.startswith('merged/1/')]
+        assert labels == ['Nested TOC Fic', 'Part One', 'Chapter 1', 'Chapter 2',
+                          'Part Two', 'Chapter 3', 'Chapter 4'], labels
+        targets = {n for n, _f in c.toc_targets()}
+        for i in range(1, 5):
+            assert 'merged/1/OEBPS/text/c%d.xhtml' % i in targets, sorted(targets)
+
+    # a source with non-ASCII text, labels and a percent-encoded filename
+    first2 = staging_copy(paths['fic_simple'])
+    uni = staging_copy(paths['fic_unicode'])
+    out2 = os.path.join(os.path.dirname(first2), 'unicode.epub')
+    result2 = m_mod.merge_books([first2, uni], output_path=out2)
+    assert result2['ok'], result2
+    assert_sane(out2)
+
+    with c_mod.EpubContainer(out2) as c:
+        imported_docs = [n for n in c.mime_map
+                         if n.startswith('merged/1/') and 'caf' in n]
+        assert imported_docs, sorted(c.mime_map)
+        doc = imported_docs[0]
+        assert doc == 'merged/1/OEBPS/text/caf\u00e9.xhtml', doc
+        # the percent-encoded href in the manifest must resolve back to that name
+        item_id = c.item_id_of(doc)
+        assert c.name_of(item_id) == doc, c.name_of(item_id)
+        # non-ASCII label survives, and the chapter is reachable from the TOC
+        labels = [label for label, _n, _f in c.toc_entries()]
+        assert any('\u30c1\u30e3\u30d7\u30bf\u30fc' in label for label in labels), labels
+        assert doc in {n for n, _f in c.toc_targets()}, sorted(c.toc_targets())
+
+
 def test_merge_metadata_and_output_fn(ctx):
     """Metadata overrides, the default output path, and input validation."""
     c_mod = require(ctx, 'epub_container')
@@ -973,6 +1128,9 @@ def run_tests():
         ('merge_toc_nesting', test_merge_toc_nesting_fn),
         ('merge_declaration_matches_bytes', test_merge_declaration_matches_bytes_fn),
         ('merge_preserves_properties', test_merge_preserves_properties_fn),
+        ('external_urls_untouched', test_external_urls_untouched_fn),
+        ('merge_toc_edge_shapes', test_merge_toc_edge_shapes_fn),
+        ('merge_nested_toc_and_unicode', test_merge_nested_toc_and_unicode_fn),
         ('merge_resource_collision', test_merge_resource_collision_fn),
         ('merge_metadata_and_output', test_merge_metadata_and_output_fn),
     ]

@@ -137,11 +137,98 @@ def test_serialize_default_ns_no_ns0_fn(ctx):
     assert b'xmlns="http://www.daisy.org/z3986/2005/ncx/"' in ncx_out
 
 
+def test_parent_map_matches_structure_fn(ctx):
+    """parent_map / ancestors / iter_with_attr replace getparent() and XPath."""
+    x = require(ctx, 'epub_xml')
+    root = ET.fromstring(
+        '<body><div class="part"><h2 id="target">T</h2><p>text</p></div>'
+        '<div><p id="second">S</p></div></body>')
+    div = root[0]
+    h2 = div[0]
+    second_div = root[1]
+    p2 = second_div[0]
+
+    pm = x.parent_map(root)
+    assert pm[h2] is div, 'h2 parent should be the first div'
+    assert pm[div] is root, 'div parent should be body'
+    assert pm[p2] is second_div, 'second p parent should be the second div'
+    assert root not in pm, 'the search root must not appear in the parent map'
+
+    assert list(x.ancestors(h2, pm)) == [div, root], \
+        'ancestors must be nearest-first and stop at the root'
+    assert list(x.ancestors(root, pm)) == [], 'root has no ancestors'
+
+    assert [e.get('id') for e in x.iter_with_attr(root, 'id')] == \
+        ['target', 'second'], 'iter_with_attr must find ids in document order'
+
+    cache = {}
+    x.parent_map(root, cache)
+    assert cache[h2] is div, 'parent_map must extend a provided cache'
+    assert x.localname('{http://www.w3.org/1999/xhtml}p') == 'p'
+    assert x.localname('p') == 'p'
+
+
+def test_entity_expansion_and_tolerant_parse_fn(ctx):
+    """Named entities expand; unknown ones and XML built-ins survive; malformed
+    markup still parses via the html5lib fallback.
+    """
+    x = require(ctx, 'epub_xml')
+
+    out = x.expand_named_entities(b'<p>a&nbsp;b&mdash;c&hellip;d&amp;e&unknown;f</p>')
+    assert '\xa0'.encode('utf-8') in out, '&nbsp; should become U+00A0'
+    assert '\u2014'.encode('utf-8') in out, '&mdash; should become U+2014'
+    assert '\u2026'.encode('utf-8') in out, '&hellip; should become U+2026'
+    assert b'&amp;' in out, '&amp; must be left escaped'
+    assert b'&unknown;' in out, 'unknown entities must be left alone'
+
+    # Well formed except for the entity: the strict ladder handles it.
+    root = x.parse_xhtml(b'<html xmlns="http://www.w3.org/1999/xhtml">'
+                         b'<body><h2 id="ok">A&nbsp;B</h2></body></html>')
+    assert [e.get('id') for e in x.iter_with_attr(root, 'id')] == ['ok'], \
+        'entity-only failure should be recovered without html5lib'
+
+    # Genuinely malformed HTML: html5lib fallback must still preserve content.
+    malformed = (b'<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+                 b'<p>one<p>nested<br>unclosed<h2 id="deep">H</h2></body></html>')
+    mroot = x.parse_xhtml(malformed)
+    assert mroot is not None, 'malformed markup must still parse'
+    assert [e.get('id') for e in x.iter_with_attr(mroot, 'id')] == ['deep'], \
+        'html5lib fallback must keep the heading id'
+
+
+def test_split_prolog_fn(ctx):
+    """The XML declaration/DOCTYPE is preserved separately so it can be
+    re-attached after ElementTree drops it.
+    """
+    x = require(ctx, 'epub_xml')
+
+    raw = (b'<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n'
+           b'<html><body><p>x</p></body></html>\n')
+    header, footer = x.split_prolog(raw)
+    assert header.startswith(b'<?xml'), 'declaration should lead the header'
+    assert b'<!DOCTYPE html>' in header, 'doctype should be in the header'
+    assert raw[len(header):].startswith(b'<html'), 'header must cover the prolog'
+    assert footer == b'\n', 'trailing newline should be the footer'
+    assert header + raw[len(header):] == raw, 'split must be lossless'
+
+    internal_subset = b'<!DOCTYPE html [ <!ENTITY nbsp "&#160;"> ]>\n<html/>'
+    h3, _ = x.split_prolog(internal_subset)
+    assert h3.startswith(b'<!DOCTYPE'), 'internal-subset doctype should be kept'
+    assert internal_subset[len(h3):].startswith(b'<html')
+
+    h4, f4 = x.split_prolog(b'<html/>')
+    assert h4 == b'' and f4 == b'', 'no prolog means empty header and footer'
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
         # --- epub_xml ------------------------------------------------------
         ('serialize_default_ns_no_ns0', test_serialize_default_ns_no_ns0_fn),
+        ('parent_map_matches_structure', test_parent_map_matches_structure_fn),
+        ('entity_expansion_and_tolerant_parse',
+         test_entity_expansion_and_tolerant_parse_fn),
+        ('split_prolog', test_split_prolog_fn),
     ]
 
     passed = 0

@@ -22,11 +22,14 @@ The registration is guarded by a lock because Chaquopy can service Python calls
 from more than one Kotlin thread.
 """
 
+import html.entities
+import re
 import threading
 import xml.etree.ElementTree as ET
 
 __all__ = [
-    'serialize', 'register_namespaces', 'localname',
+    'serialize', 'register_namespaces', 'localname', 'parent_map', 'ancestors',
+    'iter_with_attr', 'parse_xhtml', 'expand_named_entities', 'split_prolog',
     'OPF', 'XHTML', 'NCX',
     'OPF_NS', 'DC_NS', 'XHTML_NS', 'OPS_NS', 'XLINK_NS', 'SVG_NS', 'NCX_NS',
 ]
@@ -102,3 +105,168 @@ def localname(tag):
     if isinstance(tag, str) and '}' in tag:
         return tag.rsplit('}', 1)[-1]
     return tag
+
+
+# ---------------------------------------------------------------------------
+# Tree navigation
+#
+# ElementTree has no getparent(), no ancestor axis and no XPath attribute
+# selectors. These three primitives cover every navigation need the EPUB
+# algorithms have, without an XPath engine.
+# ---------------------------------------------------------------------------
+
+def parent_map(root, cache=None):
+    """Map every descendant to its parent in one pass.
+
+    ``cache`` may be an existing dict to extend, so one map can serve several
+    lookups in the same function. ``root`` itself is not a key (it has no
+    parent), which matches the previous recursive ``_find_parent`` semantics of
+    returning ``None`` for the search root.
+    """
+    pm = {} if cache is None else cache
+    for parent in root.iter():
+        for child in parent:
+            pm[child] = parent
+    return pm
+
+
+def ancestors(elem, pm):
+    """Yield the ancestors of ``elem``, nearest first, using a ``parent_map``."""
+    while elem in pm:
+        elem = pm[elem]
+        yield elem
+
+
+def iter_with_attr(root, attr):
+    """Yield every element carrying ``attr`` (replaces ``xpath('//*/@id')``)."""
+    for elem in root.iter():
+        if attr in elem.attrib:
+            yield elem
+
+
+# ---------------------------------------------------------------------------
+# Tolerant parsing
+#
+# Content documents inside real EPUBs routinely contain named entities such as
+# &nbsp; (undefined in XML without a DTD) and HTML that is not well formed.
+# ElementTree raises on both, so parsing is a three-step ladder.
+# ---------------------------------------------------------------------------
+
+_ENTITY_RE = re.compile(r'&([A-Za-z][A-Za-z0-9]*);')
+
+# The five XML built-ins must never be expanded: they are part of XML itself,
+# and html.entities.html5 also lists them, so expanding &amp; would emit a bare
+# & and corrupt the document.
+_XML_BUILTIN_ENTITIES = frozenset({'amp;', 'lt;', 'gt;', 'quot;', 'apos;'})
+
+_XML_DECL_RE = re.compile(rb'\s*<\?xml[^>]*\?>', re.IGNORECASE)
+
+_WS_BYTES = b' \t\r\n\f\v'
+
+
+def _skip_ws(raw, pos):
+    while pos < len(raw) and raw[pos:pos + 1] in _WS_BYTES:
+        pos += 1
+    return pos
+
+
+def _scan_doctype(raw, start):
+    """End index (exclusive) of a DOCTYPE starting at ``start``, or None.
+
+    Handles an internal subset and quoted strings, which a naive ``[^>]*``
+    match gets wrong: ``<!ENTITY nbsp "&#160;">`` inside ``[ ]`` contains a
+    ``>`` that must not terminate the declaration.
+    """
+    i = start + len(b'<!DOCTYPE')
+    depth = 0
+    quote = None
+    while i < len(raw):
+        char = raw[i:i + 1]
+        if quote is not None:
+            if char == quote:
+                quote = None
+        elif char in (b'"', b"'"):
+            quote = char
+        elif char == b'[':
+            depth += 1
+        elif char == b']':
+            if depth:
+                depth -= 1
+        elif char == b'>' and depth == 0:
+            return i + 1
+        i += 1
+    return None
+
+
+def expand_named_entities(raw):
+    """Bytes -> bytes with HTML named entities replaced by their characters.
+
+    Unknown names and the XML built-ins (``&amp;`` ``&lt;`` ``&gt;`` ``&quot;``
+    ``&apos;``) are left untouched so escaping stays intact and re-parsing an
+    already-valid document is a no-op.
+    """
+    if isinstance(raw, bytes):
+        text = raw.decode('utf-8', 'replace')
+    else:
+        text = raw
+
+    def sub(match):
+        name = match.group(1) + ';'
+        if name in _XML_BUILTIN_ENTITIES:
+            return match.group(0)
+        replacement = html.entities.html5.get(name)
+        if replacement is None:
+            return match.group(0)
+        return replacement
+
+    return _ENTITY_RE.sub(sub, text).encode('utf-8')
+
+
+def parse_xhtml(raw):
+    """Parse an XHTML/HTML document as leniently as is reasonable.
+
+    Tries strict XML first, then XML with named entities expanded, then html5lib
+    (an existing Chaquopy dependency). Returns an Element root; the ElementTree
+    document prolog/doctype is dropped -- use :func:`split_prolog` to keep it.
+    """
+    for candidate in (raw, expand_named_entities(raw)):
+        try:
+            return ET.fromstring(candidate)
+        except ET.ParseError:
+            pass
+    import html5lib
+    result = html5lib.parse(expand_named_entities(raw).decode('utf-8'),
+                            namespaceHTMLElements=True, treebuilder='etree')
+    getroot = getattr(result, 'getroot', None)
+    return getroot() if getroot else result
+
+
+def split_prolog(raw):
+    """Split the leading XML declaration/DOCTYPE from trailing whitespace.
+
+    Returns ``(header, footer)`` bytes. ElementTree discards both when parsing
+    and re-serializing, so a document written back out must have them re-attached
+    to stay a valid XHTML file. Comments and processing instructions after the
+    root element are not preserved (ElementTree drops those too).
+    """
+    if isinstance(raw, str):
+        raw = raw.encode('utf-8')
+
+    decl = _XML_DECL_RE.match(raw)
+    pos = decl.end() if decl else 0
+    body_start = _skip_ws(raw, pos)
+    # With a declaration, the whitespace after it belongs to the header.
+    header_end = body_start if decl else 0
+
+    if raw[body_start:body_start + len(b'<!DOCTYPE')].upper() == b'<!DOCTYPE':
+        stop = _scan_doctype(raw, body_start)
+        if stop is None:
+            header_end = body_start      # malformed: leave the doctype in place
+        else:
+            header_end = _skip_ws(raw, stop)
+
+    header = raw[:header_end]
+    tail = raw[header_end:]
+    end = re.search(rb'\s*$', tail)
+    footer = end.group(0) if end else b''
+    return header, footer

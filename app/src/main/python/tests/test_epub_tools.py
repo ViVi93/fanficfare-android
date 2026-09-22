@@ -220,6 +220,198 @@ def test_split_prolog_fn(ctx):
     assert h4 == b'' and f4 == b'', 'no prolog means empty header and footer'
 
 
+def staging_copy(path):
+    """Copy a fixture into a scratch dir so a test can mutate it safely."""
+    import shutil
+    import tempfile
+    dest_dir = tempfile.mkdtemp(prefix='ff_stage_')
+    dest = os.path.join(dest_dir, os.path.basename(path))
+    shutil.copy2(path, dest)
+    return dest
+
+
+def zip_bytes(path):
+    """{entry name: raw bytes} for an EPUB, for structural comparison."""
+    out = {}
+    with zipfile.ZipFile(path) as z:
+        for info in z.infolist():
+            out[info.filename] = z.read(info.filename)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# epub_container: indexing and href math (tasks 8-9)
+# ---------------------------------------------------------------------------
+
+def test_container_index_fn(ctx):
+    """Manifest/spine indexing: opf location, content docs in spine order,
+    stylesheets, mime map, and id<->name round tripping.
+    """
+    c_mod = require(ctx, 'epub_container')
+    paths = fixture_paths()
+    with c_mod.EpubContainer(paths['fic_simple']) as c:
+        assert c.opf_name == 'OEBPS/content.opf', c.opf_name
+        assert c.opf_dir == 'OEBPS', c.opf_dir
+
+        docs = list(c.content_docs())
+        spine_docs = [name for _ref, name, _lin in c.spine_iter()]
+        assert len(spine_docs) == 5, 'spine should hold 5 chapters: %r' % spine_docs
+        assert docs[:5] == spine_docs, \
+            'content_docs must lead with spine order: %r vs %r' % (docs[:5], spine_docs)
+        assert 'OEBPS/nav.xhtml' in docs, \
+            'non-spine content documents (nav) must still be walked'
+
+        sheets = list(c.stylesheets())
+        assert sheets == ['OEBPS/styles/main.css'], sheets
+        assert c.media_type_of('OEBPS/styles/main.css') == 'text/css'
+        assert c.media_type_of('OEBPS/text/chapter1.xhtml') == 'application/xhtml+xml'
+
+        for name in spine_docs:
+            item_id = c.item_id_of(name)
+            assert item_id, 'no manifest id for %r' % name
+            assert c.name_of(item_id) == name, \
+                'id->name round trip failed for %r' % name
+        assert c.item_id_of('OEBPS/nope.xhtml') is None
+        assert c.name_of('no-such-id') is None
+        assert c.exists('OEBPS/text/chapter1.xhtml')
+        assert not c.exists('OEBPS/missing.xhtml')
+
+        linear = [lin for _ref, _name, lin in c.spine_iter()]
+        assert all(linear), 'fixture spine entries should be linear'
+
+
+def test_container_href_math_fn(ctx):
+    """href<->zipname resolution: relative, absolute, %20, fragments, dot paths."""
+    c_mod = require(ctx, 'epub_container')
+    paths = fixture_paths()
+    with c_mod.EpubContainer(paths['fic_multidir']) as c:
+        base = 'OEBPS/text/a.xhtml'
+        cases = {
+            '../images/pic.png': 'OEBPS/images/pic.png',
+            '/OEBPS/images/pic.png': 'OEBPS/images/pic.png',
+            '../images/a%20b.png': 'OEBPS/images/a b.png',
+            '../Text/b.xhtml#b1': 'OEBPS/Text/b.xhtml',
+            '#frag': base,
+            '': base,
+            './sub/../a.xhtml': base,
+            './a.xhtml': base,
+            'a.xhtml': base,
+        }
+        for href, expected in cases.items():
+            got = c.href_to_name(href, base)
+            assert got == expected, 'href_to_name(%r) = %r, want %r' % (href, got, expected)
+        # absolute-from-root, resolved against the OPF
+        assert c.href_to_name('text/a.xhtml', 'OEBPS/content.opf') == 'OEBPS/text/a.xhtml'
+
+        reverse = {
+            'OEBPS/images/pic.png': '../images/pic.png',
+            'OEBPS/images/a b.png': '../images/a%20b.png',
+            'OEBPS/text/a.xhtml': 'a.xhtml',
+            'OEBPS/nav.xhtml': '../nav.xhtml',
+        }
+        for name, expected in reverse.items():
+            got = c.name_to_href(name, base)
+            assert got == expected, 'name_to_href(%r) = %r, want %r' % (name, got, expected)
+
+        # round trip through both directions
+        for name in ('OEBPS/images/pic.png', 'OEBPS/Text/b.xhtml', 'OEBPS/nav.xhtml'):
+            href = c.name_to_href(name, base)
+            assert c.href_to_name(href, base) == name, \
+                'round trip failed for %r via %r' % (name, href)
+
+
+# ---------------------------------------------------------------------------
+# epub_container: document cache and commit (tasks 10-11)
+# ---------------------------------------------------------------------------
+
+def test_container_document_cache_fn(ctx):
+    """parsed() caching, dirty tracking, raw bytes and prolog capture."""
+    c_mod = require(ctx, 'epub_container')
+    paths = fixture_paths()
+    doc = 'OEBPS/text/chapter1.xhtml'
+    with c_mod.EpubContainer(paths['fic_entities']) as c:
+        first = c.parsed(doc)
+        assert c.parsed(doc) is first, 'parsed() must cache the tree object'
+        assert not c.is_dirty(doc), 'reading must not dirty a document'
+
+        with zipfile.ZipFile(paths['fic_entities']) as z:
+            original = z.read(doc)
+        assert c.raw_data(doc) == original, 'raw_data must be the untouched bytes'
+
+        header, footer = c.prolog(doc)
+        assert b'<?xml' in header, 'the XML declaration should be captured'
+        assert b'<!DOCTYPE' in header, 'the DOCTYPE should be captured'
+        assert c.raw_data(doc).startswith(header), 'prolog must come off the front'
+
+        c.dirty(doc)
+        assert c.is_dirty(doc)
+
+        fresh = ET.fromstring('<html xmlns="http://www.w3.org/1999/xhtml">'
+                              '<body><p>replaced</p></body></html>')
+        c.replace(doc, fresh)
+        assert c.parsed(doc) is fresh, 'replace() must install the new tree'
+        assert c.is_dirty(doc)
+
+
+def test_container_commit_roundtrip_fn(ctx):
+    """commit() preserves the OCF invariant, leaves an untouched book
+    byte-identical, and can write to a copy instead of in place.
+    """
+    c_mod = require(ctx, 'epub_container')
+    paths = fixture_paths()
+    src = paths['fic_simple']
+    original = zip_bytes(src)
+
+    # 1. untouched round trip, in place
+    staged = staging_copy(src)
+    with c_mod.EpubContainer(staged) as c:
+        result = c.commit()
+    assert result['ok'], result
+    assert_sane(staged)
+    after = zip_bytes(staged)
+    assert set(after) == set(original), 'entry set changed on a no-op commit'
+    for name, data in original.items():
+        assert after[name] == data, 'entry %r changed on a no-op commit' % name
+
+    with zipfile.ZipFile(staged) as z:
+        names = z.namelist()
+        assert names[0] == 'mimetype', names[:3]
+        assert z.infolist()[0].compress_type == zipfile.ZIP_STORED
+        assert z.read('mimetype') == b'application/epub+zip'
+
+    # 2. one document replaced: only that entry changes
+    staged2 = staging_copy(src)
+    doc = 'OEBPS/text/chapter3.xhtml'
+    with c_mod.EpubContainer(staged2) as c:
+        root = c.parsed(doc)
+        # Edit text only: removing the <h2 id="ch3"> would orphan the NCX/nav
+        # fragment pointing at it, which the validator rightly rejects.
+        paragraphs = [e for e in root.iter() if c_mod.localname(e.tag) == 'p']
+        assert paragraphs, 'fixture chapter should contain a paragraph'
+        paragraphs[-1].text = 'rewritten body'
+        c.replace(doc, root)
+        result = c.commit(backup_suffix='.bak')
+    assert result['ok'], result
+    assert os.path.exists(staged2 + '.bak'), 'backup_suffix should leave a .bak'
+    after2 = zip_bytes(staged2)
+    assert set(after2) == set(original), 'entry set changed for a one-doc edit'
+    changed = [n for n in original if original[n] != after2[n]]
+    assert changed == [doc], 'only %r should change, got %r' % (doc, changed)
+    assert b'rewritten body' in after2[doc]
+    assert_sane(staged2)
+
+    # 3. output_path writes a copy and leaves the source alone
+    staged3 = staging_copy(src)
+    out = staged3 + '.out.epub'
+    with c_mod.EpubContainer(staged3) as c:
+        c.dirty('OEBPS/text/chapter1.xhtml')
+        result = c.commit(output_path=out)
+    assert result['ok'], result
+    assert result['output_path'] == out
+    assert zip_bytes(staged3) == original, 'source must be untouched with output_path'
+    assert_sane(out)
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
@@ -229,6 +421,11 @@ def run_tests():
         ('entity_expansion_and_tolerant_parse',
          test_entity_expansion_and_tolerant_parse_fn),
         ('split_prolog', test_split_prolog_fn),
+        # --- epub_container ------------------------------------------------
+        ('container_index', test_container_index_fn),
+        ('container_href_math', test_container_href_math_fn),
+        ('container_document_cache', test_container_document_cache_fn),
+        ('container_commit_roundtrip', test_container_commit_roundtrip_fn),
     ]
 
     passed = 0

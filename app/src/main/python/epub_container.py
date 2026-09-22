@@ -42,7 +42,7 @@ from urllib.parse import quote, unquote
 
 import epub_xml
 from epub_editor import _finalize_write, _find_opf_path, _resolve_target
-from epub_xml import localname, parse_xhtml, serialize, split_prolog
+from epub_xml import localname, parse_xhtml, prolog_for_utf8, serialize, split_prolog
 
 __all__ = ['EpubContainer', 'ContainerError', 'OEB_DOCS', 'CSS_TYPES']
 
@@ -205,6 +205,24 @@ class EpubContainer:
     def properties_of(self, name):
         """The manifest ``properties`` attribute for an entry ('' if none)."""
         return self._properties_by_name.get(name, '')
+
+    def item_attr(self, name, attr):
+        """Any attribute of an entry's manifest ``<item>`` (e.g. media-overlay)."""
+        item = self._items_by_name.get(name)
+        return item.get(attr) if item is not None else None
+
+    def set_item_attr(self, name, attr, value):
+        """Set an attribute on an entry's manifest ``<item>``."""
+        item = self._items_by_name.get(name)
+        if item is None:
+            raise ContainerError('%r is not in the manifest' % name)
+        if value is None:
+            item.attrib.pop(attr, None)
+        else:
+            item.set(attr, value)
+        if attr == 'properties':
+            self._properties_by_name[name] = value or ''
+        self.dirty(self.opf_name)
 
     def item_id_of(self, name):
         item = self._items_by_name.get(name)
@@ -592,6 +610,8 @@ class EpubContainer:
             header, footer = self._prologs.get(name, (b'', b''))
             kind = self._kind_for(name)
             if header:
+                # The declaration must describe the bytes we are about to write.
+                header = prolog_for_utf8(header)
                 body = serialize(root, kind, xml_declaration=False)
                 out[name] = header + body + footer
             else:

@@ -828,6 +828,86 @@ def test_merge_toc_nesting_fn(ctx):
             'nav should have 3 top-level sections, got %d' % len(outer_items)
 
 
+def test_merge_declaration_matches_bytes_fn(ctx):
+    """A source document declaring a non-UTF-8 encoding must be written with a
+    declaration that describes the bytes actually written.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_simple'])
+    second = staging_copy(paths['fic_encoding'])
+    out = os.path.join(os.path.dirname(first), 'encoding.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out)
+    assert result['ok'], result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        raw = c.raw_data('merged/1/OEBPS/text/latin1.xhtml')
+
+    declaration = raw.split(b'?>')[0]
+    assert b'8859' not in declaration, \
+        'the declaration still claims latin-1: %r' % declaration
+    assert b'utf-8' in declaration.lower(), declaration
+
+    # A reader honours the declaration, so decoding that way must reproduce the
+    # original text rather than mojibake.
+    visible = ''.join(ET.fromstring(raw).itertext())
+    assert 'Caf\u00e9' in visible, 'reader-visible text was %r' % visible
+    assert 'na\u00efve r\u00e9sum\u00e9' in visible, \
+        'reader-visible text was %r' % visible
+    assert '\u00c3' not in visible, \
+        'mojibake: utf-8 bytes were read back as latin-1: %r' % visible
+
+
+def test_merge_preserves_properties_fn(ctx):
+    """Manifest properties and media-overlay survive an import: the overlay is
+    remapped to the imported SMIL, semantic properties are kept, and the merged
+    book still declares exactly one cover.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_epub3'])      # base ships its own cover
+    second = staging_copy(paths['fic_media'])
+    out = os.path.join(os.path.dirname(first), 'media.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out)
+    assert result['ok'], result
+    # assert_epub_sane now also checks media-overlay targets and SMIL references
+    assert_sane(out)
+
+    doc = 'merged/1/OEBPS/text/chapter1.xhtml'
+    smil = 'merged/1/OEBPS/text/chapter1.smil'
+    with c_mod.EpubContainer(out) as c:
+        assert smil in c.mime_map, 'the SMIL file must be imported'
+        assert c.media_type_of(smil) == 'application/smil+xml'
+
+        overlay = c.item_attr(doc, 'media-overlay')
+        assert overlay, 'media-overlay was dropped from the imported document'
+        assert overlay == c.item_id_of(smil), \
+            'media-overlay must be remapped to the imported SMIL id, got %r' % overlay
+
+        props = c.properties_of('merged/1/OEBPS/text/chapter2.xhtml')
+        assert 'svg' in props, 'the svg property was dropped: %r' % props
+        assert 'scripted' in props, 'the scripted property was dropped: %r' % props
+
+        # the imported cover must not claim cover-image
+        imported_cover = 'merged/1/OEBPS/images/cover.png'
+        assert imported_cover in c.mime_map, 'the source cover should be imported'
+        assert 'cover-image' not in c.properties_of(imported_cover)
+        covers = [n for n in c.mime_map if 'cover-image' in c.properties_of(n)]
+        assert len(covers) == 1, 'expected exactly one cover-image, got %r' % covers
+
+    # the imported document is still navigable from the TOC
+    with c_mod.EpubContainer(out) as c:
+        targets = {n for n, _f in c.toc_targets()}
+        assert doc in targets, sorted(targets)
+
+
 def test_merge_metadata_and_output_fn(ctx):
     """Metadata overrides, the default output path, and input validation."""
     c_mod = require(ctx, 'epub_container')
@@ -891,6 +971,8 @@ def run_tests():
         ('merge_two_books', test_merge_two_books_fn),
         ('merge_titlepage_cover_reference', test_merge_titlepage_cover_reference_fn),
         ('merge_toc_nesting', test_merge_toc_nesting_fn),
+        ('merge_declaration_matches_bytes', test_merge_declaration_matches_bytes_fn),
+        ('merge_preserves_properties', test_merge_preserves_properties_fn),
         ('merge_resource_collision', test_merge_resource_collision_fn),
         ('merge_metadata_and_output', test_merge_metadata_and_output_fn),
     ]

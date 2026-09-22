@@ -153,6 +153,17 @@ def _last_spine_name(container):
     return names[-1]
 
 
+def _import_properties(src, old_name):
+    """Manifest ``properties`` to carry over into the merged book.
+
+    ``cover-image`` is dropped so the base book's cover stays the only declared
+    one, and ``nav`` never appears because nav documents are skipped entirely.
+    """
+    props = [p for p in (src.properties_of(old_name) or '').split()
+             if p not in ('cover-image', 'nav')]
+    return ' '.join(props) or None
+
+
 def import_source(base, src, plan):
     """Copy ``src`` into ``base`` per ``plan``. Returns the number of files added.
 
@@ -161,6 +172,7 @@ def import_source(base, src, plan):
     """
     added = 0
     spine_docs = set(plan.content_docs)
+    item_ids = {}       # source manifest id -> merged manifest id
     for old_name in sorted(plan.name_map):
         new_name = plan.name_map[old_name]
         # A spine document with no usable media type in the source manifest
@@ -170,8 +182,22 @@ def import_source(base, src, plan):
             media_type = ('application/xhtml+xml' if old_name in spine_docs
                           else 'application/octet-stream')
         base.add_file(new_name, src.raw_data(old_name))
-        base.generate_item(new_name, media_type)
+        item = base.generate_item(new_name, media_type,
+                                  properties=_import_properties(src, old_name))
+        old_id = src.item_id_of(old_name)
+        if old_id:
+            item_ids[old_id] = item.get('id')
         added += 1
+
+    # second pass: media-overlay is an attribute naming the SMIL item's id, and
+    # ids are reassigned on import, so it must be remapped -- or dropped when its
+    # target was not imported, rather than left dangling.
+    for old_name in list(plan.name_map):
+        overlay = src.item_attr(old_name, 'media-overlay')
+        if not overlay:
+            continue
+        base.set_item_attr(plan.name_map[old_name], 'media-overlay',
+                           item_ids.get(overlay))
 
     for old_doc, _linear in plan.spine:
         new_doc = plan.name_map[old_doc]

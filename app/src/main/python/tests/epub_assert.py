@@ -177,7 +177,8 @@ def audit(path):
             if iid is None or href is None:
                 problem('manifest item missing id/href: %r' % (item.attrib,))
                 continue
-            manifest[iid] = {'href': href, 'type': mtype, 'name': None}
+            manifest[iid] = {'href': href, 'type': mtype, 'name': None,
+                             'overlay': item.get('media-overlay')}
             target, frag = resolve(opf_name, href)
             manifest[iid]['name'] = target
             if frag:
@@ -243,6 +244,46 @@ def audit(path):
                         if frag not in t_anchors:
                             problem('link %r in %r -> fragment %r not found in %r'
                                     % (url, name, frag, target))
+
+        # 6b. media overlays: the manifest attribute must resolve to a SMIL
+        # document, and that SMIL's own references must survive relocation.
+        for iid, info in manifest.items():
+            overlay = info.get('overlay')
+            if not overlay:
+                continue
+            if overlay not in manifest:
+                problem('manifest item %s media-overlay %r is not a manifest id'
+                        % (iid, overlay))
+                continue
+            if manifest[overlay]['type'] != 'application/smil+xml':
+                warnings.append('media-overlay %r is not a SMIL document' % overlay)
+            smil_name = manifest[overlay]['name']
+            if smil_name not in names:
+                problem('media-overlay %r target %r is not in the archive'
+                        % (overlay, smil_name))
+                continue
+            sroot = parse_tolerant(z.read(smil_name))
+            if sroot is None:
+                problem('SMIL %r could not be parsed' % smil_name)
+                continue
+            for elem in sroot.iter():
+                url = elem.get('src')
+                if not url or _is_external(url):
+                    continue
+                target, frag = resolve(smil_name, url)
+                if target not in names:
+                    problem('SMIL %r src %r -> %r not in archive'
+                            % (smil_name, url, target))
+                    continue
+                if frag:
+                    t_anchors = anchor_cache.get(target)
+                    if t_anchors is None:
+                        troot = parse_tolerant(z.read(target))
+                        t_anchors = anchors_of(troot) if troot is not None else set()
+                        anchor_cache[target] = t_anchors
+                    if frag not in t_anchors:
+                        problem('SMIL %r src %r -> fragment %r missing in %r'
+                                % (smil_name, url, frag, target))
 
         # 7. NCX + nav
         for iid, it in manifest.items():

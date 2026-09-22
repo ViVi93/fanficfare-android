@@ -30,6 +30,7 @@ import xml.etree.ElementTree as ET
 __all__ = [
     'serialize', 'register_namespaces', 'localname', 'parent_map', 'ancestors',
     'iter_with_attr', 'parse_xhtml', 'expand_named_entities', 'split_prolog',
+    'prolog_for_utf8',
     'OPF', 'XHTML', 'NCX',
     'OPF_NS', 'DC_NS', 'XHTML_NS', 'OPS_NS', 'XLINK_NS', 'SVG_NS', 'NCX_NS',
 ]
@@ -239,6 +240,34 @@ def parse_xhtml(raw):
                             namespaceHTMLElements=True, treebuilder='etree')
     getroot = getattr(result, 'getroot', None)
     return getroot() if getroot else result
+
+
+_ENCODING_ATTR_RE = re.compile(rb'encoding\s*=\s*(["\'])[^"\']*\1', re.IGNORECASE)
+
+
+def _utf8_encoding_attr(match):
+    quote = match.group(1)
+    return b'encoding=' + quote + b'utf-8' + quote
+
+
+def prolog_for_utf8(header):
+    """Rewrite the XML declaration's encoding to UTF-8.
+
+    Documents are always re-serialized as UTF-8, so a declaration inherited from
+    the source (``iso-8859-1`` is common in older EPUBs) would otherwise describe
+    the wrong bytes and the text would read back as mojibake. A declaration with
+    no ``encoding`` attribute already means UTF-8, so it is left alone.
+    """
+    if not header:
+        return header
+    match = re.search(rb'<\?xml[^>]*\?>', header, re.IGNORECASE)
+    if not match:
+        return header
+    declaration = match.group(0)
+    fixed = _ENCODING_ATTR_RE.sub(_utf8_encoding_attr, declaration)
+    if fixed == declaration:
+        return header
+    return header[:match.start()] + fixed + header[match.end():]
 
 
 def split_prolog(raw):

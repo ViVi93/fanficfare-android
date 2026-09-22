@@ -478,7 +478,59 @@ def build_fic_titlepage(path):
     return b.write(path)
 
 
+def build_fic_encoding(path):
+    """A chapter that declares iso-8859-1 and contains latin-1 bytes.
+
+    Re-serializing such a document without correcting its declaration leaves a
+    reader decoding UTF-8 bytes as latin-1, which is mojibake.
+    """
+    b = EpubBuilder(version='2.0', title='Encoding Fic',
+                    identifier='urn:uuid:fixture-encoding')
+    latin1 = ('<?xml version="1.0" encoding="iso-8859-1"?>\n'
+              '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+              '<head><title>Caf\xe9</title></head>\n'
+              '<body><h2 id="e1">Caf\xe9</h2>\n'
+              '<p>na\xefve r\xe9sum\xe9</p></body>\n</html>\n'
+              ).encode('iso-8859-1')
+    b.add_doc('OEBPS/text/latin1.xhtml', None, raw=latin1)
+    b.add_doc('OEBPS/text/utf8.xhtml',
+              '<h2 id="u1">UTF-8 chapter</h2>\n<p>na\u00efve r\u00e9sum\u00e9</p>',
+              title='UTF-8')
+    b.set_ncx([('Latin-1', 'text/latin1.xhtml#e1'),
+               ('UTF-8', 'text/utf8.xhtml#u1')])
+    return b.write(path)
+
+
+def build_fic_media(path):
+    """EPUB3 with a media overlay and semantic properties worth preserving."""
+    b = EpubBuilder(version='3.0', title='Media Fic',
+                    identifier='urn:uuid:fixture-media')
+    b.add_image('OEBPS/images/cover.png', cover=True)
+    smil_id = b.add_raw('OEBPS/text/chapter1.smil', (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<smil xmlns="http://www.w3.org/ns/SMIL" version="3.0">\n'
+        '  <body><seq><par><text src="chapter1.xhtml#m1"/></par></seq></body>\n'
+        '</smil>\n'), media_type='application/smil+xml')
+    b.add_doc('OEBPS/text/chapter1.xhtml',
+              '<h2 id="m1" epub:type="chapter">Media One</h2>\n'
+              '<p>With an overlay.</p>',
+              title='Media One', epub3=True, extra_ns=XLINK_NS_ATTR,
+              attrs={'media-overlay': smil_id})
+    b.add_doc('OEBPS/text/chapter2.xhtml',
+              '<h2 id="m2">Media Two</h2>\n'
+              '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4">'
+              '<rect width="4" height="4"/></svg>',
+              title='Media Two', epub3=True, properties='svg scripted')
+    navpoints = [('Media One', 'text/chapter1.xhtml#m1'),
+                 ('Media Two', 'text/chapter2.xhtml#m2')]
+    b.set_ncx(navpoints)
+    b.set_nav(navpoints)
+    return b.write(path)
+
+
 FIXTURES = {
+    'fic_media': build_fic_media,
+    'fic_encoding': build_fic_encoding,
     'fic_titlepage': build_fic_titlepage,
     'fic_links': build_fic_links,
     'fic_simple': build_fic_simple,

@@ -451,7 +451,35 @@ def build_fic_links(path):
     return b.write(path)
 
 
+def build_fic_titlepage(path):
+    """FanFicFare-shaped: a titlepage that references the book's own cover.
+
+    Exercises the rule that cover images are *imported* rather than skipped --
+    dropping one would leave this titlepage with a dangling <img src>.
+    """
+    b = EpubBuilder(version='2.0', title='Titlepage Fic',
+                    identifier='urn:uuid:fixture-titlepage')
+    b.add_image('OEBPS/cover.png', cover=True)
+    b.add_style('OEBPS/styles/main.css', 'body { margin: 0; }\n')
+    b.add_doc('OEBPS/titlepage.xhtml', (
+        '<div class="titlepage">\n'
+        '  <h1 id="tp">Titlepage Fic</h1>\n'
+        '  <img src="cover.png" alt="cover"/>\n'
+        '</div>'),
+        title='Titlepage',
+        head_extra='<link rel="stylesheet" type="text/css" href="styles/main.css"/>')
+    b.add_doc('OEBPS/text/chapter1.xhtml',
+              '<h2 id="p1">Chapter 1</h2>\n<p>Titlepage body one.</p>', title='Chapter 1')
+    b.add_doc('OEBPS/text/chapter2.xhtml',
+              '<h2 id="p2">Chapter 2</h2>\n<p>Titlepage body two.</p>', title='Chapter 2')
+    b.set_ncx([('Titlepage', 'titlepage.xhtml#tp'),
+               ('Chapter 1', 'text/chapter1.xhtml#p1'),
+               ('Chapter 2', 'text/chapter2.xhtml#p2')])
+    return b.write(path)
+
+
 FIXTURES = {
+    'fic_titlepage': build_fic_titlepage,
     'fic_links': build_fic_links,
     'fic_simple': build_fic_simple,
     'fic_dupids': build_fic_dupids,

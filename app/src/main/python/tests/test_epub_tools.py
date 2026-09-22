@@ -714,6 +714,45 @@ def test_merge_resource_collision_fn(ctx):
             'imported docs must use their own copies, got %r' % image_targets
 
 
+def test_merge_titlepage_cover_reference_fn(ctx):
+    """A source titlepage referencing its own cover must stay resolvable after
+    import, and the merged book must still advertise exactly one cover.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_epub3'])       # base, ships its own cover
+    second = staging_copy(paths['fic_titlepage'])  # source with a titlepage cover
+    out = os.path.join(os.path.dirname(first), 'titlepage.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out)
+    assert result['ok'], result
+    # would fail if the imported titlepage's <img src> dangled
+    assert_sane(out)
+
+    merged = zip_bytes(out)
+    titlepage = 'merged/1/OEBPS/titlepage.xhtml'
+    assert titlepage in merged, sorted(n for n in merged if n.startswith('merged/'))
+    assert 'merged/1/OEBPS/cover.png' in merged, \
+        'the source cover must be imported, not skipped'
+
+    with c_mod.EpubContainer(out) as c:
+        root = c.parsed(titlepage)
+        sources = [e.get('src') for e in root.iter() if e.get('src')]
+        assert sources, 'the titlepage should still reference its cover'
+        for src in sources:
+            target = c.href_to_name(src, titlepage)
+            assert target in merged, '%s -> %s is dangling' % (src, target)
+            assert target.startswith('merged/1/'), \
+                'the titlepage must point at its own imported copy, got %r' % target
+        # the imported cover must not also claim cover-image, or readers see two
+        covers = [n for n in c.mime_map if 'cover-image' in c.properties_of(n)]
+        assert len(covers) == 1, 'expected exactly one cover-image, got %r' % covers
+        assert covers[0] == 'OEBPS/images/cover.png', \
+            "the base book's cover must win, got %r" % covers
+
+
 def test_merge_metadata_and_output_fn(ctx):
     """Metadata overrides, the default output path, and input validation."""
     c_mod = require(ctx, 'epub_container')
@@ -775,6 +814,7 @@ def run_tests():
         # --- epub_merge (library-level merge) ------------------------------
         ('merge_plan_import', test_merge_plan_import_fn),
         ('merge_two_books', test_merge_two_books_fn),
+        ('merge_titlepage_cover_reference', test_merge_titlepage_cover_reference_fn),
         ('merge_resource_collision', test_merge_resource_collision_fn),
         ('merge_metadata_and_output', test_merge_metadata_and_output_fn),
     ]

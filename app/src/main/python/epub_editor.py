@@ -21,6 +21,8 @@ import zipfile
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
+import epub_xml
+
 # Namespace prefixes used in OPF files
 DC_NS = "http://purl.org/dc/elements/1.1/"
 OPF_NS = "http://www.idpf.org/2007/opf"
@@ -1125,7 +1127,11 @@ def _apply_cover_to_opf(root, opf_name, image_data, image_mime):
 
 def _serialize_opf(root):
     """Serialize the OPF XML root to bytes with pretty-printing."""
-    opf_bytes = ET.tostring(root, encoding="utf-8")
+    # Routed through epub_xml.serialize so the process-global namespace registry
+    # is set for OPF at this exact moment: another module may have registered the
+    # empty prefix for XHTML, which would otherwise make this emit ns0: prefixes.
+    # xml_declaration stays False because minidom adds its own below.
+    opf_bytes = epub_xml.serialize(root, epub_xml.OPF, xml_declaration=False)
     try:
         dom = minidom.parseString(opf_bytes)
         opf_str = dom.toprettyxml(indent="  ", encoding="utf-8")

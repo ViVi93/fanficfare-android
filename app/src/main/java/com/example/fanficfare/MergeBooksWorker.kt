@@ -14,8 +14,9 @@ import java.io.File
  *
  * The Python side opens every source read-only and writes the merged book beside
  * the first source, so nothing is lost if the job is killed. On success the new
- * file is registered in the library here (rather than by the calling screen) so
- * the book still appears even if the user navigates away mid-merge.
+ * row is upserted into the library here rather than by the calling screen, so the
+ * book still appears even if the user navigates away mid-merge. Only a single row
+ * is ever written -- see registerMergedBook for why that constraint matters.
  */
 class MergeBooksWorker(appContext: Context, params: WorkerParameters) :
     CoroutineWorker(appContext, params) {
@@ -54,11 +55,16 @@ class MergeBooksWorker(appContext: Context, params: WorkerParameters) :
                 )
             }
             val mergedPath = result.optString("output_path", "")
-            registerMergedBook(mergedPath, cover)
+            val registered = registerMergedBook(mergedPath, cover)
             Result.success(
                 workDataOf(
                     KEY_OUTPUT to mergedPath,
-                    KEY_MESSAGE to "Merged ${paths.size} books into one"
+                    KEY_MESSAGE to if (registered) {
+                        "Merged ${paths.size} books into one"
+                    } else {
+                        // The file is on disk; only the library entry failed.
+                        "Merged into one book, but it could not be added to the library"
+                    }
                 )
             )
         } catch (e: Exception) {
@@ -72,10 +78,10 @@ class MergeBooksWorker(appContext: Context, params: WorkerParameters) :
      * Metadata is read back from the file itself; the cover is inherited from the
      * first source, because the merged book keeps that source's cover.
      */
-    private suspend fun registerMergedBook(path: String, cover: String) {
-        if (path.isBlank()) return
+    private suspend fun registerMergedBook(path: String, cover: String): Boolean {
+        if (path.isBlank()) return false
         val file = File(path)
-        if (!file.exists()) return
+        if (!file.exists()) return false
 
         val meta = try {
             JSONObject(PythonBridge(applicationContext).epubMetadataJson(path))
@@ -92,8 +98,16 @@ class MergeBooksWorker(appContext: Context, params: WorkerParameters) :
             url = meta.optString("url", ""),
             chapters = meta.optInt("chapters", 0)
         )
-        val repository = BookRepository(applicationContext)
-        repository.addOrUpdate(book)
-        repository.saveLibrary()
+        // Only ever upsert this one row. A worker's BookRepository is a fresh
+        // instance whose in-memory list is empty, so addOrUpdate() would throw
+        // (LiveData.setValue off the main thread) and saveLibrary() would be far
+        // worse: it clears the table and re-inserts that empty list, wiping the
+        // whole library.
+        return try {
+            BookRepository(applicationContext).upsertBook(book)
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 }

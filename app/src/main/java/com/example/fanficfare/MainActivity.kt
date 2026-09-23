@@ -341,20 +341,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun enterSelectionMode() {
-        bookAdapter.enterSelectionMode(viewModel.getBooksSnapshot().firstOrNull() ?: return)
+        // Enter with nothing selected: the user chooses what to act on.
+        bookAdapter.enterSelectionMode()
         updateSelectionUi()
         swapMenu(true)
     }
 
     private fun updateSelectionUi() {
         val count = bookAdapter.getSelectedBooks().size
-        if (count == 0 || !bookAdapter.isSelectionMode()) {
+        if (!bookAdapter.isSelectionMode()) {
             clearSelectionMode()
             return
         }
         statusContainer?.visibility = android.view.View.VISIBLE
         statusProgress?.visibility = android.view.View.GONE
-        statusText?.text = "$count selected"
+        statusText?.text = if (count == 0) "Select books" else "$count selected"
     }
 
     private fun clearSelectionMode() {

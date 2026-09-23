@@ -65,6 +65,11 @@ class MergeBooksActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Same window setup as the other activities, so content starts below the
+        // status bar rather than underneath it.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
         setContentView(R.layout.activity_merge_books)
         supportActionBar?.title = getString(R.string.merge_title)
 
@@ -264,13 +269,12 @@ class MergeBooksActivity : AppCompatActivity() {
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val source = sources[position]
-            holder.index.text = getString(
-                if (position == 0) R.string.merge_index_base else R.string.merge_index_plain,
-                position + 1
-            )
+            // Just the number: "1 · base" was too wide for this column and wrapped.
+            holder.index.text = getString(R.string.merge_index_plain, position + 1)
             holder.title.text = source.title
             holder.meta.text = getString(
-                R.string.merge_row_meta, source.chapters, source.tocEntries
+                if (position == 0) R.string.merge_row_meta_base else R.string.merge_row_meta,
+                source.chapters, source.tocEntries
             )
             val canMoveUp = position > 0
             val canMoveDown = position < sources.size - 1

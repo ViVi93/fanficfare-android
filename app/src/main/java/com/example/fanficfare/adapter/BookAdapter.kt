@@ -142,6 +142,13 @@ class BookAdapter(
         notifyDataSetChanged()
     }
 
+    /** Enter selection mode with nothing selected, so the user picks the books. */
+    fun enterSelectionMode() {
+        selectionMode = true
+        selectedIds.clear()
+        notifyDataSetChanged()
+    }
+
     fun toggleSelection(book: BookItem) {
         if (selectedIds.contains(book.uriString)) {
             selectedIds.remove(book.uriString)

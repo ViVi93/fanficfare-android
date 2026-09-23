@@ -45,6 +45,7 @@
     <string name="merge_preview_failed">Could not read the selected books</string>
     <string name="merge_summary">%1$d chapters from %2$d books · about %3$d MB</string>
     <string name="merge_row_meta">%1$d chapters · %2$d contents entries</string>
+    <string name="merge_row_meta_base">%1$d chapters · %2$d contents entries · base</string>
     <string name="merge_index_base">%1$d · base</string>
     <string name="merge_index_plain">%1$d</string>
     <string name="merge_warn_first_no_toc">The first book has no table of contents, so the merged book will not get one.</string>

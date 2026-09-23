@@ -217,6 +217,17 @@ class BookRepository(private val context: Context) {
         return true
     }
 
+    /**
+     * Insert or update a single book row, leaving the in-memory list alone.
+     *
+     * Safe to call from a background worker that owns its own repository instance:
+     * unlike [addOrUpdate] it never assigns the LiveData (main thread only), and
+     * unlike [saveLibrary] it never clears the table.
+     */
+    suspend fun upsertBook(book: BookItem) {
+        upsertBookEntity(book)
+    }
+
     suspend fun saveLibrary(): Boolean {
         val books = _books.value ?: return false
         withContext(Dispatchers.IO) {

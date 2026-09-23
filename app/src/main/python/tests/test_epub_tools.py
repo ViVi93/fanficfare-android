@@ -1215,15 +1215,17 @@ def test_toc_style_cleanup_fn(ctx):
                       'merged/1/OEBPS/text/ch09.xhtml', 'c1')],
     }]
     sections = m_mod.prepare_groups(reported, 'sections')[0]
-    # the chapter is kept even though its label repeats the section's, because it
-    # is the only content that section has -- losing it would empty the section,
-    # which is what a merged one-chapter book looked like on device
-    assert sections['children'] == [
-        ('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp'),
-        ('Heart of the Mountain Ch. 09',
-         'merged/1/OEBPS/text/ch09.xhtml', 'c1')], sections['children']
+    # the title page is promoted into the section, so the heading line goes and
+    # the section carries the book's name on its opening page
+    assert sections['label'] == 'Heart of the Mountain Ch. 09 — Title Page', sections
     assert sections['target'] == ('merged/1/OEBPS/titlepage.xhtml', 'tp'), \
         sections['target']
+    # the chapter is kept even though its label repeats the book's name, because
+    # it is the only content that section has -- losing it would empty the section,
+    # which is what a merged one-chapter book looked like on device
+    assert sections['children'] == [
+        ('Heart of the Mountain Ch. 09',
+         'merged/1/OEBPS/text/ch09.xhtml', 'c1')], sections['children']
 
     flat = m_mod.prepare_groups(reported, 'flat')[0]
     # flat mode has no section header to carry the book's name, so the name is
@@ -1234,15 +1236,15 @@ def test_toc_style_cleanup_fn(ctx):
         ('Heart of the Mountain Ch. 09',
          'merged/1/OEBPS/text/ch09.xhtml', 'c1')], flat['children']
 
-    # an anthology keeps its first chapter's name, and its title page as well
+    # an anthology's book is named on its title page, which becomes the section
     anthology = m_mod.prepare_groups([{
         'label': 'Dune',
         'target': ('merged/1/OEBPS/titlepage.xhtml', 'tp'),
         'children': [('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp'),
                      ('Chapter 1', 'merged/1/OEBPS/c1.xhtml', 'c1')],
     }], 'sections')[0]
+    assert anthology['label'] == 'Dune — Title Page', anthology
     assert anthology['children'] == [
-        ('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp'),
         ('Chapter 1', 'merged/1/OEBPS/c1.xhtml', 'c1')], anthology['children']
     assert anthology['target'] == ('merged/1/OEBPS/titlepage.xhtml', 'tp'), \
         anthology['target']
@@ -1330,10 +1332,10 @@ def test_merge_sections_no_duplicate_labels_fn(ctx):
                 assert label_of(child).lower() != parent_label.lower(), \
                     'entry %r repeats its section label' % parent_label
 
-        # a sectioned merge keeps each source's title page: that page is where
-        # the book's own details (author, dates, tags) are shown
+        # a sectioned merge keeps each source's title page: it *is* the section,
+        # carrying the book's name and that book's own details (dates, tags)
         all_labels = [l for l, _n, _f in c.toc_entries()]
-        assert 'Titlepage' in all_labels, all_labels
+        assert 'Titlepage Fic' in all_labels, all_labels
 
 
 def test_merge_output_naming_fn(ctx):
@@ -1521,13 +1523,13 @@ def test_merge_renumber_chapters_fn(ctx):
     with c_mod.EpubContainer(out) as c:
         labels = [l for l, _n, _f in c.toc_entries()]
         # "Ch. 00" carries nothing but numbering, so renumbering replaces it with
-        # its own sequence; a chapter with a real title keeps the title
-        assert labels == ['Collected', 'Title Page', 'Chapter 1', 'Chapter 2',
-                          'Chapter 3', 'Heart of the Mountain', 'Title Page',
+        # its own sequence; a chapter with a real title keeps the title. Each
+        # book's title page is the section label, and is not numbered.
+        assert labels == ['Collected — Title Page', 'Chapter 1', 'Chapter 2',
+                          'Chapter 3', 'Heart of the Mountain — Title Page',
                           'Chapter 4', 'Chapter 5', 'Chapter 6'], labels
-        # front matter and section headers are left out of the numbering
-        assert labels.count('Title Page') == 2, labels
-        assert 'Collected' in labels and 'Heart of the Mountain' in labels, labels
+        assert 'Collected — Title Page' in labels, labels
+        assert 'Heart of the Mountain — Title Page' in labels, labels
         numbered = [l for l in labels if l.startswith('Chapter ')]
         assert [int(l.split()[1]) for l in numbered] == [1, 2, 3, 4, 5, 6], labels
 
@@ -1574,12 +1576,13 @@ def test_merge_keeps_title_named_chapter_fn(ctx):
 
         sections = {label_of(n): n for n in navmap
                     if c_mod.localname(n.tag) == 'navPoint'}
-        assert 'The Pilots Conjugal Christmas' in sections, list(sections)
-        children = [label_of(ch) for ch in sections['The Pilots Conjugal Christmas']
+        # the section is the book's title page, named with the book
+        section = 'The Pilots Conjugal Christmas — Title Page'
+        assert section in sections, list(sections)
+        children = [label_of(ch) for ch in sections[section]
                     if c_mod.localname(ch.tag) == 'navPoint']
-        assert 'The Pilots Conjugal Christmas' in children, \
+        assert children == ['The Pilots Conjugal Christmas'], \
             "the book's only chapter was dropped: %r" % (children,)
-        assert len(children) == 2, children
 
 
 def test_merge_flat_names_book_on_title_page_fn(ctx):

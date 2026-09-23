@@ -386,25 +386,33 @@ def prepare_groups(groups, style='sections'):
     prepared = []
     for group in groups:
         source = (group.get('label') or '').strip()
-        children = []
-        for label, zipname, fragment in group.get('children') or []:
-            if _is_front_matter(zipname, label) and style == 'flat' and source:
-                if source.lower() in (label or '').lower():
-                    label = source
-                else:
-                    label = '%s — %s' % (source, label)
-            children.append((label, zipname, fragment))
+        children = list(group.get('children') or [])
+        front = [c for c in children if _is_front_matter(c[1], c[0])]
 
-        if style == 'sections':
-            # Front matter does not count as content here: a title page is not a
-            # chapter, so it must not stop us from noticing the section has none
-            # left. Drop a chapter that repeats its section's name only while the
-            # section still has other content to show -- never the last chapter,
-            # or a one-chapter book named after its chapter disappears.
+        if style == 'flat':
+            # Annotate the title page rather than dropping it: flat mode has no
+            # heading, so otherwise the book's name leaves the contents entirely.
+            if source:
+                children = [tuple([front_matter_label(source, c[0])] + list(c[1:]))
+                            if _is_front_matter(c[1], c[0]) else c for c in children]
+        else:
+            # Promote the book's title page to be the section itself: the section
+            # keeps the book's name and its opening page, and the contents lose the
+            # separate heading line. The section already points at that page.
+            #
+            # Front matter is not content, so it must not stop us noticing that the
+            # section has no chapters left. A chapter repeating its section's name
+            # is dropped only while other content remains -- never the last one, or
+            # a one-chapter book named after its chapter would lose it.
             content = [c for c in children if not _is_front_matter(c[1], c[0])]
             repeats = [c for c in content if _same_label(c[0], source)]
             if repeats and len(content) > len(repeats):
-                children = [c for c in children if c not in repeats]
+                content = [c for c in content if c not in repeats]
+            children = content
+            if front:
+                group = dict(group)
+                group['label'] = front_matter_label(source, front[0][0])
+                group['target'] = (front[0][1], front[0][2])
 
         item = dict(group)
         item['children'] = children
@@ -486,6 +494,24 @@ def _nav_item_href(elem):
         if localname(child.tag) == 'a':
             return child.get('href') or ''
     return ''
+
+
+def front_matter_label(source, label):
+    """The label for a book's front matter, carrying the book's name.
+
+    A title page is where the book's own details live, so the book's name is
+    attached to it: "The Pilot -- Title Page". Names that are already part of the
+    label (or the other way round) are not repeated.
+    """
+    source = (source or '').strip()
+    label = (label or '').strip()
+    if not source:
+        return label
+    if not label or label.lower() in source.lower():
+        return source
+    if source.lower() in label.lower():
+        return label
+    return '%s — %s' % (source, label)
 
 
 def _leaf_entries_ncx(base, toc_name):
@@ -705,8 +731,18 @@ def _nest_ncx(base, toc_name, base_label, base_target, groups, style='sections')
                     _unique_id(existing_ids, 'point')))
                 added += 1
     else:
-        # The section header repeats this child's label and target, so drop the
-        # child -- otherwise the reader prints the same line twice.
+        # Promote the base book's own title page to be the section, as imported
+        # sources are: it carries the book's name, and the contents lose the
+        # separate heading line. The section already points at that page.
+        if existing_children and _is_front_matter(
+                base.href_to_name(_navpoint_src(existing_children[0]), toc_name),
+                _navpoint_label(existing_children[0])):
+            first = existing_children.pop(0)
+            navmap.remove(first)
+            base_label = front_matter_label(base_label, _navpoint_label(first))
+
+        # A child repeating the section's label and target would print the same
+        # line twice.
         if existing_children and _same_label(_navpoint_label(existing_children[0]),
                                              base_label):
             navmap.remove(existing_children.pop(0))
@@ -767,7 +803,15 @@ def _nest_nav(base, toc_name, base_label, base_target, groups, style='sections')
                                          _toc_href(base, toc_name, (zipname, fragment))))
                 added += 1
     else:
-        # Same reasoning as the NCX: drop the child that repeats the section.
+        # Same reasoning as the NCX: the base book's title page becomes the
+        # section, and a child repeating the section is dropped.
+        if existing_items and _is_front_matter(
+                base.href_to_name(_nav_item_href(existing_items[0]), toc_name),
+                _nav_item_label(existing_items[0])):
+            first = existing_items.pop(0)
+            ol.remove(first)
+            base_label = front_matter_label(base_label, _nav_item_label(first))
+
         if existing_items and _same_label(_nav_item_label(existing_items[0]), base_label):
             ol.remove(existing_items.pop(0))
 

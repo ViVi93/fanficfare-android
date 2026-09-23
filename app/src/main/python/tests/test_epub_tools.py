@@ -1446,6 +1446,13 @@ def test_label_prefix_and_numbering_fn(ctx):
     assert m_mod.common_label_prefix(['Dune', 'Neuromancer']) == ''
     assert m_mod.common_label_prefix(['Only One']) == ''
 
+    # FanFicFare names its title page title_page.xhtml; the book-name annotation
+    # in flat mode depends on recognising that naming, and so does skipping it
+    for name in ('merged/1/OEBPS/title_page.xhtml', 'OEBPS/title_page.xhtml',
+                 'OEBPS/titlepage.xhtml', 'merged/1/OEBPS/Title-Page.xhtml'):
+        assert m_mod._is_front_matter(name, 'Title Page'), name
+    assert not m_mod._is_front_matter('OEBPS/text/chapter1.xhtml', 'Chapter 1')
+
     # existing numbering is removed so it can be replaced...
     assert m_mod.strip_chapter_numbering('Chapter 1: The Campsite') == 'The Campsite'
     assert m_mod.strip_chapter_numbering('1. Prologue: Awakening') == 'Prologue: Awakening'

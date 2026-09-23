@@ -52,6 +52,8 @@
     <string name="merge_output_name">Will be saved as %1$s</string>
     <string name="merge_toc_sections">One section per book</string>
     <string name="merge_toc_flat">Single chapter list</string>
+    <string name="merge_toc_hint_sections">Each book gets its own heading; its chapters sit underneath.</string>
+    <string name="merge_toc_hint_flat">One straight list. The name of each book is put on its title page instead of a heading.</string>
     <string name="merge_labels_label">Chapter names</string>
     <string name="merge_shorten_labels">Shorten repeated names</string>
     <string name="merge_renumber_chapters">Renumber chapters in order</string>

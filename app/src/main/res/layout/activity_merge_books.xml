@@ -113,6 +113,12 @@
     </RadioGroup>
 
     <TextView
+        android:id="@+id/mergeTocHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+    <TextView
         android:id="@+id/mergeLabelsLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

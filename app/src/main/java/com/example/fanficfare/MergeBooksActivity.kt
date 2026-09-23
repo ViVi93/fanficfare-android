@@ -62,6 +62,7 @@ class MergeBooksActivity : AppCompatActivity() {
     private lateinit var mergeButton: Button
     private lateinit var tocStyleGroup: android.widget.RadioGroup
     private lateinit var outputNameView: TextView
+    private lateinit var tocHintView: TextView
     private lateinit var shortenLabelsBox: android.widget.CheckBox
     private lateinit var renumberChaptersBox: android.widget.CheckBox
 
@@ -99,7 +100,12 @@ class MergeBooksActivity : AppCompatActivity() {
         mergeButton.setOnClickListener { startMerge() }
 
         tocStyleGroup = findViewById(R.id.mergeTocStyle)
-        tocStyleGroup.setOnCheckedChangeListener { _, _ -> tocStyleChosen = true }
+        tocHintView = findViewById(R.id.mergeTocHint)
+        tocStyleGroup.setOnCheckedChangeListener { _, _ ->
+            tocStyleChosen = true
+            updateTocHint()
+        }
+        updateTocHint()
         shortenLabelsBox = findViewById(R.id.mergeShortenLabels)
         renumberChaptersBox = findViewById(R.id.mergeRenumberChapters)
         shortenLabelsBox.setOnCheckedChangeListener { _, _ -> labelsChosen = true }
@@ -211,6 +217,14 @@ class MergeBooksActivity : AppCompatActivity() {
     private fun applySuggestedLabels(shorten: Boolean) {
         if (labelsChosen || !shorten) return
         shortenLabelsBox.isChecked = true
+    }
+
+    /** Say what the chosen contents shape actually produces. */
+    private fun updateTocHint() {
+        tocHintView.text = getString(
+            if (selectedTocStyle() == "flat") R.string.merge_toc_hint_flat
+            else R.string.merge_toc_hint_sections
+        )
     }
 
     /** 'flat' or 'sections', from whichever radio button is ticked. */

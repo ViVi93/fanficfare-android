@@ -132,13 +132,16 @@ class BookRepository(private val context: Context) {
 
     fun getBooksSnapshot(): List<BookItem> = (_books.value ?: emptyList()).toList()
 
+    /** Index of the in-memory entry for this book, path first (see findByExisting). */
     fun findByIdentity(book: BookItem): Int {
         val list = _books.value ?: return -1
-        val byUrl = list.indexOfFirst { it.url.isNotBlank() && it.url == book.url }
-        if (byUrl >= 0) return byUrl
         val normalized = book.uriString.trim()
         if (normalized.isNotBlank()) {
-            return list.indexOfFirst { it.uriString.trim() == normalized }
+            val byPath = list.indexOfFirst { it.uriString.trim() == normalized }
+            if (byPath >= 0) return byPath
+        }
+        if (book.url.isNotBlank()) {
+            return list.indexOfFirst { it.url.isNotBlank() && it.url == book.url }
         }
         return -1
     }
@@ -248,15 +251,23 @@ class BookRepository(private val context: Context) {
         }
     }
 
+    /**
+     * The row that already represents this book, if any.
+     *
+     * The path is checked before the URL: a file is identified by where it is, and
+     * two different books can legitimately share a source URL (a merged book and
+     * the work it was merged from). Matching URL-first meant registering a merge
+     * found the base book's row and updated it, so the merged book never appeared.
+     */
     private suspend fun findByExisting(book: BookItem): BookEntity? {
         return withContext(Dispatchers.IO) {
-            val normalizedUrl = book.url.trim().ifBlank { null }
             val normalizedPath = book.uriString.trim()
-            if (!normalizedUrl.isNullOrBlank()) {
-                bookDao.findByUrl(normalizedUrl)?.let { return@withContext it }
-            }
             if (normalizedPath.isNotBlank()) {
                 bookDao.findByFilePath(normalizedPath)?.let { return@withContext it }
+            }
+            val normalizedUrl = book.url.trim().ifBlank { null }
+            if (!normalizedUrl.isNullOrBlank()) {
+                bookDao.findByUrl(normalizedUrl)?.let { return@withContext it }
             }
             null
         }

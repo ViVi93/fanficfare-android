@@ -34,7 +34,7 @@ import re
 import xml.etree.ElementTree as ET
 
 from epub_container import (NCX_TYPE, OEB_DOCS, ContainerError, EpubContainer)
-from epub_xml import DC_NS, NCX_NS, XHTML_NS, localname
+from epub_xml import DC_NS, NCX_NS, XHTML_NS, localname, parent_map
 
 __all__ = ['merge_books', 'plan_import', 'import_source', 'ImportPlan',
            'nest_toc', 'ImportPlanError']
@@ -235,12 +235,44 @@ def _set_dc_element(root, tag, value):
     return target
 
 
+def _clear_source_url(root):
+    """Drop the story URL the base contributed to the merged metadata.
+
+    A merged book is a new local work, not the base's story. FanFicFare writes the
+    story URL as ``<dc:source>`` and a URL-scheme ``<dc:identifier>``, and leaving
+    them in made the merged book indistinguishable from its base: the library
+    matches a book by URL before its path, so registering the merge found the
+    base's existing row, updated it to point at the merged file, and the merged
+    book never appeared as an entry of its own.
+    """
+    parents = parent_map(root)
+    removed = 0
+    for elem in list(root.iter()):
+        if not isinstance(elem.tag, str):
+            continue
+        tag = localname(elem.tag)
+        text = (elem.text or '').strip()
+        drop = tag == 'source'
+        if tag == 'identifier':
+            scheme = ''
+            for key, value in elem.attrib.items():
+                if localname(key) == 'scheme':
+                    scheme = value
+            drop = (scheme.upper() == 'URL'
+                    or text.startswith('URL:')
+                    or text.startswith('http'))
+        if drop:
+            parent = parents.get(elem)
+            if parent is not None:
+                parent.remove(elem)
+                removed += 1
+    return removed > 0
+
+
 def apply_metadata(base, title=None, author=None):
-    """Override the merged book's title/author. Base metadata wins otherwise."""
-    if not title and not author:
-        return False
+    """Make the merged book its own: new title/author, and no inherited URL."""
     root = base.parsed(base.opf_name)
-    changed = False
+    changed = _clear_source_url(root)
     if title:
         _set_dc_element(root, 'title', title)
         changed = True
@@ -339,36 +371,28 @@ def _nav_item_label(elem):
 def prepare_groups(groups, style='sections'):
     """Clean imported sources' TOC entries before they are nested.
 
-    Drops the noise visible in a merged book's contents: imported front matter
-    (one title page per source, mid-book), and -- only in 'sections' mode -- a
-    child whose label is identical to its section's, which the reader would print
-    twice. Matching on the label rather than the target keeps differently named
-    entries that share a page (the section header and the first chapter), so no
-    chapter name is lost. In 'flat' mode there is no section header to duplicate.
+    In 'flat' mode the sources' front matter is dropped: one chapter list should
+    not carry a title page per source. In 'sections' mode it is kept, because a
+    source's title page is where that book's own details live (title, author,
+    dates, tags) -- which is the reason to choose a sectioned merge at all.
 
-    A section whose target was front matter is repointed at its first remaining
-    entry, so the header opens real content rather than a dropped title page.
+    An entry whose label repeats its own section's is dropped in sections mode, or
+    the reader would print the same line twice. Matching on the label rather than
+    the target keeps differently named entries that share a page, so no chapter
+    name is lost.
     """
     prepared = []
     for group in groups:
-        target = tuple(group.get('target') or (None, ''))
-        raw = list(group.get('children') or [])
-        # Content first, so a section can be repointed off its front matter even
-        # when every one of its remaining entries is dropped below.
-        content = [c for c in raw if not _is_front_matter(c[1], c[0])]
-
         children = []
-        for label, zipname, fragment in content:
+        for label, zipname, fragment in group.get('children') or []:
+            if style == 'flat' and _is_front_matter(zipname, label):
+                continue
             if style == 'sections' and _same_label(label, group.get('label')):
                 continue
             children.append((label, zipname, fragment))
 
-        if style == 'sections' and _is_front_matter(target[0], None) and content:
-            target = (content[0][1], content[0][2])
-
         item = dict(group)
         item['children'] = children
-        item['target'] = target
         prepared.append(item)
     return prepared
 

@@ -1215,26 +1215,30 @@ def test_toc_style_cleanup_fn(ctx):
                       'merged/1/OEBPS/text/ch09.xhtml', 'c1')],
     }]
     sections = m_mod.prepare_groups(reported, 'sections')[0]
-    # the duplicate label is gone, and the section no longer opens a title page
-    assert sections['children'] == [], sections['children']
-    assert sections['target'] == ('merged/1/OEBPS/text/ch09.xhtml', 'c1'), \
-        'section should open the chapter, not the title page: %r' % (sections['target'],)
+    # the duplicate label is gone, but the title page carrying this book's own
+    # details stays, and the section still opens there
+    assert sections['children'] == [
+        ('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp')], sections['children']
+    assert sections['target'] == ('merged/1/OEBPS/titlepage.xhtml', 'tp'), \
+        sections['target']
 
     flat = m_mod.prepare_groups(reported, 'flat')[0]
     # no section header exists in flat mode, so the chapter must survive
     assert flat['children'] == [('Heart of the Mountain Ch. 09',
                                 'merged/1/OEBPS/text/ch09.xhtml', 'c1')], flat['children']
 
-    # an anthology keeps its first chapter's name, but not its title page
+    # an anthology keeps its first chapter's name, and its title page as well
     anthology = m_mod.prepare_groups([{
         'label': 'Dune',
         'target': ('merged/1/OEBPS/titlepage.xhtml', 'tp'),
         'children': [('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp'),
                      ('Chapter 1', 'merged/1/OEBPS/c1.xhtml', 'c1')],
     }], 'sections')[0]
-    assert anthology['children'] == [('Chapter 1', 'merged/1/OEBPS/c1.xhtml', 'c1')], \
-        anthology['children']
-    assert anthology['target'] == ('merged/1/OEBPS/c1.xhtml', 'c1'), anthology['target']
+    assert anthology['children'] == [
+        ('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp'),
+        ('Chapter 1', 'merged/1/OEBPS/c1.xhtml', 'c1')], anthology['children']
+    assert anthology['target'] == ('merged/1/OEBPS/titlepage.xhtml', 'tp'), \
+        anthology['target']
 
     assert m_mod.suggest_toc_style(
         ['Heart of the Mountain', 'Heart of the Mountain Ch. 09',
@@ -1319,9 +1323,10 @@ def test_merge_sections_no_duplicate_labels_fn(ctx):
                 assert label_of(child).lower() != parent_label.lower(), \
                     'entry %r repeats its section label' % parent_label
 
-        # the imported source's title page is not a TOC entry (the base keeps its own)
+        # a sectioned merge keeps each source's title page: that page is where
+        # the book's own details (author, dates, tags) are shown
         all_labels = [l for l, _n, _f in c.toc_entries()]
-        assert 'Titlepage' not in all_labels, all_labels
+        assert 'Titlepage' in all_labels, all_labels
 
 
 def test_merge_output_naming_fn(ctx):
@@ -1366,6 +1371,64 @@ def test_merge_output_naming_fn(ctx):
     assert_sane(result['output_path'])
 
 
+def with_source_url(path, url='http://example.com/story/1'):
+    """A copy of an EPUB whose OPF carries a story URL, as FanFicFare writes it.
+
+    FanFicFare emits ``<dc:source>storyUrl</dc:source>`` plus a URL-scheme
+    ``dc:identifier`` in every book it produces, so these are the elements a
+    merged book would otherwise inherit from its base.
+    """
+    import shutil
+    import tempfile
+
+    dest_dir = tempfile.mkdtemp(prefix='ff_url_')
+    dest = os.path.join(dest_dir, os.path.basename(path))
+    with zipfile.ZipFile(path) as src, zipfile.ZipFile(dest, 'w') as out:
+        for info in src.infolist():
+            data = src.read(info.filename)
+            if info.filename.endswith('.opf'):
+                text = data.decode('utf-8')
+                injected = ('<dc:source>%s</dc:source>'
+                            '<dc:identifier opf:scheme="URL">%s</dc:identifier>' % (url, url))
+                assert '</metadata>' in text, 'fixture OPF has no metadata block'
+                text = text.replace('</metadata>', injected + '</metadata>', 1)
+                data = text.encode('utf-8')
+            out.writestr(info, data)
+    return dest
+
+
+def test_merge_drops_inherited_source_url_fn(ctx):
+    """A merged book must not inherit the base's story URL.
+
+    The library matches an existing book by URL before its path, so a merged book
+    carrying the base's URL was found to be "already in the library": the base's
+    row was updated to point at the merged file and the merged book never appeared
+    as an entry of its own.
+    """
+    m_mod = require(ctx, 'epub_merge')
+    bridge = require(ctx, 'fanficfare_bridge')
+    paths = fixture_paths()
+
+    base = with_source_url(staging_copy(paths['fic_simple']))
+    other = staging_copy(paths['fic_nested'])
+
+    before = json.loads(bridge.epub_metadata_json(base))
+    assert before['url'] == 'http://example.com/story/1', before
+
+    result = m_mod.merge_books([base, other], title='Merged Book')
+    assert result['ok'], result
+
+    after = json.loads(bridge.epub_metadata_json(result['output_path']))
+    assert after['url'] == '', \
+        'merged book inherited the base URL %r' % (after['url'],)
+    assert after['title'] == 'Merged Book', after
+    assert_sane(result['output_path'])
+
+    # the sources must keep their own URLs: only the merged book drops it
+    assert json.loads(bridge.epub_metadata_json(base))['url'] == \
+        'http://example.com/story/1'
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
@@ -1401,6 +1464,7 @@ def run_tests():
         ('merge_flat_toc', test_merge_flat_toc_fn),
         ('merge_sections_no_duplicate_labels', test_merge_sections_no_duplicate_labels_fn),
         ('merge_output_naming', test_merge_output_naming_fn),
+        ('merge_drops_inherited_source_url', test_merge_drops_inherited_source_url_fn),
     ]
 
     passed = 0

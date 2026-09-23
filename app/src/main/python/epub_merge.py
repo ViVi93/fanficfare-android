@@ -34,7 +34,7 @@ import re
 import xml.etree.ElementTree as ET
 
 from epub_container import (NCX_TYPE, OEB_DOCS, ContainerError, EpubContainer)
-from epub_xml import DC_NS, NCX_NS, XHTML_NS, localname, parent_map
+from epub_xml import DC_NS, NCX_NS, OPF_NS, XHTML_NS, localname, parent_map
 
 __all__ = ['merge_books', 'plan_import', 'import_source', 'ImportPlan',
            'nest_toc', 'ImportPlanError']
@@ -371,25 +371,40 @@ def _nav_item_label(elem):
 def prepare_groups(groups, style='sections'):
     """Clean imported sources' TOC entries before they are nested.
 
-    In 'flat' mode the sources' front matter is dropped: one chapter list should
-    not carry a title page per source. In 'sections' mode it is kept, because a
-    source's title page is where that book's own details live (title, author,
-    dates, tags) -- which is the reason to choose a sectioned merge at all.
+    'flat' mode has no section headers, so a book's name would vanish from the
+    contents. Rather than dropping that source's front matter, its title page is
+    kept and labelled with the book's name: that page is where the book shows its
+    own details, and one annotated page per book is fewer entries than a section
+    header plus a separate title page.
 
-    An entry whose label repeats its own section's is dropped in sections mode, or
-    the reader would print the same line twice. Matching on the label rather than
-    the target keeps differently named entries that share a page, so no chapter
-    name is lost.
+    'sections' mode keeps the front matter as it is, under a section named after
+    the book. A chapter whose label merely repeats its section's is dropped there,
+    since the reader would print the same line twice -- but never when it is the
+    section's only entry, or a one-chapter book named after that chapter (as
+    FanFicFare writes them) would lose its chapter entirely.
     """
     prepared = []
     for group in groups:
+        source = (group.get('label') or '').strip()
         children = []
         for label, zipname, fragment in group.get('children') or []:
-            if style == 'flat' and _is_front_matter(zipname, label):
-                continue
-            if style == 'sections' and _same_label(label, group.get('label')):
-                continue
+            if _is_front_matter(zipname, label) and style == 'flat' and source:
+                if source.lower() in (label or '').lower():
+                    label = source
+                else:
+                    label = '%s — %s' % (source, label)
             children.append((label, zipname, fragment))
+
+        if style == 'sections':
+            # Front matter does not count as content here: a title page is not a
+            # chapter, so it must not stop us from noticing the section has none
+            # left. Drop a chapter that repeats its section's name only while the
+            # section still has other content to show -- never the last chapter,
+            # or a one-chapter book named after its chapter disappears.
+            content = [c for c in children if not _is_front_matter(c[1], c[0])]
+            repeats = [c for c in content if _same_label(c[0], source)]
+            if repeats and len(content) > len(repeats):
+                children = [c for c in children if c not in repeats]
 
         item = dict(group)
         item['children'] = children
@@ -473,32 +488,100 @@ def _nav_item_href(elem):
     return ''
 
 
-def _leaf_entries(base):
-    """``(label, href)`` for TOC leaves, front matter excluded, both mirrors.
-
-    Leaves only: a section header keeps its own name, and a title page is not a
-    chapter. Only the first mirror is used for label analysis.
-    """
+def _leaf_entries_ncx(base, toc_name):
+    """``(label, href)`` for the NCX's chapter entries, front matter excluded."""
     entries = []
-    for name in base.toc_doc_names():
-        if base.media_type_of(name) != NCX_TYPE:
+    root = base.parsed(toc_name)
+    navmap = next((e for e in root.iter() if localname(e.tag) == 'navMap'), None)
+    if navmap is None:
+        return entries
+    for node in navmap.iter():
+        if localname(node.tag) != 'navPoint':
             continue
-        root = base.parsed(name)
-        navmap = next((e for e in root.iter() if localname(e.tag) == 'navMap'), None)
-        if navmap is None:
+        if [c for c in node if localname(c.tag) == 'navPoint']:
+            continue                        # a section header is not a chapter
+        label = _navpoint_label(node)
+        href = _navpoint_src(node)
+        if _is_front_matter(base.href_to_name(href, toc_name) if href else None, label):
             continue
-        for node in navmap.iter():
-            if localname(node.tag) != 'navPoint':
-                continue
-            if [c for c in node if localname(c.tag) == 'navPoint']:
-                continue
-            label = _navpoint_label(node)
-            href = _navpoint_src(node)
-            if _is_front_matter(base.href_to_name(href, name) if href else None, label):
-                continue
-            entries.append((label, href))
-        break       # one mirror is enough: both carry the same labels
+        entries.append((label, href))
     return entries
+
+
+def _leaf_entries_nav(base, toc_name):
+    """``(label, href)`` for an EPUB3 nav's chapter entries, front matter excluded."""
+    entries = []
+    root = base.parsed(toc_name)
+    nav = next((e for e in root.iter() if localname(e.tag) == 'nav'), None)
+    if nav is None:
+        return entries
+    for item in nav.iter():
+        if localname(item.tag) != 'li':
+            continue
+        if [c for c in item if localname(c.tag) == 'ol']:
+            continue
+        anchor = next((c for c in item.iter() if localname(c.tag) == 'a'), None)
+        if anchor is None:
+            continue
+        label = anchor.text or ''
+        href = anchor.get('href')
+        if _is_front_matter(base.href_to_name(href, toc_name) if href else None, label):
+            continue
+        entries.append((label, href))
+    return entries
+
+
+def _leaf_entries(base):
+    """``(label, href)`` for TOC leaves, front matter excluded.
+
+    The NCX mirror is preferred, with an EPUB3 nav as the fallback, so a book that
+    has only one of the two is still read correctly. A section header is not a leaf
+    and a title page is not a chapter, so neither is counted.
+    """
+    names = list(base.toc_doc_names())
+    for name in names:
+        if base.media_type_of(name) == NCX_TYPE:
+            entries = _leaf_entries_ncx(base, name)
+            if entries:
+                return entries
+    for name in names:
+        if base.media_type_of(name) != NCX_TYPE:
+            entries = _leaf_entries_nav(base, name)
+            if entries:
+                return entries
+    return []
+
+
+def set_chapter_count(base, count=None):
+    """Record the merged book's chapter count in its OPF.
+
+    FanFicFare stores this for the books it writes and the app trusts it, but a
+    merged book either inherits the base book's number or has none, and with none
+    the app falls back to counting TOC entries -- which counts section headers and
+    title pages as chapters. So write the real number: TOC leaves, front matter
+    excluded.
+    """
+    root = base.parsed(base.opf_name)
+    if count is None:
+        count = len(_leaf_entries(base))
+    metadata = None
+    for elem in root.iter():
+        if not isinstance(elem.tag, str):
+            continue
+        if localname(elem.tag) == 'metadata':
+            metadata = elem
+        elif localname(elem.tag) == 'meta':
+            name = elem.get('name') or ''
+            if 'chaptercount' in name.lower():
+                elem.set('content', str(count))
+                base.dirty(base.opf_name)
+                return count
+    if metadata is not None:
+        meta = ET.SubElement(metadata, '{%s}meta' % OPF_NS)
+        meta.set('name', 'chaptercount')
+        meta.set('content', str(count))
+        base.dirty(base.opf_name)
+    return count
 
 
 def label_prefix_for(base):
@@ -958,6 +1041,9 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
         # Labels last, so every chapter is numbered in final reading order.
         polish_labels(base, label_prefix_for(base) if shorten_labels else '',
                       renumber_chapters)
+        # Count what the contents actually holds, so the library shows the real
+        # number instead of the base book's or a count including title pages.
+        chapter_count = set_chapter_count(base)
 
         target = output_path or _non_clobbering(
             default_output_path(paths[base_index], title), paths)
@@ -972,6 +1058,7 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
             'spine_after': len(list(base.spine_iter())),
             'toc_sections': toc_sections,
             'toc_style': toc_style,
+            'chapters': chapter_count,
             'shorten_labels': bool(shorten_labels),
             'renumber_chapters': bool(renumber_chapters),
             'warnings': warnings,

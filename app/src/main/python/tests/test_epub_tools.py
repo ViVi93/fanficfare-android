@@ -1215,17 +1215,24 @@ def test_toc_style_cleanup_fn(ctx):
                       'merged/1/OEBPS/text/ch09.xhtml', 'c1')],
     }]
     sections = m_mod.prepare_groups(reported, 'sections')[0]
-    # the duplicate label is gone, but the title page carrying this book's own
-    # details stays, and the section still opens there
+    # the chapter is kept even though its label repeats the section's, because it
+    # is the only content that section has -- losing it would empty the section,
+    # which is what a merged one-chapter book looked like on device
     assert sections['children'] == [
-        ('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp')], sections['children']
+        ('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp'),
+        ('Heart of the Mountain Ch. 09',
+         'merged/1/OEBPS/text/ch09.xhtml', 'c1')], sections['children']
     assert sections['target'] == ('merged/1/OEBPS/titlepage.xhtml', 'tp'), \
         sections['target']
 
     flat = m_mod.prepare_groups(reported, 'flat')[0]
-    # no section header exists in flat mode, so the chapter must survive
-    assert flat['children'] == [('Heart of the Mountain Ch. 09',
-                                'merged/1/OEBPS/text/ch09.xhtml', 'c1')], flat['children']
+    # flat mode has no section header to carry the book's name, so the name is
+    # attached to that book's title page, and the chapter survives alongside it
+    assert flat['children'] == [
+        ('Heart of the Mountain Ch. 09 — Title Page',
+         'merged/1/OEBPS/titlepage.xhtml', 'tp'),
+        ('Heart of the Mountain Ch. 09',
+         'merged/1/OEBPS/text/ch09.xhtml', 'c1')], flat['children']
 
     # an anthology keeps its first chapter's name, and its title page as well
     anthology = m_mod.prepare_groups([{
@@ -1526,6 +1533,113 @@ def test_merge_renumber_chapters_fn(ctx):
             assert nav_labels == labels, (nav_labels, labels)
 
 
+def test_merge_keeps_title_named_chapter_fn(ctx):
+    """A source whose only chapter is named after the book keeps that chapter.
+
+    On device the section appeared with just a Title Page under it: the chapter's
+    label matched its section's label, so the repeat rule dropped it and left the
+    section with nothing.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_simple'])
+    second = staging_copy(paths['fic_titlechapter'])
+    out = os.path.join(os.path.dirname(first), 'single.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out, title='Collected')
+    assert result['ok'], result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        ncx = [n for n in c.toc_doc_names()
+               if c.media_type_of(n) == 'application/x-dtbncx+xml']
+        assert ncx, 'base should still have an NCX'
+        root = c.parsed(ncx[0])
+        navmap = [e for e in root.iter() if c_mod.localname(e.tag) == 'navMap'][0]
+
+        def label_of(node):
+            for child in node.iter():
+                if c_mod.localname(child.tag) == 'text':
+                    return (child.text or '').strip()
+            return ''
+
+        sections = {label_of(n): n for n in navmap
+                    if c_mod.localname(n.tag) == 'navPoint'}
+        assert 'The Pilots Conjugal Christmas' in sections, list(sections)
+        children = [label_of(ch) for ch in sections['The Pilots Conjugal Christmas']
+                    if c_mod.localname(ch.tag) == 'navPoint']
+        assert 'The Pilots Conjugal Christmas' in children, \
+            "the book's only chapter was dropped: %r" % (children,)
+        assert len(children) == 2, children
+
+
+def test_merge_flat_names_book_on_title_page_fn(ctx):
+    """In flat mode each book's name rides on its own title page.
+
+    A section header would carry that name, but flat mode has no headers, so the
+    name goes on the title page instead -- one annotated entry per book rather
+    than a header plus a title page.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_prefixed'])
+    second = staging_copy(paths['fic_titlechapter'])
+    out = os.path.join(os.path.dirname(first), 'flatnamed.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out, title='Collected',
+                               toc_style='flat')
+    assert result['ok'], result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        labels = [l for l, _n, _f in c.toc_entries()]
+        assert 'The Pilots Conjugal Christmas — Title Page' in labels, labels
+        assert 'The Pilots Conjugal Christmas' in labels, labels
+        assert 'Heart of the Mountain Ch. 00' in labels, labels
+
+        ncx = [n for n in c.toc_doc_names()
+               if c.media_type_of(n) == 'application/x-dtbncx+xml']
+        navmap = [e for e in c.parsed(ncx[0]).iter()
+                  if c_mod.localname(e.tag) == 'navMap'][0]
+        headers = []
+        for node in navmap:
+            if c_mod.localname(node.tag) != 'navPoint':
+                continue
+            if [ch for ch in node if c_mod.localname(ch.tag) == 'navPoint']:
+                headers.append(node)
+        assert headers == [], 'flat mode must have no section headers'
+
+
+def test_merge_records_chapter_count_fn(ctx):
+    """A merged book records how many chapters it really has.
+
+    The app trusts a chapter count in the OPF. A merged book inherits the base
+    book's number, or has none -- and with none the app counts TOC entries, which
+    counts section headers and title pages as chapters too.
+    """
+    m_mod = require(ctx, 'epub_merge')
+    bridge = require(ctx, 'fanficfare_bridge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_simple'])           # 5 chapters
+    second = staging_copy(paths['fic_titlechapter'])    # 1 chapter, named after its book
+    out = os.path.join(os.path.dirname(first), 'counted.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out, title='Collected')
+    assert result['ok'], result
+    # 5 + 1, with both title pages excluded
+    assert result['chapters'] == 6, result
+    assert_sane(out)
+
+    # the app reads this back from the OPF, which is what the library displays
+    meta = json.loads(bridge.epub_metadata_json(out))
+    assert meta['chapters'] == 6, meta
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
@@ -1565,6 +1679,9 @@ def run_tests():
         ('label_prefix_and_numbering', test_label_prefix_and_numbering_fn),
         ('merge_label_shortening', test_merge_label_shortening_fn),
         ('merge_renumber_chapters', test_merge_renumber_chapters_fn),
+        ('merge_keeps_title_named_chapter', test_merge_keeps_title_named_chapter_fn),
+        ('merge_flat_names_book_on_title_page', test_merge_flat_names_book_on_title_page_fn),
+        ('merge_records_chapter_count', test_merge_records_chapter_count_fn),
     ]
 
     passed = 0

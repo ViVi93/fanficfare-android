@@ -328,8 +328,12 @@ def _extract_epub_metadata(epubPath):
                     if elem.tag.endswith("manifest"):
                         manifest = elem
                         break
-                for meta in root.findall(".//{http://purl.org/dc/elements/1.1/}meta") + root.findall(".//{http://www.idpf.org/2007/opf/}meta") + root.findall(".//meta"):
-                    name_attr = meta.get("name", "") or meta.get("{http://purl.org/dc/elements/1.1/}name", "") or meta.get("{http://www.idpf.org/2007/opf/}name", "")
+                # The OPF namespace has no trailing slash: with one, every
+                # <meta> written in the OPF's own namespace was invisible here,
+                # which is why a merged book's chapter count fell through to the
+                # TOC heuristic below (counting section headers and title pages).
+                for meta in root.findall(".//{http://purl.org/dc/elements/1.1/}meta") + root.findall(".//{http://www.idpf.org/2007/opf}meta") + root.findall(".//meta"):
+                    name_attr = meta.get("name", "") or meta.get("{http://purl.org/dc/elements/1.1/}name", "") or meta.get("{http://www.idpf.org/2007/opf}name", "")
                     content = meta.get("content", "") or ""
                     if "chaptercount" in name_attr.lower() and content.isdigit():
                         chapters = int(content)

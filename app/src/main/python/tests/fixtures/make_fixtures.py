@@ -523,6 +523,29 @@ def build_fic_prefixed(path):
     return b.write(path)
 
 
+def build_fic_titlechapter(path):
+    """A one-chapter book whose only chapter is named after the book itself.
+
+    FanFicFare names a single-chapter story's chapter after the story, so a
+    section labelled with the book name can lose that chapter to the "entry
+    repeats its section's label" rule and be left with nothing under it.
+    """
+    b = EpubBuilder(version='2.0', title='The Pilots Conjugal Christmas',
+                    identifier='urn:uuid:fixture-titlechapter')
+    b.add_image('OEBPS/cover.png', cover=True)
+    b.add_doc('OEBPS/titlepage.xhtml', (
+        '<div class="titlepage">\n'
+        '  <h1 id="tp">The Pilots Conjugal Christmas</h1>\n'
+        '  <p>by WittyUserName</p>\n'
+        '</div>'), title='Title Page')
+    b.add_doc('OEBPS/text/chapter1.xhtml', (
+        '<h2 id="c1">The Pilots Conjugal Christmas</h2>\n'
+        '<p>Single chapter body.</p>'), title='The Pilots Conjugal Christmas')
+    b.set_ncx([('Title Page', 'titlepage.xhtml#tp'),
+               ('The Pilots Conjugal Christmas', 'text/chapter1.xhtml#c1')])
+    return b.write(path)
+
+
 def build_fic_encoding(path):
     """A chapter that declares iso-8859-1 and contains latin-1 bytes.
 
@@ -661,6 +684,7 @@ FIXTURES = {
     'fic_encoding': build_fic_encoding,
     'fic_titlepage': build_fic_titlepage,
     'fic_prefixed': build_fic_prefixed,
+    'fic_titlechapter': build_fic_titlechapter,
     'fic_links': build_fic_links,
     'fic_simple': build_fic_simple,
     'fic_dupids': build_fic_dupids,

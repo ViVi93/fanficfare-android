@@ -1180,14 +1180,14 @@ def test_merge_metadata_and_output_fn(ctx):
     assert not broken['ok'], broken
     assert 'error' in broken
 
-    # default output path: beside the base, and the base stays untouched
+    # default output path: beside the base, named after the title, base untouched
     first = staging_copy(paths['fic_simple'])
     second = staging_copy(paths['fic_nested'])
     before = zip_bytes(first)
     result = m_mod.merge_books([first, second], title='Collected Works',
                                author='Collected Author')
     assert result['ok'], result
-    expected_out = os.path.join(os.path.dirname(first), 'fic_simple (merged).epub')
+    expected_out = os.path.join(os.path.dirname(first), 'Collected Works.epub')
     assert result['output_path'] == expected_out, result['output_path']
     assert zip_bytes(first) == before, 'the base must not be written in place'
     assert_sane(expected_out)
@@ -1324,6 +1324,48 @@ def test_merge_sections_no_duplicate_labels_fn(ctx):
         assert 'Titlepage' not in all_labels, all_labels
 
 
+def test_merge_output_naming_fn(ctx):
+    """The merged file is named after the title that was given, and a title that
+    collides with a source still cannot overwrite that source.
+    """
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+    first = staging_copy(paths['fic_simple'])
+    second = staging_copy(paths['fic_nested'])
+
+    # no title -> the base book's name with a " (merged)" suffix
+    fallback = m_mod.default_output_path(first)
+    assert fallback.endswith(' (merged).epub'), fallback
+
+    # a title -> a file named after the title, beside the base book
+    named = m_mod.default_output_path(first, 'Heart of the Mountain merge test')
+    assert os.path.basename(named) == 'Heart of the Mountain merge test.epub', named
+    assert os.path.dirname(named) == os.path.dirname(first), named
+
+    # characters a file name cannot hold are stripped
+    awkward = os.path.basename(m_mod.default_output_path(first, 'A/B: "C"? <D> |E|'))
+    for bad in '\\/:*?"<>|':
+        assert bad not in awkward, awkward
+    assert awkward.endswith('.epub'), awkward
+    assert 'A' in awkward and 'E' in awkward, awkward
+
+    # a title that matches a source's own name must not clobber it
+    own_name = os.path.splitext(os.path.basename(first))[0]
+    colliding = m_mod.default_output_path(first, own_name)
+    assert os.path.abspath(colliding) == os.path.abspath(first), colliding
+    guarded = m_mod._non_clobbering(colliding, [first, second])
+    assert os.path.abspath(guarded) != os.path.abspath(first), guarded
+    assert os.path.exists(first), 'the source must still be there'
+
+    # end to end: the written file carries the title's name
+    result = m_mod.merge_books([first, second], title='Collected Works Two')
+    assert result['ok'], result
+    assert os.path.basename(result['output_path']) == 'Collected Works Two.epub', \
+        result['output_path']
+    assert os.path.exists(result['output_path']), result
+    assert_sane(result['output_path'])
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
@@ -1358,6 +1400,7 @@ def run_tests():
         ('toc_style_cleanup', test_toc_style_cleanup_fn),
         ('merge_flat_toc', test_merge_flat_toc_fn),
         ('merge_sections_no_duplicate_labels', test_merge_sections_no_duplicate_labels_fn),
+        ('merge_output_naming', test_merge_output_naming_fn),
     ]
 
     passed = 0

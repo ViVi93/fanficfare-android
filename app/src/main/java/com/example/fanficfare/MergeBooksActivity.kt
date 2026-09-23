@@ -61,6 +61,7 @@ class MergeBooksActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var mergeButton: Button
     private lateinit var tocStyleGroup: android.widget.RadioGroup
+    private lateinit var outputNameView: TextView
 
     private var workId: UUID? = null
 
@@ -102,6 +103,15 @@ class MergeBooksActivity : AppCompatActivity() {
 
         titleField.setText(sources.first().title)
         authorField.setText(sources.first().author)
+
+        outputNameView = findViewById(R.id.mergeOutputName)
+        titleField.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) =
+                showOutputName(s?.toString().orEmpty())
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+        showOutputName(sources.first().title)
         loadPreview()
     }
 
@@ -159,6 +169,25 @@ class MergeBooksActivity : AppCompatActivity() {
             showWarnings(result.optJSONArray("warnings"))
             applySuggestedTocStyle(result.optString("suggested_toc_style", ""))
         }
+    }
+
+    /**
+     * Show the file the merge will write, so its name is never a surprise.
+     *
+     * Mirrors epub_merge.default_output_path: the title becomes the file name,
+     * with the characters a file name cannot hold removed; with no title the base
+     * book's name is used with a " (merged)" suffix.
+     */
+    private fun showOutputName(title: String) {
+        val stem = title.replace(Regex("[\\\\/:*?\"<>|]"), "").trim().trim('.').take(120)
+        val name = if (stem.isNotBlank()) {
+            "$stem.epub"
+        } else {
+            val base = sources.firstOrNull()?.path?.substringAfterLast('/')
+                ?.removeSuffix(".epub") ?: "merged"
+            "$base (merged).epub"
+        }
+        outputNameView.text = getString(R.string.merge_output_name, name)
     }
 
     /** Tick the TOC style Python thinks fits, unless the user already chose one. */

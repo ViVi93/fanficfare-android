@@ -29,6 +29,7 @@ Design notes
 """
 
 import os
+import re
 
 import xml.etree.ElementTree as ET
 
@@ -534,10 +535,45 @@ def nest_toc(base, groups, base_label=None, base_target=None, style='sections'):
     return added
 
 
-def default_output_path(base_path):
-    """A ``... (merged).epub`` path next to the base book."""
+#: Characters that cannot appear in a file name on any supported filesystem.
+_FILENAME_BAD = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def _title_filename(title):
+    """A filesystem-safe file stem for a book title, or '' if there is none."""
+    cleaned = _FILENAME_BAD.sub('', (title or '').replace('\n', ' ')).strip(' .')
+    return cleaned[:120]
+
+
+def default_output_path(base_path, title=None):
+    """Where a merge writes: beside the base book, named after the merged title.
+
+    Naming the file after the title keeps it identifiable in a library or reader
+    that lists files by name; when there is no title the base book's own name is
+    used with a `` (merged)`` suffix.
+    """
+    directory = os.path.dirname(base_path)
+    stem = _title_filename(title)
+    if stem:
+        return os.path.join(directory, stem + '.epub')
     root, ext = os.path.splitext(base_path)
     return '%s (merged)%s' % (root, ext or '.epub')
+
+
+def _non_clobbering(path, sources):
+    """A path that is not one of ``sources``: a merge never overwrites a source.
+
+    A title can collide with a source's file name (merging a book into its own
+    title, say), so fall back to a numbered name rather than trusting it.
+    """
+    taken = {os.path.abspath(p) for p in (sources or []) if p}
+    candidate = path
+    counter = 1
+    while os.path.abspath(candidate) in taken:
+        root, ext = os.path.splitext(path)
+        counter += 1
+        candidate = '%s (%d)%s' % (root, counter, ext)
+    return candidate
 
 
 def _author_of(container):
@@ -704,7 +740,8 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
         toc_sections = nest_toc(base, groups, base_label=title or None,
                                 base_target=base_target, style=toc_style)
 
-        target = output_path or default_output_path(paths[base_index])
+        target = output_path or _non_clobbering(
+            default_output_path(paths[base_index], title), paths)
         result = base.commit(output_path=target)
         if not result.get('ok'):
             return result

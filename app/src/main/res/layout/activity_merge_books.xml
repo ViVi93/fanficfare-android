@@ -3,8 +3,18 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fitsSystemWindows="true"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:orientation="vertical">
+
+    <!--
+      fitsSystemWindows applies the window insets as padding on this view, which
+      replaces any padding declared on it, so the 16dp has to live on a child.
+      Otherwise the content sits flush against the screen edge.
+    -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
 
     <TextView
         android:id="@+id/mergeHeading"
@@ -67,6 +77,13 @@
     </com.google.android.material.textfield.TextInputLayout>
 
     <TextView
+        android:id="@+id/mergeOutputName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+    <TextView
         android:id="@+id/mergeTocLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -111,5 +128,7 @@
         android:layout_marginTop="12dp"
         android:minHeight="48dp"
         android:text="@string/merge_action" />
+
+    </LinearLayout>
 
 </LinearLayout>

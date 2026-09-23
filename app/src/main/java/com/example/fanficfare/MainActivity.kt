@@ -712,23 +712,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (requestCode == REQUEST_MERGE_BOOKS && resultCode == RESULT_OK && data != null) {
-            val path = data.getStringExtra("merged_path") ?: ""
-            if (path.isBlank()) return
-            val file = java.io.File(path)
-            val book = BookItem(
-                title = data.getStringExtra("title") ?: file.nameWithoutExtension,
-                author = data.getStringExtra("author") ?: "",
-                uriString = path,
-                lastModified = file.lastModified(),
-                sizeBytes = file.length(),
-                coverUriString = (data.getStringExtra("cover") ?: "").ifBlank { null },
-                chapters = data.getIntExtra("chapters", 0)
-            )
-            viewModel.addOrUpdate(book)
-            syncBooks(viewModel.getBooksSnapshot())
-            updateEmptyState()
-            viewModel.saveLibrary()
+        if (requestCode == REQUEST_MERGE_BOOKS && resultCode == RESULT_OK) {
+            // The worker is the only writer for a merge and has already upserted
+            // the new book. Re-read the store instead of inserting a second copy
+            // here: two writers racing is what produced duplicate library rows.
+            lifecycleScope.launch {
+                viewModel.reloadFromStore()
+                syncBooks(viewModel.getBooksSnapshot())
+                updateEmptyState()
+            }
         }
     }
 

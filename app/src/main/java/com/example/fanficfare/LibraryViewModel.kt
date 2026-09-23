@@ -128,6 +128,21 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
         return ok
     }
 
+    /**
+     * Re-read the store and re-sort. Must run on the main thread: it assigns
+     * LiveData (repository.loadLibrary and setSort both setValue).
+     *
+     * Used after a worker has written a new book, so the caller sees it without
+     * inserting a second copy itself.
+     */
+    suspend fun reloadFromStore(): Boolean {
+        val ok = repository.loadLibrary()
+        if (ok) {
+            setSort(_currentSort.value ?: "modified")
+        }
+        return ok
+    }
+
     fun saveLibrary(): Boolean {
         var ok = false
         viewModelScope.launch {

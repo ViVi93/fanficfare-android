@@ -1200,6 +1200,130 @@ def test_merge_metadata_and_output_fn(ctx):
         assert 'Collected Author' in creators, creators
 
 
+def test_toc_style_cleanup_fn(ctx):
+    """prepare_groups drops imported front matter, repoints a section off its
+    title page, and removes an entry that only repeats its section's label --
+    the exact shapes reported from a merged book on device.
+    """
+    m_mod = require(ctx, 'epub_merge')
+
+    reported = [{
+        'label': 'Heart of the Mountain Ch. 09',
+        'target': ('merged/1/OEBPS/titlepage.xhtml', 'tp'),
+        'children': [('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp'),
+                     ('Heart of the Mountain Ch. 09',
+                      'merged/1/OEBPS/text/ch09.xhtml', 'c1')],
+    }]
+    sections = m_mod.prepare_groups(reported, 'sections')[0]
+    # the duplicate label is gone, and the section no longer opens a title page
+    assert sections['children'] == [], sections['children']
+    assert sections['target'] == ('merged/1/OEBPS/text/ch09.xhtml', 'c1'), \
+        'section should open the chapter, not the title page: %r' % (sections['target'],)
+
+    flat = m_mod.prepare_groups(reported, 'flat')[0]
+    # no section header exists in flat mode, so the chapter must survive
+    assert flat['children'] == [('Heart of the Mountain Ch. 09',
+                                'merged/1/OEBPS/text/ch09.xhtml', 'c1')], flat['children']
+
+    # an anthology keeps its first chapter's name, but not its title page
+    anthology = m_mod.prepare_groups([{
+        'label': 'Dune',
+        'target': ('merged/1/OEBPS/titlepage.xhtml', 'tp'),
+        'children': [('Title Page', 'merged/1/OEBPS/titlepage.xhtml', 'tp'),
+                     ('Chapter 1', 'merged/1/OEBPS/c1.xhtml', 'c1')],
+    }], 'sections')[0]
+    assert anthology['children'] == [('Chapter 1', 'merged/1/OEBPS/c1.xhtml', 'c1')], \
+        anthology['children']
+    assert anthology['target'] == ('merged/1/OEBPS/c1.xhtml', 'c1'), anthology['target']
+
+    assert m_mod.suggest_toc_style(
+        ['Heart of the Mountain', 'Heart of the Mountain Ch. 09',
+         'Heart of the Mountain Ch. 10']) == 'flat'
+    assert m_mod.suggest_toc_style(['Dune', 'Neuromancer', 'Book of Spells']) == 'sections'
+    assert m_mod.suggest_toc_style(['Only One']) == 'sections'
+
+
+def test_merge_flat_toc_fn(ctx):
+    """A flat merge has no section headers, keeps every source's chapters, and
+    mirrors the same list into the EPUB3 nav.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    sources = [staging_copy(paths['fic_simple']), staging_copy(paths['fic_nested']),
+               staging_copy(paths['fic_multidir'])]
+    out = os.path.join(os.path.dirname(sources[0]), 'flat.epub')
+
+    result = m_mod.merge_books(sources, output_path=out, title='Collected',
+                               toc_style='flat')
+    assert result['ok'], result
+    assert result['toc_style'] == 'flat', result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        labels = [label for label, _n, _f in c.toc_entries()]
+        # every chapter from every source is present, including the ones that
+        # would have been absorbed into a section header in sections mode
+        for expect in ('Chapter 1', 'Chapter 5', 'One', 'Four', 'A', 'C'):
+            assert expect in labels, '%r missing from flat TOC: %r' % (expect, labels)
+        # and no source title became a header
+        for source_title in ('Collected', 'Nested Fic', 'Multidir Fic'):
+            assert source_title not in labels, \
+                'flat TOC should have no section headers: %r' % (labels,)
+
+        # the nav document carries the same labels as the NCX
+        nav = [n for n in c.toc_doc_names() if c.media_type_of(n) != 'application/x-dtbncx+xml']
+        if nav:
+            nav_labels = [e.text for e in c.parsed(nav[0]).iter()
+                          if e.tag.endswith('}a')]
+            for expect in ('Chapter 1', 'One', 'A'):
+                assert expect in nav_labels, '%r missing from nav: %r' % (expect, nav_labels)
+
+
+def test_merge_sections_no_duplicate_labels_fn(ctx):
+    """In sections mode no entry repeats its parent's label: the reader showed
+    the same chapter twice for every source that had its own name as its first
+    entry.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    sources = [staging_copy(paths['fic_simple']), staging_copy(paths['fic_titlepage'])]
+    out = os.path.join(os.path.dirname(sources[0]), 'sections.epub')
+
+    result = m_mod.merge_books(sources, output_path=out, title='Collected')
+    assert result['ok'], result
+    assert result['toc_style'] == 'sections', result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        ncx = [n for n in c.toc_doc_names()
+               if c.media_type_of(n) == 'application/x-dtbncx+xml']
+        assert ncx, 'base should still have an NCX'
+        root = c.parsed(ncx[0])
+        navmap = [e for e in root.iter() if c_mod.localname(e.tag) == 'navMap'][0]
+
+        def label_of(node):
+            for child in node.iter():
+                if c_mod.localname(child.tag) == 'text':
+                    return (child.text or '').strip()
+            return ''
+
+        for parent in [e for e in navmap if c_mod.localname(e.tag) == 'navPoint']:
+            parent_label = label_of(parent)
+            for child in parent:
+                if c_mod.localname(child.tag) != 'navPoint':
+                    continue
+                assert label_of(child).lower() != parent_label.lower(), \
+                    'entry %r repeats its section label' % parent_label
+
+        # the imported source's title page is not a TOC entry (the base keeps its own)
+        all_labels = [l for l, _n, _f in c.toc_entries()]
+        assert 'Titlepage' not in all_labels, all_labels
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
@@ -1231,6 +1355,9 @@ def run_tests():
         ('bridge_merge_writes_valid_book', test_bridge_merge_writes_valid_book_fn),
         ('merge_resource_collision', test_merge_resource_collision_fn),
         ('merge_metadata_and_output', test_merge_metadata_and_output_fn),
+        ('toc_style_cleanup', test_toc_style_cleanup_fn),
+        ('merge_flat_toc', test_merge_flat_toc_fn),
+        ('merge_sections_no_duplicate_labels', test_merge_sections_no_duplicate_labels_fn),
     ]
 
     passed = 0

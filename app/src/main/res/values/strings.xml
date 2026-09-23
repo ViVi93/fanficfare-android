@@ -48,5 +48,8 @@
     <string name="merge_row_meta_base">%1$d chapters · %2$d contents entries · base</string>
     <string name="merge_index_base">%1$d · base</string>
     <string name="merge_index_plain">%1$d</string>
+    <string name="merge_toc_label">Table of contents</string>
+    <string name="merge_toc_sections">One section per book</string>
+    <string name="merge_toc_flat">Single chapter list</string>
     <string name="merge_warn_first_no_toc">The first book has no table of contents, so the merged book will not get one.</string>
 </resources>

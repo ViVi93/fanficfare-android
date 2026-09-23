@@ -60,8 +60,12 @@ class MergeBooksActivity : AppCompatActivity() {
     private lateinit var authorField: EditText
     private lateinit var progressBar: ProgressBar
     private lateinit var mergeButton: Button
+    private lateinit var tocStyleGroup: android.widget.RadioGroup
 
     private var workId: UUID? = null
+
+    /** True once the style is settled, so a late preview cannot override it. */
+    private var tocStyleChosen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,6 +91,9 @@ class MergeBooksActivity : AppCompatActivity() {
         progressBar = findViewById(R.id.mergeProgress)
         mergeButton = findViewById(R.id.mergeButton)
         mergeButton.setOnClickListener { startMerge() }
+
+        tocStyleGroup = findViewById(R.id.mergeTocStyle)
+        tocStyleGroup.setOnCheckedChangeListener { _, _ -> tocStyleChosen = true }
 
         val list = findViewById<RecyclerView>(R.id.mergeSourceList)
         adapter = SourceAdapter()
@@ -150,8 +157,20 @@ class MergeBooksActivity : AppCompatActivity() {
                 sources.sumOf { it.sizeBytes } / (1024 * 1024)
             )
             showWarnings(result.optJSONArray("warnings"))
+            applySuggestedTocStyle(result.optString("suggested_toc_style", ""))
         }
     }
+
+    /** Tick the TOC style Python thinks fits, unless the user already chose one. */
+    private fun applySuggestedTocStyle(suggested: String) {
+        if (tocStyleChosen || suggested.isBlank()) return
+        val id = if (suggested == "flat") R.id.mergeTocFlat else R.id.mergeTocSections
+        tocStyleGroup.check(id)
+    }
+
+    /** 'flat' or 'sections', from whichever radio button is ticked. */
+    private fun selectedTocStyle(): String =
+        if (tocStyleGroup.checkedRadioButtonId == R.id.mergeTocFlat) "flat" else "sections"
 
     private fun showWarnings(items: JSONArray?) {
         val lines = mutableListOf<String>()
@@ -184,6 +203,7 @@ class MergeBooksActivity : AppCompatActivity() {
                     MergeBooksWorker.KEY_AUTHOR to authorField.text.toString().trim(),
                     MergeBooksWorker.KEY_BASE_INDEX to 0,
                     MergeBooksWorker.KEY_COVER to sources.first().cover,
+                    MergeBooksWorker.KEY_TOC_STYLE to selectedTocStyle(),
                 )
             )
             .build()
@@ -200,17 +220,13 @@ class MergeBooksActivity : AppCompatActivity() {
         WorkManager.getInstance(this).getWorkInfoByIdLiveData(id).observe(this) { info ->
             when (info?.state) {
                 WorkInfo.State.SUCCEEDED -> {
+                    // Only the path travels back: the worker has already upserted
+                    // the book, and MainActivity re-reads the store from it.
                     val mergedPath =
                         info.outputData.getString(MergeBooksWorker.KEY_OUTPUT).orEmpty()
                     setResult(
                         RESULT_OK,
-                        android.content.Intent().apply {
-                            putExtra("merged_path", mergedPath)
-                            putExtra("title", titleField.text.toString().trim())
-                            putExtra("author", authorField.text.toString().trim())
-                            putExtra("chapters", sources.sumOf { it.chapters })
-                            putExtra("cover", sources.firstOrNull()?.cover ?: "")
-                        }
+                        android.content.Intent().putExtra("merged_path", mergedPath)
                     )
                     toast(
                         info.outputData.getString(MergeBooksWorker.KEY_MESSAGE)

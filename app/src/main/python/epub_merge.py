@@ -300,8 +300,97 @@ def _first_target(entries, fallback_zipname):
     return fallback_zipname, ''
 
 
-def _nest_ncx(base, toc_name, base_label, base_target, groups):
-    """Wrap existing navPoints in a base section, then append one per source."""
+#: A merged book keeps one title page, from the base. Without this the other
+#: sources' front matter lands as stray "Title Page" entries mid-book.
+FRONT_MATTER_STEMS = ('titlepage', 'title_page', 'title-page', 'cover')
+FRONT_MATTER_LABELS = ('title page', 'titlepage', 'title-page', 'cover')
+
+
+def _is_front_matter(zipname, label):
+    """True for a title page / cover, judged by file name or label."""
+    stem = os.path.basename(zipname or '').rsplit('.', 1)[0].lower()
+    if any(token in stem for token in FRONT_MATTER_STEMS):
+        return True
+    return (label or '').strip().lower() in FRONT_MATTER_LABELS
+
+
+def _same_label(a, b):
+    """True when two TOC labels are the same line, ignoring case and spacing."""
+    return (a or '').strip().lower() == (b or '').strip().lower()
+
+
+def _navpoint_label(elem):
+    """The ``navLabel/text`` of a navPoint, or an empty string."""
+    for child in elem.iter():
+        if localname(child.tag) == 'text':
+            return child.text or ''
+    return ''
+
+
+def _nav_item_label(elem):
+    """The anchor text of a nav ``li``, or an empty string."""
+    for child in elem.iter():
+        if localname(child.tag) == 'a':
+            return child.text or ''
+    return ''
+
+
+def prepare_groups(groups, style='sections'):
+    """Clean imported sources' TOC entries before they are nested.
+
+    Drops the noise visible in a merged book's contents: imported front matter
+    (one title page per source, mid-book), and -- only in 'sections' mode -- a
+    child whose label is identical to its section's, which the reader would print
+    twice. Matching on the label rather than the target keeps differently named
+    entries that share a page (the section header and the first chapter), so no
+    chapter name is lost. In 'flat' mode there is no section header to duplicate.
+
+    A section whose target was front matter is repointed at its first remaining
+    entry, so the header opens real content rather than a dropped title page.
+    """
+    prepared = []
+    for group in groups:
+        target = tuple(group.get('target') or (None, ''))
+        raw = list(group.get('children') or [])
+        # Content first, so a section can be repointed off its front matter even
+        # when every one of its remaining entries is dropped below.
+        content = [c for c in raw if not _is_front_matter(c[1], c[0])]
+
+        children = []
+        for label, zipname, fragment in content:
+            if style == 'sections' and _same_label(label, group.get('label')):
+                continue
+            children.append((label, zipname, fragment))
+
+        if style == 'sections' and _is_front_matter(target[0], None) and content:
+            target = (content[0][1], content[0][2])
+
+        item = dict(group)
+        item['children'] = children
+        item['target'] = target
+        prepared.append(item)
+    return prepared
+
+
+def suggest_toc_style(labels):
+    """'flat' when sources look like parts of one work, else 'sections'.
+
+    A set of one-chapter-per-file books (or a book plus its later chapters)
+    shares a title prefix, and per-source section headers would just repeat it.
+    Unrelated novels in an anthology share nothing, so they want sections.
+    """
+    titles = [t.strip() for t in (labels or []) if t and t.strip()]
+    if len(titles) < 2:
+        return 'sections'
+    prefix = os.path.commonprefix([t.lower() for t in titles]).strip(' -–—:.,')
+    shortest = min(len(t.lower()) for t in titles)
+    if shortest and len(prefix) >= 0.6 * shortest:
+        return 'flat'
+    return 'sections'
+
+
+def _nest_ncx(base, toc_name, base_label, base_target, groups, style='sections'):
+    """Nest source TOC entries in an NCX: one section each, or one flat list."""
     root = base.parsed(toc_name)
     navmap = None
     for elem in root.iter():
@@ -313,25 +402,41 @@ def _nest_ncx(base, toc_name, base_label, base_target, groups):
 
     existing_ids = {e.get('id') for e in root.iter() if e.get('id')}
     existing_children = [c for c in list(navmap) if localname(c.tag) == 'navPoint']
+    added = 0
 
-    section = _ncx_navpoint(base_label, _toc_href(base, toc_name, base_target),
-                            _unique_id(existing_ids))
-    for child in existing_children:
-        navmap.remove(child)
-        section.append(child)
-    navmap.append(section)
-    added = 1
+    if style == 'flat':
+        # No section headers: the sources' entries join one flat chapter list.
+        for group in groups:
+            for label, zipname, fragment in group['children']:
+                navmap.append(_ncx_navpoint(
+                    label, _toc_href(base, toc_name, (zipname, fragment)),
+                    _unique_id(existing_ids, 'point')))
+                added += 1
+    else:
+        # The section header repeats this child's label and target, so drop the
+        # child -- otherwise the reader prints the same line twice.
+        if existing_children and _same_label(_navpoint_label(existing_children[0]),
+                                             base_label):
+            navmap.remove(existing_children.pop(0))
 
-    for group in groups:
-        parent = _ncx_navpoint(group['label'],
-                               _toc_href(base, toc_name, group['target']),
-                               _unique_id(existing_ids))
-        for label, zipname, fragment in group['children']:
-            parent.append(_ncx_navpoint(label,
-                                        _toc_href(base, toc_name, (zipname, fragment)),
-                                        _unique_id(existing_ids, 'point')))
-        navmap.append(parent)
-        added += 1
+        section = _ncx_navpoint(base_label, _toc_href(base, toc_name, base_target),
+                                _unique_id(existing_ids))
+        for child in existing_children:
+            navmap.remove(child)
+            section.append(child)
+        navmap.append(section)
+        added = 1
+
+        for group in groups:
+            parent = _ncx_navpoint(group['label'],
+                                   _toc_href(base, toc_name, group['target']),
+                                   _unique_id(existing_ids))
+            for label, zipname, fragment in group['children']:
+                parent.append(_ncx_navpoint(label,
+                                            _toc_href(base, toc_name, (zipname, fragment)),
+                                            _unique_id(existing_ids, 'point')))
+            navmap.append(parent)
+            added += 1
 
     play_order = 0
     for elem in root.iter():
@@ -343,7 +448,7 @@ def _nest_ncx(base, toc_name, base_label, base_target, groups):
     return added
 
 
-def _nest_nav(base, toc_name, base_label, base_target, groups):
+def _nest_nav(base, toc_name, base_label, base_target, groups, style='sections'):
     """Mirror the NCX nesting into an EPUB3 nav document."""
     root = base.parsed(toc_name)
     nav = ol = None
@@ -361,39 +466,54 @@ def _nest_nav(base, toc_name, base_label, base_target, groups):
         return 0
 
     existing_items = [c for c in list(ol) if localname(c.tag) == 'li']
+    added = 0
 
-    inner = ET.Element('{%s}ol' % XHTML_NS)
-    for item in existing_items:
-        ol.remove(item)
-        inner.append(item)
-    ol.append(_nav_list_item(base_label,
-                             _toc_href(base, toc_name, base_target),
-                             inner if len(inner) else None))
-    added = 1
+    if style == 'flat':
+        for group in groups:
+            for label, zipname, fragment in group['children']:
+                ol.append(_nav_list_item(label,
+                                         _toc_href(base, toc_name, (zipname, fragment))))
+                added += 1
+    else:
+        # Same reasoning as the NCX: drop the child that repeats the section.
+        if existing_items and _same_label(_nav_item_label(existing_items[0]), base_label):
+            ol.remove(existing_items.pop(0))
 
-    for group in groups:
         inner = ET.Element('{%s}ol' % XHTML_NS)
-        for label, zipname, fragment in group['children']:
-            inner.append(_nav_list_item(label,
-                                        _toc_href(base, toc_name, (zipname, fragment))))
-        ol.append(_nav_list_item(group['label'],
-                                 _toc_href(base, toc_name, group['target']),
+        for item in existing_items:
+            ol.remove(item)
+            inner.append(item)
+        ol.append(_nav_list_item(base_label,
+                                 _toc_href(base, toc_name, base_target),
                                  inner if len(inner) else None))
-        added += 1
+        added = 1
+
+        for group in groups:
+            inner = ET.Element('{%s}ol' % XHTML_NS)
+            for label, zipname, fragment in group['children']:
+                inner.append(_nav_list_item(label,
+                                            _toc_href(base, toc_name, (zipname, fragment))))
+            ol.append(_nav_list_item(group['label'],
+                                     _toc_href(base, toc_name, group['target']),
+                                     inner if len(inner) else None))
+            added += 1
 
     base.dirty(toc_name)
     return added
 
 
-def nest_toc(base, groups, base_label=None, base_target=None):
-    """Give every source its own TOC section, mirroring NCX and nav.
+def nest_toc(base, groups, base_label=None, base_target=None, style='sections'):
+    """Rewrite the merged book's TOC, mirroring NCX and nav.
 
     ``groups`` is one dict per imported source, in spine order:
     ``{'label': str, 'target': (zipname, fragment), 'children': [(label, zipname,
-    fragment), ...]}``. The base book's own entries are wrapped in a section of
-    their own so the merged TOC reads as one section per source (the
-    ``anthology_merge_keepsingletocs`` shape). Returns the number of sections
-    added to each TOC document.
+    fragment), ...]}``.
+
+    ``style='sections'`` wraps each source in a section of its own (the
+    ``anthology_merge_keepsingletocs`` shape). ``style='flat'`` omits the section
+    headers so every chapter joins one list, which is what a set of
+    one-chapter-per-file books wants. Returns the number of entries added to each
+    TOC document (sections, in sections mode).
     """
     base_label = base_label or _title_of(base) or 'Part 1'
     if base_target is None:
@@ -401,15 +521,16 @@ def nest_toc(base, groups, base_label=None, base_target=None):
         fallback = next((name for _r, name, _l in base.spine_iter()), base.opf_name)
         base_target = _first_target(entries, fallback)
 
+    groups = prepare_groups(groups, style)
     toc_names = base.toc_doc_names()
     ncx_names = [n for n in toc_names if base.media_type_of(n) == NCX_TYPE]
     nav_names = [n for n in toc_names if n not in ncx_names]
 
     added = 0
     for name in ncx_names:
-        added += _nest_ncx(base, name, base_label, base_target, groups)
+        added += _nest_ncx(base, name, base_label, base_target, groups, style)
     for name in nav_names:
-        added += _nest_nav(base, name, base_label, base_target, groups)
+        added += _nest_nav(base, name, base_label, base_target, groups, style)
     return added
 
 
@@ -501,6 +622,7 @@ def preview_merge(epub_paths, base_index=0):
             'warnings': warnings,
             'default_title': sources[base_index]['title'],
             'default_author': sources[base_index]['author'],
+            'suggested_toc_style': suggest_toc_style([s['title'] for s in sources]),
         }
     finally:
         for container in opened:
@@ -508,12 +630,14 @@ def preview_merge(epub_paths, base_index=0):
 
 
 def merge_books(epub_paths, output_path=None, title=None, author=None,
-                base_index=0):
+                base_index=0, toc_style='sections'):
     """Merge two or more EPUBs into one book.
 
     ``base_index`` selects which source provides the metadata and cover. The
     result is written to ``output_path``, or to a ``... (merged).epub`` file
-    beside the base book -- **never** over a source. Returns a result dict.
+    beside the base book -- **never** over a source. ``toc_style`` is 'sections'
+    (a section per source) or 'flat' (one chapter list, no section headers).
+    Returns a result dict.
     """
     paths = [p for p in (epub_paths or []) if p]
     if len(paths) < 2:
@@ -578,7 +702,7 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
         # Metadata first, so the base's TOC section picks up a title override.
         apply_metadata(base, title, author)
         toc_sections = nest_toc(base, groups, base_label=title or None,
-                                base_target=base_target)
+                                base_target=base_target, style=toc_style)
 
         target = output_path or default_output_path(paths[base_index])
         result = base.commit(output_path=target)
@@ -591,6 +715,7 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
             'spine_before': spine_before,
             'spine_after': len(list(base.spine_iter())),
             'toc_sections': toc_sections,
+            'toc_style': toc_style,
             'warnings': warnings,
         })
         return result

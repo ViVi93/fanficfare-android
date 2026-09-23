@@ -9,7 +9,9 @@ import androidx.room.PrimaryKey
     tableName = "books",
     indices = [
         Index(value = ["url"]),
-        Index(value = ["filePath"])
+        // Unique: one library row per file. Without this, two writers racing to
+        // register the same file produced duplicate rows (dedupe was app logic only).
+        Index(value = ["filePath"], unique = true)
     ]
 )
 data class BookEntity(

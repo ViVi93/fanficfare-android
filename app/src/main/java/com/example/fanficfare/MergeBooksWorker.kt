@@ -28,6 +28,7 @@ class MergeBooksWorker(appContext: Context, params: WorkerParameters) :
         const val KEY_BASE_INDEX = "baseIndex"
         const val KEY_OUTPUT = "outputPath"
         const val KEY_COVER = "cover"
+        const val KEY_TOC_STYLE = "tocStyle"
         const val KEY_ERROR = "error"
         const val KEY_MESSAGE = "message"
         const val UNIQUE_WORK_PREFIX = "merge_books_"
@@ -43,11 +44,14 @@ class MergeBooksWorker(appContext: Context, params: WorkerParameters) :
         val baseIndex = inputData.getInt(KEY_BASE_INDEX, 0)
         val outputPath = inputData.getString(KEY_OUTPUT)
         val cover = inputData.getString(KEY_COVER).orEmpty()
+        val tocStyle = inputData.getString(KEY_TOC_STYLE) ?: "sections"
 
         val bridge = PythonBridge(applicationContext)
         return try {
             val result = JSONObject(
-                bridge.mergeBooks(JSONArray(paths).toString(), outputPath, title, author, baseIndex)
+                bridge.mergeBooks(
+                    JSONArray(paths).toString(), outputPath, title, author, baseIndex, tocStyle
+                )
             )
             if (!result.optBoolean("ok", false)) {
                 return Result.failure(

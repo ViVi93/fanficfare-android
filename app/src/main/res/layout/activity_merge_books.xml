@@ -66,6 +66,35 @@
             android:maxLines="1" />
     </com.google.android.material.textfield.TextInputLayout>
 
+    <TextView
+        android:id="@+id/mergeTocLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/merge_toc_label"
+        android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+    <RadioGroup
+        android:id="@+id/mergeTocStyle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/mergeTocSections"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:minHeight="48dp"
+            android:text="@string/merge_toc_sections" />
+
+        <RadioButton
+            android:id="@+id/mergeTocFlat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/merge_toc_flat" />
+    </RadioGroup>
+
     <ProgressBar
         android:id="@+id/mergeProgress"
         style="?android:attr/progressBarStyleHorizontal"

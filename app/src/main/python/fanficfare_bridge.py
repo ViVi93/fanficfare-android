@@ -872,11 +872,14 @@ def epub_merge_preview(paths_json, base_index=0):
 
 
 def epub_merge_books(paths_json, output_path=None, title=None, author=None,
-                     base_index=0, toc_style='sections'):
+                     base_index=0, toc_style='sections', shorten_labels=False,
+                     renumber_chapters=False):
     """Merge several EPUBs into one new book. Sources are never modified.
 
     ``toc_style`` is 'sections' (one TOC section per source) or 'flat' (a single
-    chapter list, for sets of one-chapter-per-file books).
+    chapter list, for sets of one-chapter-per-file books). ``shorten_labels``
+    strips the prefix the chapter labels share, and ``renumber_chapters`` numbers
+    them in reading order.
     """
     try:
         module = _ensure_epub_merge()
@@ -885,7 +888,9 @@ def epub_merge_books(paths_json, output_path=None, title=None, author=None,
                                     title=title or None,
                                     author=author or None,
                                     base_index=base_index,
-                                    toc_style=toc_style or 'sections')
+                                    toc_style=toc_style or 'sections',
+                                    shorten_labels=bool(shorten_labels),
+                                    renumber_chapters=bool(renumber_chapters))
         return json.dumps(result)
     except Exception as e:
         return json.dumps({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})

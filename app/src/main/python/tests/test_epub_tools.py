@@ -1429,6 +1429,103 @@ def test_merge_drops_inherited_source_url_fn(ctx):
         'http://example.com/story/1'
 
 
+def test_label_prefix_and_numbering_fn(ctx):
+    """The two label utilities, including the titles they must NOT touch."""
+    m_mod = require(ctx, 'epub_merge')
+
+    assert m_mod.common_label_prefix(
+        ['Heart of the Mountain Ch. 00', 'Heart of the Mountain Ch. 01']) == \
+        'heart of the mountain', 'the trailing numbering word must be dropped'
+    assert m_mod.common_label_prefix(['Dune', 'Neuromancer']) == ''
+    assert m_mod.common_label_prefix(['Only One']) == ''
+
+    # existing numbering is removed so it can be replaced...
+    assert m_mod.strip_chapter_numbering('Chapter 1: The Campsite') == 'The Campsite'
+    assert m_mod.strip_chapter_numbering('1. Prologue: Awakening') == 'Prologue: Awakening'
+    assert m_mod.strip_chapter_numbering('IV - A New Hope') == 'A New Hope'
+    assert m_mod.strip_chapter_numbering('Ch. 00') == ''
+    # ...but a real title that merely starts with a number or a roman-looking
+    # word must survive, or renumbering would silently mangle it
+    for untouched in ('12 Angry Men', 'In Plain Sight', 'Part Two', 'The Pattern',
+                      'One', 'Across the Water'):
+        assert m_mod.strip_chapter_numbering(untouched) == untouched, untouched
+
+
+def test_merge_label_shortening_fn(ctx):
+    """Shortening strips the prefix the chapters share, and leaves front matter."""
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_prefixed'])
+    second = staging_copy(paths['fic_prefixed'])
+    out = os.path.join(os.path.dirname(first), 'short.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out, title='Collected',
+                               toc_style='flat', shorten_labels=True)
+    assert result['ok'], result
+    assert result['shorten_labels'] is True, result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        labels = [l for l, _n, _f in c.toc_entries()]
+        assert 'Ch. 00' in labels and 'Ch. 02' in labels, labels
+        for label in labels:
+            assert not label.startswith('Heart of the Mountain Ch.'), \
+                'prefix not stripped: %r' % (labels,)
+        # front matter keeps its own label
+        assert 'Title Page' in labels, labels
+
+    # the preview suggests the shortening when the labels carry a shared prefix
+    preview = m_mod.preview_merge([staging_copy(paths['fic_prefixed']),
+                                   staging_copy(paths['fic_prefixed'])])
+    assert preview['ok'], preview
+    assert preview['suggested_shorten_labels'] is True, preview
+
+
+def test_merge_renumber_chapters_fn(ctx):
+    """Renumbering numbers chapters in reading order across the whole book.
+
+    Front matter is skipped, a section header keeps its own name, and both TOC
+    mirrors agree because they are walked in the same order.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_prefixed'])
+    second = staging_copy(paths['fic_prefixed'])
+    out = os.path.join(os.path.dirname(first), 'numbered.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out, title='Collected',
+                               toc_style='sections', shorten_labels=True,
+                               renumber_chapters=True)
+    assert result['ok'], result
+    assert result['renumber_chapters'] is True, result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        labels = [l for l, _n, _f in c.toc_entries()]
+        # "Ch. 00" carries nothing but numbering, so renumbering replaces it with
+        # its own sequence; a chapter with a real title keeps the title
+        assert labels == ['Collected', 'Title Page', 'Chapter 1', 'Chapter 2',
+                          'Chapter 3', 'Heart of the Mountain', 'Title Page',
+                          'Chapter 4', 'Chapter 5', 'Chapter 6'], labels
+        # front matter and section headers are left out of the numbering
+        assert labels.count('Title Page') == 2, labels
+        assert 'Collected' in labels and 'Heart of the Mountain' in labels, labels
+        numbered = [l for l in labels if l.startswith('Chapter ')]
+        assert [int(l.split()[1]) for l in numbered] == [1, 2, 3, 4, 5, 6], labels
+
+        # the nav mirror carries the same labels in the same order
+        nav = [n for n in c.toc_doc_names()
+               if c.media_type_of(n) != 'application/x-dtbncx+xml']
+        if nav:
+            nav_labels = [e.text for e in c.parsed(nav[0]).iter()
+                          if e.tag.endswith('}a')]
+            assert nav_labels == labels, (nav_labels, labels)
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
@@ -1465,6 +1562,9 @@ def run_tests():
         ('merge_sections_no_duplicate_labels', test_merge_sections_no_duplicate_labels_fn),
         ('merge_output_naming', test_merge_output_naming_fn),
         ('merge_drops_inherited_source_url', test_merge_drops_inherited_source_url_fn),
+        ('label_prefix_and_numbering', test_label_prefix_and_numbering_fn),
+        ('merge_label_shortening', test_merge_label_shortening_fn),
+        ('merge_renumber_chapters', test_merge_renumber_chapters_fn),
     ]
 
     passed = 0

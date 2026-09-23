@@ -62,11 +62,16 @@ class MergeBooksActivity : AppCompatActivity() {
     private lateinit var mergeButton: Button
     private lateinit var tocStyleGroup: android.widget.RadioGroup
     private lateinit var outputNameView: TextView
+    private lateinit var shortenLabelsBox: android.widget.CheckBox
+    private lateinit var renumberChaptersBox: android.widget.CheckBox
 
     private var workId: UUID? = null
 
     /** True once the style is settled, so a late preview cannot override it. */
     private var tocStyleChosen = false
+
+    /** Same, for the chapter-name options. */
+    private var labelsChosen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,6 +100,10 @@ class MergeBooksActivity : AppCompatActivity() {
 
         tocStyleGroup = findViewById(R.id.mergeTocStyle)
         tocStyleGroup.setOnCheckedChangeListener { _, _ -> tocStyleChosen = true }
+        shortenLabelsBox = findViewById(R.id.mergeShortenLabels)
+        renumberChaptersBox = findViewById(R.id.mergeRenumberChapters)
+        shortenLabelsBox.setOnCheckedChangeListener { _, _ -> labelsChosen = true }
+        renumberChaptersBox.setOnCheckedChangeListener { _, _ -> labelsChosen = true }
 
         val list = findViewById<RecyclerView>(R.id.mergeSourceList)
         adapter = SourceAdapter()
@@ -168,6 +177,7 @@ class MergeBooksActivity : AppCompatActivity() {
             )
             showWarnings(result.optJSONArray("warnings"))
             applySuggestedTocStyle(result.optString("suggested_toc_style", ""))
+            applySuggestedLabels(result.optBoolean("suggested_shorten_labels", false))
         }
     }
 
@@ -195,6 +205,12 @@ class MergeBooksActivity : AppCompatActivity() {
         if (tocStyleChosen || suggested.isBlank()) return
         val id = if (suggested == "flat") R.id.mergeTocFlat else R.id.mergeTocSections
         tocStyleGroup.check(id)
+    }
+
+    /** Tick the chapter-name options Python thinks fit, unless the user chose. */
+    private fun applySuggestedLabels(shorten: Boolean) {
+        if (labelsChosen || !shorten) return
+        shortenLabelsBox.isChecked = true
     }
 
     /** 'flat' or 'sections', from whichever radio button is ticked. */
@@ -233,6 +249,8 @@ class MergeBooksActivity : AppCompatActivity() {
                     MergeBooksWorker.KEY_BASE_INDEX to 0,
                     MergeBooksWorker.KEY_COVER to sources.first().cover,
                     MergeBooksWorker.KEY_TOC_STYLE to selectedTocStyle(),
+                    MergeBooksWorker.KEY_SHORTEN_LABELS to shortenLabelsBox.isChecked,
+                    MergeBooksWorker.KEY_RENUMBER_CHAPTERS to renumberChaptersBox.isChecked,
                 )
             )
             .build()

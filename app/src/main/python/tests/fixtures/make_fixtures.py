@@ -495,6 +495,34 @@ def build_fic_titlepage(path):
     return b.write(path)
 
 
+def build_fic_prefixed(path):
+    """A book whose chapter labels repeat its own title.
+
+    Labels read "Heart of the Mountain Ch. 00" and up, so a flat merge of several
+    such books repeats the same long prefix on every line -- the shape label
+    shortening exists for. The first entry is front matter, which must never be
+    renumbered.
+    """
+    b = EpubBuilder(version='2.0', title='Heart of the Mountain',
+                    identifier='urn:uuid:fixture-prefixed')
+    b.add_image('OEBPS/cover.png', cover=True)
+    b.add_doc('OEBPS/titlepage.xhtml', (
+        '<div class="titlepage">\n'
+        '  <h1 id="tp">Heart of the Mountain</h1>\n'
+        '  <p>by WittyUserName</p>\n'
+        '</div>'), title='Title Page')
+    for index in range(0, 3):
+        label = 'Heart of the Mountain Ch. %02d' % index
+        b.add_doc('OEBPS/text/ch%02d.xhtml' % index,
+                  '<h2 id="c%d">%s</h2>\n<p>Chapter body %d.</p>' % (index, label, index),
+                  title=label)
+    b.set_ncx([('Title Page', 'titlepage.xhtml#tp'),
+               ('Heart of the Mountain Ch. 00', 'text/ch00.xhtml#c0'),
+               ('Heart of the Mountain Ch. 01', 'text/ch01.xhtml#c1'),
+               ('Heart of the Mountain Ch. 02', 'text/ch02.xhtml#c2')])
+    return b.write(path)
+
+
 def build_fic_encoding(path):
     """A chapter that declares iso-8859-1 and contains latin-1 bytes.
 
@@ -632,6 +660,7 @@ FIXTURES = {
     'fic_media': build_fic_media,
     'fic_encoding': build_fic_encoding,
     'fic_titlepage': build_fic_titlepage,
+    'fic_prefixed': build_fic_prefixed,
     'fic_links': build_fic_links,
     'fic_simple': build_fic_simple,
     'fic_dupids': build_fic_dupids,

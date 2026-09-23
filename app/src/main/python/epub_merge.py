@@ -414,6 +414,190 @@ def suggest_toc_style(labels):
     return 'sections'
 
 
+#: Leading chapter numbering a label may carry: "Ch. 3", "Chapter 3:", "3.", "IV -".
+#: A bare number followed only by a space is deliberately NOT numbering, so a
+#: title like "12 Angry Men" survives untouched.
+_NUMBERING_RE = re.compile(
+    r"""^\s*(?:
+        (?:(?:chapter|ch|part|pt|book|vol|volume|episode|ep)\.?)\s*
+            (?:\d+|[ivxlcdm]+)\s*[.):\-–—]?\s*
+      |
+        (?:\d+|[ivxlcdm]+)\s*[.):\-–—]\s*
+    )""", re.IGNORECASE | re.VERBOSE)
+
+#: A bare numbering word at the end of a shared prefix ("... Ch").
+_NUMBERING_WORD_RE = re.compile(
+    r'^(?:chapter|ch|part|pt|book|vol|volume|episode|ep)\.?$', re.IGNORECASE)
+
+
+def strip_chapter_numbering(label):
+    """Remove a leading chapter number, leaving the title itself."""
+    return _NUMBERING_RE.sub('', label or '', count=1).strip()
+
+
+def common_label_prefix(labels, min_chars=4):
+    """Longest shared prefix of some TOC labels, cut back to a whole word.
+
+    Returns '' when the labels share nothing worth stripping, so callers can remove
+    the result blindly. A trailing numbering word is dropped, so that "... Ch. 00"
+    shortens to "Ch. 00" and keeps its number where renumbering can see it.
+    """
+    texts = [t.strip() for t in (labels or []) if t and t.strip()]
+    if len(texts) < 2:
+        return ''
+    prefix = os.path.commonprefix([t.lower() for t in texts]).strip()
+    while prefix and not prefix[-1].isalnum():
+        prefix = prefix[:-1]
+    if ' ' in prefix:
+        prefix = prefix[:prefix.rfind(' ')]
+    words = prefix.split()
+    if words and _NUMBERING_WORD_RE.match(words[-1]):
+        words = words[:-1]
+    prefix = ' '.join(words).strip(' .,:;-–—')
+    return prefix if len(prefix) >= min_chars else ''
+
+
+def _navpoint_src(elem):
+    """The ``content/@src`` of a navPoint, or an empty string."""
+    for child in elem:
+        if localname(child.tag) == 'content':
+            return child.get('src') or ''
+    return ''
+
+
+def _nav_item_href(elem):
+    """The first anchor href inside a nav ``li``, or an empty string."""
+    for child in elem.iter():
+        if localname(child.tag) == 'a':
+            return child.get('href') or ''
+    return ''
+
+
+def _leaf_entries(base):
+    """``(label, href)`` for TOC leaves, front matter excluded, both mirrors.
+
+    Leaves only: a section header keeps its own name, and a title page is not a
+    chapter. Only the first mirror is used for label analysis.
+    """
+    entries = []
+    for name in base.toc_doc_names():
+        if base.media_type_of(name) != NCX_TYPE:
+            continue
+        root = base.parsed(name)
+        navmap = next((e for e in root.iter() if localname(e.tag) == 'navMap'), None)
+        if navmap is None:
+            continue
+        for node in navmap.iter():
+            if localname(node.tag) != 'navPoint':
+                continue
+            if [c for c in node if localname(c.tag) == 'navPoint']:
+                continue
+            label = _navpoint_label(node)
+            href = _navpoint_src(node)
+            if _is_front_matter(base.href_to_name(href, name) if href else None, label):
+                continue
+            entries.append((label, href))
+        break       # one mirror is enough: both carry the same labels
+    return entries
+
+
+def label_prefix_for(base):
+    """The prefix this book's chapter labels share, ready to be stripped."""
+    return common_label_prefix([label for label, _href in _leaf_entries(base)])
+
+
+def _relabel(base, toc_name, label, href, has_children, prefix, renumber, counter):
+    """The new label for one TOC entry, or None to leave it alone."""
+    if has_children:
+        return None                     # a section header keeps its own name
+    zipname = base.href_to_name(href, toc_name) if href else None
+    if _is_front_matter(zipname, label):
+        return None                     # front matter is never numbered
+    result = label or ''
+    if prefix and result.lower().startswith(prefix.lower()):
+        remainder = result[len(prefix):].lstrip(' -–—:.,')
+        if len(remainder) >= 3:         # never shorten down to "2" or ""
+            result = remainder
+    if renumber:
+        counter[0] += 1
+        title = strip_chapter_numbering(result)
+        result = '%d. %s' % (counter[0], title) if title else 'Chapter %d' % counter[0]
+    return result if result and result != label else None
+
+
+def _polish_ncx(base, toc_name, prefix, renumber):
+    root = base.parsed(toc_name)
+    navmap = next((e for e in root.iter() if localname(e.tag) == 'navMap'), None)
+    if navmap is None:
+        return False
+    counter = [0]
+    changed = False
+    for node in navmap.iter():
+        if localname(node.tag) != 'navPoint':
+            continue
+        children = [c for c in node if localname(c.tag) == 'navPoint']
+        new = _relabel(base, toc_name, _navpoint_label(node), _navpoint_src(node),
+                       bool(children), prefix, renumber, counter)
+        if new is None:
+            continue
+        for child in node.iter():
+            if localname(child.tag) == 'text':
+                child.text = new
+                changed = True
+                break
+    if changed:
+        base.dirty(toc_name)
+    return changed
+
+
+def _polish_nav(base, toc_name, prefix, renumber):
+    root = base.parsed(toc_name)
+    nav = next((e for e in root.iter() if localname(e.tag) == 'nav'), None)
+    if nav is None:
+        return False
+    counter = [0]
+    changed = False
+    for item in nav.iter():
+        if localname(item.tag) != 'li':
+            continue
+        anchor = next((c for c in item.iter() if localname(c.tag) == 'a'), None)
+        if anchor is None:
+            continue
+        children = [c for c in item if localname(c.tag) == 'ol']
+        new = _relabel(base, toc_name, anchor.text, anchor.get('href'),
+                       bool(children), prefix, renumber, counter)
+        if new is None:
+            continue
+        anchor.text = new
+        changed = True
+    if changed:
+        base.dirty(toc_name)
+    return changed
+
+
+def polish_labels(base, prefix='', renumber=False):
+    """Rewrite leaf TOC labels: shorten a shared prefix, then number the chapters.
+
+    Leaves only, so a sectioned merge keeps each source's name while the chapters
+    underneath are tidied, and front matter is left alone. Every mirror is walked
+    in the same order, so an NCX and an EPUB3 nav end up matching.
+
+    ``prefix`` is stripped from every label that starts with it; pass '' to skip
+    shortening. Use ``label_prefix_for`` to work it out from the book itself.
+    ``renumber`` writes "N. Title", or "Chapter N" for a label that was only a
+    number.
+    """
+    if not prefix and not renumber:
+        return False
+    changed = False
+    for name in base.toc_doc_names():
+        if base.media_type_of(name) == NCX_TYPE:
+            changed = _polish_ncx(base, name, prefix, renumber) or changed
+        else:
+            changed = _polish_nav(base, name, prefix, renumber) or changed
+    return changed
+
+
 def _nest_ncx(base, toc_name, base_label, base_target, groups, style='sections'):
     """Nest source TOC entries in an NCX: one section each, or one flat list."""
     root = base.parsed(toc_name)
@@ -652,11 +836,16 @@ def preview_merge(epub_paths, base_index=0):
                 'author': _author_of(container),
                 'chapters': len([n for _r, n, _l in container.spine_iter()]),
                 'toc_entries': len(container.toc_entries()),
+                'labels': [label for label, name, _f in container.toc_entries()
+                           if not _is_front_matter(name, label)],
                 'has_toc': bool(container.toc_doc_names()),
                 'size_bytes': size,
                 'is_base': index == base_index,
             })
 
+        # The labels the sources already carry: if they share a long prefix, a
+        # merged chapter list would repeat it on every line.
+        chapter_labels = [label for s in sources for label in s['labels']]
         total = sum(s['size_bytes'] for s in sources)
         if not any(s['has_toc'] for s in sources):
             warnings.append('No source has a table of contents, so the merged '
@@ -683,6 +872,7 @@ def preview_merge(epub_paths, base_index=0):
             'default_title': sources[base_index]['title'],
             'default_author': sources[base_index]['author'],
             'suggested_toc_style': suggest_toc_style([s['title'] for s in sources]),
+            'suggested_shorten_labels': bool(common_label_prefix(chapter_labels)),
         }
     finally:
         for container in opened:
@@ -690,14 +880,16 @@ def preview_merge(epub_paths, base_index=0):
 
 
 def merge_books(epub_paths, output_path=None, title=None, author=None,
-                base_index=0, toc_style='sections'):
+                base_index=0, toc_style='sections', shorten_labels=False,
+                renumber_chapters=False):
     """Merge two or more EPUBs into one book.
 
     ``base_index`` selects which source provides the metadata and cover. The
     result is written to ``output_path``, or to a ``... (merged).epub`` file
     beside the base book -- **never** over a source. ``toc_style`` is 'sections'
-    (a section per source) or 'flat' (one chapter list, no section headers).
-    Returns a result dict.
+ (a section per source) or 'flat' (one chapter list, no section headers).
+ ``shorten_labels`` strips the prefix the chapter labels share, and
+ ``renumber_chapters`` numbers them in reading order. Returns a result dict.
     """
     paths = [p for p in (epub_paths or []) if p]
     if len(paths) < 2:
@@ -763,6 +955,9 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
         apply_metadata(base, title, author)
         toc_sections = nest_toc(base, groups, base_label=title or None,
                                 base_target=base_target, style=toc_style)
+        # Labels last, so every chapter is numbered in final reading order.
+        polish_labels(base, label_prefix_for(base) if shorten_labels else '',
+                      renumber_chapters)
 
         target = output_path or _non_clobbering(
             default_output_path(paths[base_index], title), paths)
@@ -777,6 +972,8 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
             'spine_after': len(list(base.spine_iter())),
             'toc_sections': toc_sections,
             'toc_style': toc_style,
+            'shorten_labels': bool(shorten_labels),
+            'renumber_chapters': bool(renumber_chapters),
             'warnings': warnings,
         })
         return result

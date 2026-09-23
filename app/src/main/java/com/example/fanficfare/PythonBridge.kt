@@ -122,8 +122,11 @@ class PythonBridge(private val context: Context) {
         author: String? = null,
         baseIndex: Int = 0,
         tocStyle: String = "sections",
+        shortenLabels: Boolean = false,
+        renumberChapters: Boolean = false,
     ): String = safeCall(
-        "epub_merge_books", pathsJson, outputPath, title, author, baseIndex, tocStyle
+        "epub_merge_books", pathsJson, outputPath, title, author, baseIndex, tocStyle,
+        shortenLabels, renumberChapters
     )
 
     fun epubMetadataJson(epubPath: String): String =

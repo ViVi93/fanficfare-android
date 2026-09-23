@@ -1524,12 +1524,14 @@ def test_merge_renumber_chapters_fn(ctx):
         labels = [l for l, _n, _f in c.toc_entries()]
         # "Ch. 00" carries nothing but numbering, so renumbering replaces it with
         # its own sequence; a chapter with a real title keeps the title. Each
-        # book's title page is the section label, and is not numbered.
-        assert labels == ['Collected — Title Page', 'Chapter 1', 'Chapter 2',
-                          'Chapter 3', 'Heart of the Mountain — Title Page',
+        # book's title page is the section label, named with that book's own
+        # title rather than the title typed for the merged book, and is not
+        # numbered.
+        assert labels == ['Heart of the Mountain — Title Page', 'Chapter 1',
+                          'Chapter 2', 'Chapter 3',
+                          'Heart of the Mountain — Title Page',
                           'Chapter 4', 'Chapter 5', 'Chapter 6'], labels
-        assert 'Collected — Title Page' in labels, labels
-        assert 'Heart of the Mountain — Title Page' in labels, labels
+        assert labels.count('Heart of the Mountain — Title Page') == 2, labels
         numbered = [l for l in labels if l.startswith('Chapter ')]
         assert [int(l.split()[1]) for l in numbered] == [1, 2, 3, 4, 5, 6], labels
 
@@ -1650,6 +1652,48 @@ def test_merge_records_chapter_count_fn(ctx):
     assert meta['chapters'] == 6, meta
 
 
+def test_merge_base_section_uses_its_own_title_fn(ctx):
+    """The base book's section is named with the base book's title.
+
+    The merged book takes the title the user typed, but the section is that
+    book's own title page: naming it with the typed title left the first book
+    labelled differently from every imported book, which keep their own titles.
+    """
+    c_mod = require(ctx, 'epub_container')
+    m_mod = require(ctx, 'epub_merge')
+    paths = fixture_paths()
+
+    first = staging_copy(paths['fic_titlechapter'])     # titled "The Pilots Conjugal Christmas"
+    second = staging_copy(paths['fic_simple'])
+    out = os.path.join(os.path.dirname(first), 'base-title.epub')
+
+    result = m_mod.merge_books([first, second], output_path=out, title='Typed Title')
+    assert result['ok'], result
+    assert_sane(out)
+
+    with c_mod.EpubContainer(out) as c:
+        # the book itself carries the typed title...
+        root = c.parsed(c.opf_name)
+        titles = [e.text for e in root.iter() if e.tag.endswith('}title')]
+        assert 'Typed Title' in titles, titles
+
+        # ...but the base section is named after the base book, not the typed title
+        ncx = [n for n in c.toc_doc_names()
+               if c.media_type_of(n) == 'application/x-dtbncx+xml']
+        navmap = [e for e in c.parsed(ncx[0]).iter()
+                  if c_mod.localname(e.tag) == 'navMap'][0]
+        top = []
+        for node in navmap:
+            if c_mod.localname(node.tag) != 'navPoint':
+                continue
+            label = next((t.text for t in node.iter()
+                          if c_mod.localname(t.tag) == 'text'), '')
+            top.append(label)
+        assert top[0] == 'The Pilots Conjugal Christmas — Title Page', top
+        for label in top:
+            assert not label.startswith('Typed Title'), top
+
+
 def run_tests():
     ctx = _load_modules()
     tests = [
@@ -1692,6 +1736,7 @@ def run_tests():
         ('merge_keeps_title_named_chapter', test_merge_keeps_title_named_chapter_fn),
         ('merge_flat_names_book_on_title_page', test_merge_flat_names_book_on_title_page_fn),
         ('merge_records_chapter_count', test_merge_records_chapter_count_fn),
+        ('merge_base_section_uses_its_own_title', test_merge_base_section_uses_its_own_title_fn),
     ]
 
     passed = 0

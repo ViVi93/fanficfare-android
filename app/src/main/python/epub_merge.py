@@ -1078,9 +1078,13 @@ def merge_books(epub_paths, output_path=None, title=None, author=None,
         if not imported:
             return {'ok': False, 'error': 'no source had anything to merge'}
 
-        # Metadata first, so the base's TOC section picks up a title override.
+        # The base book's section is its own title page, so it is named with the
+        # base book's own title -- the same way every imported book is named with
+        # its own. Read it before apply_metadata overwrites the OPF with the title
+        # the user typed, which names the merged book rather than this section.
+        base_book_title = _title_of(base)
         apply_metadata(base, title, author)
-        toc_sections = nest_toc(base, groups, base_label=title or None,
+        toc_sections = nest_toc(base, groups, base_label=base_book_title or None,
                                 base_target=base_target, style=toc_style)
         # Labels last, so every chapter is numbered in final reading order.
         polish_labels(base, label_prefix_for(base) if shorten_labels else '',

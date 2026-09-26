@@ -12,3 +12,7 @@ __pycache__/
 *.pyc
 .jks
 .github_secret_values.txt
+
+# Generated report from `./gradlew :app:dependencies` - machine-specific,
+# unreferenced, and goes stale on any dependency change. Regenerate on demand.
+deps.txt

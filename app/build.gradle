@@ -11,12 +11,19 @@ android {
         dataBinding = false
     }
 
+    // Populated only when the release signing properties are supplied (CI passes
+    // them from repository secrets). When they are absent we must not attach a
+    // signing config at all: referencing a storeFile-less config makes
+    // packageRelease fail with 'SigningConfig "release" is missing required
+    // property "storeFile"' instead of producing an unsigned APK.
+    def hasReleaseSigning = project.hasProperty('SIGNING_KEY_STORE_PATH') &&
+            project.hasProperty('SIGNING_KEY_ALIAS') &&
+            project.hasProperty('SIGNING_STORE_PASSWORD') &&
+            project.hasProperty('SIGNING_KEY_PASSWORD')
+
     signingConfigs {
         release {
-            if (project.hasProperty('SIGNING_KEY_STORE_PATH') &&
-                project.hasProperty('SIGNING_KEY_ALIAS') &&
-                project.hasProperty('SIGNING_STORE_PASSWORD') &&
-                project.hasProperty('SIGNING_KEY_PASSWORD')) {
+            if (hasReleaseSigning) {
                 storeFile file(SIGNING_KEY_STORE_PATH)
                 keyAlias SIGNING_KEY_ALIAS
                 storePassword SIGNING_STORE_PASSWORD
@@ -38,10 +45,20 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Local/dev builds get their own applicationId so they can be
+            // installed side by side with the release (GitHub Actions) build
+            // instead of replacing it. FileProvider authorities derive from
+            // ${applicationId}, so they stay unique automatically.
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 

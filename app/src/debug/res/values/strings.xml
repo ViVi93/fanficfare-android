@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only label override so a locally-built debug APK is distinguishable
+     from the release build installed from GitHub Actions. The release build
+     keeps the plain "Aharana" label from src/main/res/values/strings.xml. -->
+<resources>
+    <string name="app_name">Aharana (debug)</string>
+</resources>

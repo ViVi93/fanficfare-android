@@ -34,20 +34,16 @@ jobs:
             "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0"
-      - name: Prepare release signing config
+      - name: Decode release keystore
         if: github.event_name == 'push'
         env:
           SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           if [ -z "$SIGNING_KEY_STORE_BASE64" ]; then
-            echo "WARNING: Signing secrets not found. Building unsigned release."
-            echo "UNSIGNED=true" >> $GITHUB_ENV
+            echo "::warning::Signing secrets absent - the release build will be unsigned."
           else
             echo "$SIGNING_KEY_STORE_BASE64" | base64 -d > signing.jks
-            echo "UNSIGNED=false" >> $GITHUB_ENV
+            echo "Decoded signing.jks ($(stat -c%s signing.jks) bytes)."
           fi
       - name: Build debug APK
         run: ./gradlew assembleDebug
@@ -58,21 +54,25 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
-          if [ "$UNSIGNED" = "true" ]; then
-            ./gradlew assembleRelease --verbose
+          # app/build.gradle only attaches signingConfigs.release when all four
+          # SIGNING_* properties are supplied; otherwise assembleRelease emits
+          # app-release-unsigned.apk. Passing the properties is therefore what
+          # selects the signed or unsigned path - no retry bookkeeping needed.
+          if [ ! -f signing.jks ]; then
+            echo "No keystore available - building an unsigned release APK."
+            ./gradlew assembleRelease
+            exit 0
+          fi
+
+          if ./gradlew assembleRelease \
+               -PSIGNING_KEY_STORE_PATH="$(pwd)/signing.jks" \
+               -PSIGNING_KEY_ALIAS="$SIGNING_KEY_ALIAS" \
+               -PSIGNING_STORE_PASSWORD="$SIGNING_STORE_PASSWORD" \
+               -PSIGNING_KEY_PASSWORD="$SIGNING_KEY_PASSWORD"; then
+            echo "Signed release build succeeded."
           else
-            set +e
-            ./gradlew assembleRelease \
-              -PSIGNING_KEY_STORE_PATH="$(pwd)/signing.jks" \
-              -PSIGNING_KEY_ALIAS="$SIGNING_KEY_ALIAS" \
-              -PSIGNING_STORE_PASSWORD="$SIGNING_STORE_PASSWORD" \
-              -PSIGNING_KEY_PASSWORD="$SIGNING_KEY_PASSWORD"
-            BUILD_EXIT=$?
-            set -e
-            if [ $BUILD_EXIT -ne 0 ]; then
-              echo "WARNING: Signed release build failed (likely wrong signing credentials). Falling back to unsigned release."
-              ./gradlew assembleRelease --verbose
-            fi
+            echo "::warning::Signed release build failed - falling back to an unsigned release APK."
+            ./gradlew assembleRelease
           fi
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -86,12 +86,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="build-${{ github.sha }}"
-          SIGNED_APK="app/build/outputs/apk/release/app-release.apk"
-          if [ -f "$SIGNED_APK" ]; then
-            APK_PATH="$SIGNED_APK"
-          else
-            APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          # Prefer signed release, then unsigned release, then debug. The debug
+          # APK is last on purpose: it carries the '.debug' applicationId suffix
+          # and so would not upgrade an existing install.
+          APK_PATH=""
+          for candidate in \
+            app/build/outputs/apk/release/app-release.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk \
+            app/build/outputs/apk/debug/app-debug.apk; do
+            if [ -f "$candidate" ]; then APK_PATH="$candidate"; break; fi
+          done
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::No APK found to publish."
+            exit 1
           fi
+          echo "Publishing $APK_PATH"
           gh release create "$TAG" "$APK_PATH" \
             --title "Build ${{ github.sha }}" \
             --notes "Automated APK build from commit \`${{ github.sha }}\` on ${{ github.ref_name }}." \

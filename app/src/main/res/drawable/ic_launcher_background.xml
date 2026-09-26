@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Solid brand background for the adaptive launcher icon.
+     Matches @color/fanficfare_primary_container (#2E7D32) so the icon and the
+     in-app Material 3 theme agree. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#00000000"
+        android:fillColor="#2E7D32"
         android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
 </vector>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">FanFicFare</string>
+    <string name="app_name">Aharana</string>
     <string name="empty_library_title">No books yet</string>
     <string name="empty_library_subtitle">Tap the button below to download your first story</string>
     <string name="empty_library_action">Download a story</string>

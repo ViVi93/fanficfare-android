@@ -4,7 +4,7 @@ apply plugin: 'kotlin-kapt'
 apply plugin: 'com.chaquo.python'
 
 android {
-    namespace 'com.example.fanficfare'
+    namespace 'com.vivi.aharana'
     compileSdk 35
 
     buildFeatures {
@@ -26,7 +26,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.fanficfare"
+        applicationId "com.vivi.aharana"
         minSdk 24
         targetSdk 35
         versionCode 5

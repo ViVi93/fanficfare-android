@@ -2,8 +2,5 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <!-- Themed-icon layer: a dedicated white-on-transparent silhouette.
-         Do NOT point this at the coloured foreground - that makes Samsung One UI
-         render a black circle with white corner spill. -->
     <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

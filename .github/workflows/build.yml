@@ -32,8 +32,8 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
-            "platforms;android-34" \
-            "build-tools;34.0.0"
+            "platforms;android-35" \
+            "build-tools;35.0.0"
       - name: Decode release keystore
         if: github.event_name == 'push'
         env:
@@ -77,7 +77,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fanficfare-apk
+          name: aharana-apk
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
       - name: Create GitHub Release

@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
-import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.documentfile.provider.DocumentFile
@@ -40,7 +39,7 @@ class SettingsActivity : BaseActivity() {
         findViewById<Button>(R.id.buttonSave).setOnClickListener {
             val dir = output.text.toString().trim()
             prefs.edit().putString("output_dir", dir).apply()
-            Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
+            showMessage("Saved")
             finish()
         }
 
@@ -55,7 +54,7 @@ class SettingsActivity : BaseActivity() {
                     try {
                         startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
                     } catch (e2: Exception) {
-                        Toast.makeText(this, "Cannot open settings: ${e2.message}", Toast.LENGTH_LONG).show()
+                        showMessage("Cannot open settings: ${e2.message}")
                     }
                 }
             }
@@ -81,7 +80,7 @@ class SettingsActivity : BaseActivity() {
             val bridge = try { PythonBridge(this) } catch (e: Exception) { null }
             try { bridge?.clearDownloadDebug() } catch (e: Exception) { /* ignore */ }
             refreshPythonDebugLog()
-            Toast.makeText(this, "Debug log cleared", Toast.LENGTH_SHORT).show()
+            showMessage("Debug log cleared")
         }
 
         findViewById<Button>(R.id.buttonRunDnsDiagnostics).setOnClickListener {
@@ -270,15 +269,15 @@ class SettingsActivity : BaseActivity() {
                 }
             }
             if (dest.exists()) {
-                Toast.makeText(this, "personal.ini imported", Toast.LENGTH_SHORT).show()
+                showMessage("personal.ini imported")
                 val bridge = try { PythonBridge(this) } catch (e: Exception) { null }
                 bridge?.initialize(getConfigDir(this).absolutePath)
                 updateConfigStatus()
             } else {
-                Toast.makeText(this, "Import failed", Toast.LENGTH_SHORT).show()
+                showMessage("Import failed")
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "Import error: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+            showMessage("Import error: ${e.javaClass.simpleName}")
         }
     }
 
@@ -286,12 +285,12 @@ class SettingsActivity : BaseActivity() {
         try {
             val file = File(getConfigDir(this), "personal.ini")
             if (file.exists()) file.delete()
-            Toast.makeText(this, "personal.ini removed", Toast.LENGTH_SHORT).show()
+            showMessage("personal.ini removed")
             val bridge = try { PythonBridge(this) } catch (e: Exception) { null }
             bridge?.initialize(getConfigDir(this).absolutePath)
             updateConfigStatus()
         } catch (e: Exception) {
-            Toast.makeText(this, "Remove error: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+            showMessage("Remove error: ${e.javaClass.simpleName}")
         }
     }
 

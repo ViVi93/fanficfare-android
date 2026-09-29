@@ -2,7 +2,6 @@ package com.vivi.aharana
 
 import android.os.Bundle
 import android.widget.LinearLayout
-import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.vivi.aharana.adapter.DownloadJobAdapter
 import com.vivi.aharana.data.local.AppDatabase
@@ -32,7 +31,7 @@ class DownloadQueueActivity : BaseActivity() {
                 DiagnosticLog.append(this, "Queue.Retry", "jobId=${job.id} type=${job.type}")
                 val repo = BookRepository(this)
                 repo.retryJob(job)
-                Toast.makeText(this, R.string.retry_failed_toast, Toast.LENGTH_LONG).show()
+                showMessage(R.string.retry_failed_toast)
                 // Mark the old job as cancelled so it disappears from the queue
                 // and the retried job appears as a new entry
                 repo.cancelJob(job)
@@ -43,7 +42,7 @@ class DownloadQueueActivity : BaseActivity() {
                 CoroutineScope(Dispatchers.IO).launch {
                     db.downloadJobDao().delete(job)
                 }
-                Toast.makeText(this, R.string.queue_removed_toast, Toast.LENGTH_SHORT).show()
+                showMessage(R.string.queue_removed_toast)
             }
         )
 

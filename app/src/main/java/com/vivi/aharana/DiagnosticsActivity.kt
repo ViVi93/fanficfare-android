@@ -46,7 +46,7 @@ class DiagnosticsActivity : BaseActivity() {
         findViewById<android.widget.Button>(R.id.buttonShareLog).setOnClickListener {
             val file = DiagnosticLog.getFile(this)
             if (!file.exists()) {
-                android.widget.Toast.makeText(this, "No log yet", android.widget.Toast.LENGTH_SHORT).show()
+                showMessage("No log yet")
                 return@setOnClickListener
             }
             val uri: Uri = FileProvider.getUriForFile(this, "${packageName}.provider", file)

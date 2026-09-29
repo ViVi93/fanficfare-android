@@ -11,6 +11,7 @@ import com.google.android.material.color.ColorContrast
 import com.google.android.material.color.ColorContrastOptions
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.DynamicColorsOptions
+import com.google.android.material.snackbar.Snackbar
 
 /**
  * Shared base for every screen.
@@ -86,6 +87,26 @@ open class BaseActivity : AppCompatActivity() {
             )
         }
     }
+
+    /**
+     * In-place feedback, anchored to the activity content so it clears the system bars.
+     *
+     * Thread-safe on purpose: several callers already report completion from a background
+     * thread, and Snackbar must be shown on the main thread. Posting instead of throwing keeps
+     * those callers working unchanged.
+     */
+    protected fun showMessage(text: CharSequence) {
+        val root = findViewById<View>(android.R.id.content) ?: return
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            Snackbar.make(root, text, Snackbar.LENGTH_LONG).show()
+        } else {
+            root.post { Snackbar.make(root, text, Snackbar.LENGTH_LONG).show() }
+        }
+    }
+
+    /** String-resource overload, mirroring `Toast.makeText`'s resId form. */
+    protected fun showMessage(@androidx.annotation.StringRes textRes: Int) =
+        showMessage(getString(textRes))
 
     /** Pads [view]'s top by the status-bar inset. Use on app bars so their background extends
      *  behind the status bar while the content stays clear of it. */

@@ -9,7 +9,6 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
-import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class EditMetadataActivity : BaseActivity() {
@@ -159,7 +158,7 @@ class EditMetadataActivity : BaseActivity() {
                             }
                         }
                         Log.d("EditMetadata", "result=SUCCESS changed=$changedList")
-                        Toast.makeText(this, "Metadata saved: ${changedList.joinToString(", ")}", Toast.LENGTH_LONG).show()
+                        showMessage("Metadata saved: ${changedList.joinToString(", ")}")
                         val modified = System.currentTimeMillis()
                         val intent = Intent().apply {
                             putExtra("title", title)
@@ -213,7 +212,7 @@ class EditMetadataActivity : BaseActivity() {
                                 val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
                                 val clip = ClipData.newPlainText("OPF XML", opfXml)
                                 clipboard.setPrimaryClip(clip)
-                                Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                showMessage("Copied to clipboard")
                             }
                             .setNegativeButton("Close", null)
                             .show()
@@ -234,6 +233,6 @@ class EditMetadataActivity : BaseActivity() {
     }
 
     private fun showError(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        showMessage(message)
     }
 }

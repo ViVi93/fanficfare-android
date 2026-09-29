@@ -172,14 +172,14 @@ class BookDetailActivity : BaseActivity() {
         try {
             startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(this, "No EPUB reader installed", Toast.LENGTH_LONG).show()
+            showMessage("No EPUB reader installed")
         }
     }
 
     private fun updateBook() {
         val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
             DiagnosticLog.append(this, "Detail.Update", "bridge_unavailable")
-            Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
+            showMessage("Bridge not available")
             return
         }
         DiagnosticLog.append(this, "Detail.Update", "button_pressed title=$bookTitle url=$bookUrl path=$bookPath source=$bookSource")
@@ -263,7 +263,7 @@ class BookDetailActivity : BaseActivity() {
     private fun forceDownloadBook() {
         val bridge = PythonBridge(applicationContext).takeIf { it.getInitError() == null } ?: run {
             DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_unavailable")
-            Toast.makeText(this, "Bridge not available", Toast.LENGTH_LONG).show()
+            showMessage("Bridge not available")
             return
         }
         DiagnosticLog.append(this, "Detail.ForceDownload", "button_pressed title=$bookTitle url=$bookUrl path=$bookPath source=$bookSource")
@@ -304,7 +304,7 @@ class BookDetailActivity : BaseActivity() {
                         val author = result.optString("author", bookAuthor)
                         val internalPath = result.optString("path", "")
                         if (internalPath.isNotBlank()) {
-                            Toast.makeText(this, "Force downloaded: $title", Toast.LENGTH_LONG).show()
+                            showMessage("Force downloaded: $title")
                             Thread {
                                 val outputDir = SettingsActivity.getOutputDir(this)
                                 try {
@@ -365,7 +365,7 @@ class BookDetailActivity : BaseActivity() {
         try {
             startActivity(Intent.createChooser(intent, "Share EPUB"))
         } catch (e: Exception) {
-            Toast.makeText(this, "Cannot share this file", Toast.LENGTH_LONG).show()
+            showMessage("Cannot share this file")
         }
     }
 
@@ -527,7 +527,7 @@ class BookDetailActivity : BaseActivity() {
                         // MetadataPreviewActivity.applyMetadataAndCoverSafely.
                         source.delete()
                         runOnUiThread {
-                            Toast.makeText(this, "Cover replaced: ${result.optString("cover_path_in_epub", "")}", Toast.LENGTH_LONG).show()
+                            showMessage("Cover replaced: ${result.optString("cover_path_in_epub", "")}")
                             finishWithResult(bookTitle, bookAuthor, finalPath, System.currentTimeMillis(), null)
                         }
                     } else {
@@ -589,7 +589,7 @@ class BookDetailActivity : BaseActivity() {
 
     private fun showError(message: String) {
         runOnUiThread {
-            android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
+            showMessage(message)
         }
     }
 

@@ -504,7 +504,7 @@ class AddFromPageActivity : BaseActivity() {
     }
 
     private fun toast(text: String) {
-        android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show()
+        showMessage(text)
     }
 
     private fun addFromPageFile(): File = File(getAddFromPageDir(), "add_from_page_items.json")

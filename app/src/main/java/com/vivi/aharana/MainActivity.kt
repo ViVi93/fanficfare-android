@@ -287,7 +287,7 @@ class MainActivity : BaseActivity() {
     }
 
     private fun toast(text: String) {
-        android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show()
+        showMessage(text)
     }
 
     private fun ensureNotificationPermission() {

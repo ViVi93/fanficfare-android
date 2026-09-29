@@ -10,7 +10,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.json.JSONArray
 import org.json.JSONObject
@@ -88,7 +87,7 @@ class MetadataPreviewActivity : BaseActivity() {
 
         bridge = PythonBridge(applicationContext)
         if (bridge.getInitError() != null) {
-            Toast.makeText(this, "Bridge not available: ${bridge.getInitError()}", Toast.LENGTH_LONG).show()
+            showMessage("Bridge not available: ${bridge.getInitError()}")
             finish()
             return
         }
@@ -396,7 +395,7 @@ class MetadataPreviewActivity : BaseActivity() {
             view.setOnClickListener {
                 selectedCandidate = cand
                 updateApplyButtonsEnabled()
-                Toast.makeText(this, "Selected: ${cand.source}", Toast.LENGTH_SHORT).show()
+                showMessage("Selected: ${cand.source}")
             }
 
             container.addView(view)
@@ -553,7 +552,7 @@ class MetadataPreviewActivity : BaseActivity() {
 
     private fun confirmAndApplyMetadata() {
         if (resultsJson.length() == 0 || !isResultOk(selectedResultIndex)) {
-            Toast.makeText(this, "No online metadata to apply", Toast.LENGTH_SHORT).show()
+            showMessage("No online metadata to apply")
             return
         }
         val online = resultsJson.getJSONObject(selectedResultIndex)
@@ -580,7 +579,7 @@ class MetadataPreviewActivity : BaseActivity() {
                                     if (changed != null) {
                                         for (i in 0 until changed.length()) list.add(changed.getString(i))
                                     }
-                                    Toast.makeText(this, "Metadata applied: ${list.joinToString(", ")}", Toast.LENGTH_LONG).show()
+                                    showMessage("Metadata applied: ${list.joinToString(", ")}")
                                     val out = Intent().apply {
                                         putExtra("title", onlineMeta.optString("title", bookTitle))
                                         putStringArrayListExtra("authors", extractAuthors(onlineMeta))
@@ -626,12 +625,12 @@ class MetadataPreviewActivity : BaseActivity() {
 
     private fun confirmAndApplyBoth() {
         if (resultsJson.length() == 0 || !isResultOk(selectedResultIndex)) {
-            Toast.makeText(this, "No online metadata to apply", Toast.LENGTH_SHORT).show()
+            showMessage("No online metadata to apply")
             return
         }
         val cand = selectedCandidate
         if (cand == null || cand.downloadedData.isNullOrBlank()) {
-            Toast.makeText(this, "No cover selected for combined apply", Toast.LENGTH_SHORT).show()
+            showMessage("No cover selected for combined apply")
             return
         }
 
@@ -660,7 +659,7 @@ class MetadataPreviewActivity : BaseActivity() {
                                     if (changed != null) {
                                         for (i in 0 until changed.length()) list.add(changed.getString(i))
                                     }
-                                    Toast.makeText(this, "Metadata + cover applied: ${list.joinToString(", ")}", Toast.LENGTH_LONG).show()
+                                    showMessage("Metadata + cover applied: ${list.joinToString(", ")}")
                                     val out = Intent().apply {
                                         putExtra("title", onlineMeta.optString("title", bookTitle))
                                         putStringArrayListExtra("authors", extractAuthors(onlineMeta))
@@ -687,11 +686,11 @@ class MetadataPreviewActivity : BaseActivity() {
 
     private fun confirmAndApplyCover() {
         val cand = selectedCandidate ?: run {
-            Toast.makeText(this, "No cover selected", Toast.LENGTH_SHORT).show()
+            showMessage("No cover selected")
             return
         }
         if (cand.downloadedData.isNullOrBlank()) {
-            Toast.makeText(this, "Please wait for cover download, or select a cover with an image", Toast.LENGTH_SHORT).show()
+            showMessage("Please wait for cover download, or select a cover with an image")
             return
         }
         val mime = cand.downloadedMime ?: "image/jpeg"
@@ -711,7 +710,7 @@ class MetadataPreviewActivity : BaseActivity() {
                             try {
                                 val r = JSONObject(result)
                                 if (r.optBoolean("ok") && r.optBoolean("cover_written")) {
-                                    Toast.makeText(this, "Cover applied successfully", Toast.LENGTH_LONG).show()
+                                    showMessage("Cover applied successfully")
                                     val out = Intent().apply {
                                         putExtra("output_path", r.optString("output_path", epubPath))
                                         putExtra("modified", System.currentTimeMillis())
@@ -736,7 +735,7 @@ class MetadataPreviewActivity : BaseActivity() {
 
     private fun showError(message: String) {
         safeRunOnUiThread {
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            showMessage(message)
         }
     }
 

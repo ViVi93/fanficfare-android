@@ -87,7 +87,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="Pick Folder"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                style="@style/Widget.Material3Expressive.Button.OutlinedButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonSave"
@@ -95,7 +95,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
                 android:text="Save"
-                style="@style/Widget.Material3.Button.ElevatedButton" />
+                style="@style/Widget.Material3Expressive.Button.ElevatedButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonAllFilesAccess"
@@ -103,7 +103,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:text="Grant All Files Access"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                style="@style/Widget.Material3Expressive.Button.OutlinedButton" />
 
             <View
                 android:layout_width="match_parent"
@@ -132,7 +132,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="Import personal.ini"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                style="@style/Widget.Material3Expressive.Button.OutlinedButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonRemoveConfig"
@@ -141,7 +141,7 @@
                 android:layout_marginTop="8dp"
                 android:text="Remove personal.ini"
                 android:enabled="false"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.Material3Expressive.Button.OutlinedButton"
                 android:textColor="?attr/colorError" />
 
             <View
@@ -177,7 +177,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Refresh debug log"
-                    style="@style/Widget.Material3.Button.TextButton" />
+                    style="@style/Widget.Material3Expressive.Button.TextButton" />
 
                 <Space
                     android:layout_width="16dp"
@@ -188,7 +188,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Clear debug log"
-                    style="@style/Widget.Material3.Button.TextButton" />
+                    style="@style/Widget.Material3Expressive.Button.TextButton" />
 
             </LinearLayout>
 
@@ -219,7 +219,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="Run DNS diagnostics"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                style="@style/Widget.Material3Expressive.Button.OutlinedButton" />
 
         </LinearLayout>
     </ScrollView>

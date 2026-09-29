@@ -321,7 +321,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 android:layout_marginTop="16dp"
-                style="@style/Widget.Material3.Button.ElevatedButton" />
+                style="@style/Widget.Material3Expressive.Button.ElevatedButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonCancel"
@@ -332,7 +332,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 android:layout_marginTop="8dp"
-                style="@style/Widget.Material3.Button.TextButton" />
+                style="@style/Widget.Material3Expressive.Button.TextButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonExportOpf"
@@ -343,7 +343,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 android:layout_marginTop="8dp"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                style="@style/Widget.Material3Expressive.Button.OutlinedButton" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
     </ScrollView>

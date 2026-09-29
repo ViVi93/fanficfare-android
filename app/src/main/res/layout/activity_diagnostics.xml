@@ -70,7 +70,7 @@
                 android:layout_width="0dp"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
-                style="@style/Widget.Material3.Button.TextButton" />
+                style="@style/Widget.Material3Expressive.Button.TextButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonClearLog"
@@ -78,7 +78,7 @@
                 android:layout_width="0dp"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
-                style="@style/Widget.Material3.Button.TextButton" />
+                style="@style/Widget.Material3Expressive.Button.TextButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonShareLog"
@@ -86,7 +86,7 @@
                 android:layout_width="0dp"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
-                style="@style/Widget.Material3.Button.TextButton" />
+                style="@style/Widget.Material3Expressive.Button.TextButton" />
         </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
@@ -95,7 +95,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            style="@style/Widget.Material3.Button.ElevatedButton" />
+            style="@style/Widget.Material3Expressive.Button.ElevatedButton" />
 
         <ScrollView
             android:layout_width="match_parent"

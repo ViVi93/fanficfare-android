@@ -173,7 +173,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:minHeight="48dp"
-            android:text="@string/merge_action" />
+            android:text="@string/merge_action"
+            style="@style/Widget.Material3.Button" />
 
         </LinearLayout>
 

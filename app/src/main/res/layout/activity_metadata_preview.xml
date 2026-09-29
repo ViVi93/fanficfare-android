@@ -185,7 +185,7 @@
                 android:layout_weight="1"
                 android:singleLine="true"
                 android:text="Apply Metadata"
-                style="@style/Widget.Material3.Button.ElevatedButton" />
+                style="@style/Widget.Material3.Button.OutlinedButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonApplyCover"
@@ -195,7 +195,7 @@
                 android:layout_marginStart="8dp"
                 android:singleLine="true"
                 android:text="Apply Cover"
-                style="@style/Widget.Material3.Button.ElevatedButton" />
+                style="@style/Widget.Material3.Button.OutlinedButton" />
 
         </LinearLayout>
 
@@ -213,7 +213,7 @@
                 android:layout_weight="1"
                 android:singleLine="true"
                 android:text="Apply All"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                style="@style/Widget.Material3.Button.ElevatedButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonCancel"
@@ -223,7 +223,7 @@
                 android:layout_marginStart="8dp"
                 android:singleLine="true"
                 android:text="Cancel"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                style="@style/Widget.Material3.Button.TextButton" />
 
         </LinearLayout>
 

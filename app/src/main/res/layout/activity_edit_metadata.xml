@@ -305,7 +305,7 @@
                 android:minLines="3"
                 android:scrollbars="vertical" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonSave"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -316,7 +316,7 @@
                 android:layout_marginTop="16dp"
                 style="@style/Widget.Material3.Button.ElevatedButton" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonCancel"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -325,9 +325,9 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 android:layout_marginTop="8dp"
-                style="@style/Widget.Material3.Button.ElevatedButton" />
+                style="@style/Widget.Material3.Button.TextButton" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonExportOpf"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -336,7 +336,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 android:layout_marginTop="8dp"
-                style="@style/Widget.Material3.Button.ElevatedButton" />
+                style="@style/Widget.Material3.Button.OutlinedButton" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
     </ScrollView>

@@ -9,13 +9,20 @@
       Standard app bar. The toolbar takes the status-bar inset and the content takes the
       navigation-bar inset, both applied in code through BaseActivity.
     -->
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/appBar"
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        app:navigationIcon="@drawable/ic_arrow_back_24"
-        app:navigationIconTint="?attr/colorOnSurfaceVariant"
-        app:title="@string/title_book_detail" />
+        android:layout_height="wrap_content">
+
+    <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:navigationIcon="@drawable/ic_arrow_back_24"
+            app:navigationIconTint="?attr/colorOnSurfaceVariant"
+            app:title="@string/title_book_detail" />
+
+    </com.google.android.material.appbar.AppBarLayout>
 
     <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:app="http://schemas.android.com/apk/res-auto"

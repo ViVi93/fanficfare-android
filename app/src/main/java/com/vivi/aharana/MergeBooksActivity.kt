@@ -77,7 +77,7 @@ class MergeBooksActivity : BaseActivity() {
         setContentView(R.layout.activity_merge_books)
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
             .setNavigationOnClickListener { finish() }
-        applyTopInset(findViewById<android.view.View>(R.id.toolbar))
+        applyTopInset(findViewById<android.view.View>(R.id.appBar))
         applyBottomInset(findViewById<android.view.View>(R.id.root))
         supportActionBar?.title = getString(R.string.merge_title)
 

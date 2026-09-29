@@ -39,7 +39,7 @@ class EditMetadataActivity : BaseActivity() {
         setContentView(R.layout.activity_edit_metadata)
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
             .setNavigationOnClickListener { finish() }
-        applyTopInset(findViewById<android.view.View>(R.id.toolbar))
+        applyTopInset(findViewById<android.view.View>(R.id.appBar))
         applyBottomInset(findViewById<android.view.View>(R.id.rootScroll), includeIme = true)
         Log.d("EditMetadata", "ENTER")
 

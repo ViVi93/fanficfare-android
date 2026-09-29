@@ -21,7 +21,7 @@ class SettingsActivity : BaseActivity() {
         setContentView(R.layout.activity_settings)
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
             .setNavigationOnClickListener { finish() }
-        applyTopInset(findViewById<android.view.View>(R.id.toolbar))
+        applyTopInset(findViewById<android.view.View>(R.id.appBar))
         applyBottomInset(findViewById<android.view.View>(R.id.rootScroll), includeIme = true)
 
         val output = findViewById<EditText>(R.id.inputOutputDir)

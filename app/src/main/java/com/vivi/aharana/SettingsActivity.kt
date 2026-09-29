@@ -27,6 +27,7 @@ class SettingsActivity : BaseActivity() {
         output.setText(prefs.getString("output_dir", ""))
 
         setupThemeSelector(prefs)
+        setupDynamicColorSwitch(prefs)
 
         findViewById<Button>(R.id.buttonPickFolder).setOnClickListener {
             val intent = Intent("android.provider.action.OPEN_DOCUMENT_TREE")
@@ -156,37 +157,93 @@ class SettingsActivity : BaseActivity() {
 
     private fun setupThemeSelector(prefs: android.content.SharedPreferences) {
         val themeInput = findViewById<EditText>(R.id.inputTheme)
-        val current = prefs.getString("ui_theme_mode", "system") ?: "system"
-        val options = listOf("System", "Light", "Dark")
-        themeInput.setText(options[if (current == "system") 0 else if (current == "light") 1 else 2])
+
+        fun labelFor(mode: String): String = when (mode) {
+            BaseActivity.THEME_LIGHT -> "Light"
+            BaseActivity.THEME_DARK -> "Dark"
+            BaseActivity.THEME_AMOLED -> "AMOLED (black)"
+            else -> "System"
+        }
+
+        // The field is refreshed from the preference every time, rather than from a value
+        // captured when the screen was created: the old version read it once and never
+        // updated the row, so it showed a stale theme after a selection.
+        fun refreshLabel() {
+            val mode = prefs.getString(BaseActivity.KEY_THEME_MODE, BaseActivity.THEME_SYSTEM)
+                ?: BaseActivity.THEME_SYSTEM
+            themeInput.setText(labelFor(mode))
+        }
+        refreshLabel()
+
         themeInput.setOnClickListener {
-            val titles = arrayOf("System", "Light", "Dark")
+            val current = prefs.getString(BaseActivity.KEY_THEME_MODE, BaseActivity.THEME_SYSTEM)
+                ?: BaseActivity.THEME_SYSTEM
+            val titles = arrayOf("System", "Light", "Dark", "AMOLED (black)")
             val checked = when (current) {
-                "system" -> 0
-                "light" -> 1
-                else -> 2
+                BaseActivity.THEME_LIGHT -> 1
+                BaseActivity.THEME_DARK -> 2
+                BaseActivity.THEME_AMOLED -> 3
+                else -> 0
             }
             AlertDialog.Builder(this)
                 .setTitle("Theme")
-                .setSingleChoiceItems(titles, checked) { _, which ->
+                .setSingleChoiceItems(titles, checked) { dialog, which ->
                     val mode = when (which) {
-                        1 -> "light"
-                        2 -> "dark"
-                        else -> "system"
+                        1 -> BaseActivity.THEME_LIGHT
+                        2 -> BaseActivity.THEME_DARK
+                        3 -> BaseActivity.THEME_AMOLED
+                        else -> BaseActivity.THEME_SYSTEM
                     }
-                    prefs.edit().putString("ui_theme_mode", mode).apply()
-                    AppCompatDelegate.setDefaultNightMode(
-                        when (mode) {
-                            "light" -> AppCompatDelegate.MODE_NIGHT_NO
-                            "dark" -> AppCompatDelegate.MODE_NIGHT_YES
-                            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-                        }
-                    )
+                    prefs.edit().putString(BaseActivity.KEY_THEME_MODE, mode).apply()
+                    applyThemeMode(mode)
+                    refreshLabel()
+                    dialog.dismiss()
+                    // Recreate so the change is visible now instead of on the next launch.
+                    recreate()
                 }
                 .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
                 .show()
         }
     }
+
+    /** Applies a theme mode to the whole app for this process. */
+    private fun applyThemeMode(mode: String) {
+        AppCompatDelegate.setDefaultNightMode(
+            when (mode) {
+                BaseActivity.THEME_LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+                BaseActivity.THEME_DARK -> AppCompatDelegate.MODE_NIGHT_YES
+                // AMOLED is a dark theme by definition; without this it would be unusable
+                // while the system is in light mode.
+                BaseActivity.THEME_AMOLED -> AppCompatDelegate.MODE_NIGHT_YES
+                else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            }
+        )
+    }
+
+    /**
+     * Material You toggle. Unavailable below Android 12, where the switch is disabled with an
+     * explanatory summary rather than silently doing nothing.
+     */
+    private fun setupDynamicColorSwitch(prefs: android.content.SharedPreferences) {
+        val switch = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switchDynamicColor)
+        val hint = findViewById<TextView>(R.id.textDynamicColorHint)
+        val available = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+
+        // Show as off when the device can't apply it, so the switch never claims an effect
+        // that is not happening.
+        switch.isChecked = available && prefs.getBoolean(BaseActivity.KEY_DYNAMIC_COLOR, true)
+        switch.isEnabled = available
+        if (!available) {
+            hint.setText("Needs Android 12 or newer — using the Aharana palette")
+        }
+
+        switch.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(BaseActivity.KEY_DYNAMIC_COLOR, checked).apply()
+            recreate()
+        }
+    }
+
+
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)

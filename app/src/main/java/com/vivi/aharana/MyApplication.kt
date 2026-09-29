@@ -12,10 +12,11 @@ class MyApplication : Application(), androidx.work.Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        // Disabled dynamic colors: it was overriding app-defined Material3 button/theme tokens
-        // and causing inconsistent button rendering across screens.
-        // Re-enable only if we explicitly want wallpaper-derived theming.
-        // com.google.android.material.color.DynamicColors.applyToActivitiesIfAvailable(this)
+        applySavedThemeMode()
+        // Dynamic colour (Material You) is applied per-activity in BaseActivity, not here:
+        // MDC applies dynamic colour before activities are created, so applying it from the
+        // Application would be overwritten by the per-activity theme decision
+        // (AMOLED vs normal, Material You vs system contrast).
         android.util.Log.d("FFF-App", "WorkManager initialized=${androidx.work.WorkManager.getInstance(this)}")
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -29,6 +30,26 @@ class MyApplication : Application(), androidx.work.Configuration.Provider {
                 }
             }
         }
+    }
+
+    /**
+     * Re-applies the saved theme mode on every process start.
+     *
+     * AppCompatDelegate's night mode is process-wide and resets on restart, and it was only ever
+     * set from the Settings screen, so a Light or Dark choice silently reverted to the system
+     * setting on the next launch.
+     */
+    private fun applySavedThemeMode() {
+        val mode = getSharedPreferences(BaseActivity.PREFS, MODE_PRIVATE)
+            .getString(BaseActivity.KEY_THEME_MODE, BaseActivity.THEME_SYSTEM)
+        androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
+            when (mode) {
+                BaseActivity.THEME_LIGHT -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
+                BaseActivity.THEME_DARK,
+                BaseActivity.THEME_AMOLED -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
+                else -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            }
+        )
     }
 
     override val workManagerConfiguration: androidx.work.Configuration = androidx.work.Configuration.Builder()

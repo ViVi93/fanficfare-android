@@ -5,12 +5,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.chaquo.python.Python
 import org.json.JSONObject
 
-class DiagnosticsActivity : AppCompatActivity() {
+class DiagnosticsActivity : BaseActivity() {
 
     private lateinit var statusText: TextView
     private lateinit var importText: TextView
@@ -19,9 +18,6 @@ class DiagnosticsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
-        }
         setContentView(R.layout.activity_diagnostics)
 
         statusText = findViewById(R.id.textDiagnosticStatus)

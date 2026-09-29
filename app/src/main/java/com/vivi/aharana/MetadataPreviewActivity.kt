@@ -12,8 +12,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.WindowCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -36,7 +34,7 @@ import java.io.File
  *
  * This activity is launched from BookDetailActivity via "Preview Online Metadata".
  */
-class MetadataPreviewActivity : AppCompatActivity() {
+class MetadataPreviewActivity : BaseActivity() {
 
     companion object {
         private const val TAG = "MetadataPreview"
@@ -73,7 +71,6 @@ class MetadataPreviewActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, true)
         setContentView(R.layout.activity_metadata_preview)
 
         epubPath = intent.getStringExtra("epub_path") ?: ""

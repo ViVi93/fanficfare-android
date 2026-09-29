@@ -11,7 +11,6 @@ import android.view.View
 import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -23,7 +22,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : BaseActivity() {
 
     private lateinit var bookAdapter: BookAdapter
     private var pythonBridge: PythonBridge? = null
@@ -46,9 +45,6 @@ class MainActivity : AppCompatActivity() {
         try {
             val t0 = System.currentTimeMillis()
             super.onCreate(savedInstanceState)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
-            }
             setContentView(R.layout.activity_main)
             supportActionBar?.hide()
             DiagnosticLog.append(this, "Main.Startup", "begin elapsed=${System.currentTimeMillis() - t0}")

@@ -13,12 +13,11 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.File
 
-class BookDetailActivity : AppCompatActivity() {
+class BookDetailActivity : BaseActivity() {
 
     companion object {
         private const val TAG = "BookDetailDiag"
@@ -39,9 +38,6 @@ class BookDetailActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
-        }
         setContentView(R.layout.activity_book_detail)
         Log.d(TAG, "BOOK_DETAILS ENTER")
 

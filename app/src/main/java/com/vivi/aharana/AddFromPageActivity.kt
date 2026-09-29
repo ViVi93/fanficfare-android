@@ -9,8 +9,6 @@ import android.view.ViewGroup
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -29,7 +27,7 @@ import org.json.JSONObject
 import java.io.File
 import kotlinx.coroutines.delay
 
-class AddFromPageActivity : AppCompatActivity() {
+class AddFromPageActivity : BaseActivity() {
 
     private lateinit var inputUrl: TextInputEditText
     private lateinit var checkNormalize: MaterialCheckBox
@@ -52,7 +50,6 @@ class AddFromPageActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         DiagnosticLog.append(this, "AddFromPage", "onCreate intent=${intent?.action}")
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, true)
         setContentView(R.layout.activity_add_from_page)
 
         val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)

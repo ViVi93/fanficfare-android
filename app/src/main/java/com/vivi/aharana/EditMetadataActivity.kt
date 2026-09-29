@@ -1,6 +1,5 @@
 package com.vivi.aharana
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -12,10 +11,8 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.WindowCompat
 
-class EditMetadataActivity : AppCompatActivity() {
+class EditMetadataActivity : BaseActivity() {
 
     private lateinit var bridge: PythonBridge
     private lateinit var epubPath: String
@@ -40,9 +37,6 @@ class EditMetadataActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            WindowCompat.setDecorFitsSystemWindows(window, true)
-        }
         setContentView(R.layout.activity_edit_metadata)
         Log.d("EditMetadata", "ENTER")
 

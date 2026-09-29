@@ -10,7 +10,6 @@ import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -33,7 +32,7 @@ import java.util.UUID
  * base: it supplies the merged book's cover and its metadata defaults. Nothing
  * is written here -- the work is handed to [MergeBooksWorker].
  */
-class MergeBooksActivity : AppCompatActivity() {
+class MergeBooksActivity : BaseActivity() {
 
     companion object {
         const val EXTRA_PATHS = "merge_paths"
@@ -76,11 +75,6 @@ class MergeBooksActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Same window setup as the other activities, so content starts below the
-        // status bar rather than underneath it.
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
-        }
         setContentView(R.layout.activity_merge_books)
         supportActionBar?.title = getString(R.string.merge_title)
 

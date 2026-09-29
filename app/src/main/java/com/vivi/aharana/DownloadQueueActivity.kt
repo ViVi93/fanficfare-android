@@ -3,7 +3,6 @@ package com.vivi.aharana
 import android.os.Bundle
 import android.widget.LinearLayout
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.vivi.aharana.adapter.DownloadJobAdapter
 import com.vivi.aharana.data.local.AppDatabase
@@ -11,15 +10,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-class DownloadQueueActivity : AppCompatActivity() {
+class DownloadQueueActivity : BaseActivity() {
 
     private lateinit var adapter: DownloadJobAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
-        }
         setContentView(R.layout.activity_download_queue)
 
         setSupportActionBar(findViewById(R.id.toolbar))

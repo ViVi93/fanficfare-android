@@ -1,11 +1,9 @@
 package com.vivi.aharana
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
-import androidx.core.view.WindowCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,12 +11,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class ShareReceiverActivity : Activity() {
+class ShareReceiverActivity : BaseActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, true)
         val text = TextView(this)
         text.visibility = View.GONE
         setContentView(text)

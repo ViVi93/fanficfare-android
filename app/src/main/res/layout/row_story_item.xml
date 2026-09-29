@@ -43,8 +43,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Title"
-                android:textSize="@dimen/m3_title_medium"
-                android:textStyle="bold"
+                android:textAppearance="?attr/textAppearanceTitleMediumEmphasized"
                 android:maxLines="2"
                 android:ellipsize="end" />
 

@@ -49,8 +49,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:text="Title"
-            android:textSize="@dimen/m3_title_medium"
-            android:textStyle="bold"
+            android:textAppearance="?attr/textAppearanceTitleMediumEmphasized"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@id/dividerCover"
             app:layout_constraintTop_toTopOf="@id/frameCover" />

@@ -60,4 +60,9 @@
     <string name="merge_warn_first_no_toc">The first book has no table of contents, so the merged book will not get one.</string>
     <string name="settings_dynamic_color">Material You colours</string>
     <string name="settings_dynamic_color_hint">Build the palette from your wallpaper (Android 12+)</string>
+    <string name="title_book_detail">Book details</string>
+    <string name="title_diagnostics">Diagnostics</string>
+    <string name="title_edit_metadata">Edit metadata</string>
+    <string name="title_merge_books">Merge books</string>
+    <string name="title_settings">Settings</string>
 </resources>

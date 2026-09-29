@@ -38,7 +38,10 @@ class EditMetadataActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_edit_metadata)
-        applySystemBarInsets(findViewById<android.view.View>(R.id.rootScroll), includeIme = true)
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+            .setNavigationOnClickListener { finish() }
+        applyTopInset(findViewById<android.view.View>(R.id.toolbar))
+        applyBottomInset(findViewById<android.view.View>(R.id.rootScroll), includeIme = true)
         Log.d("EditMetadata", "ENTER")
 
         epubPath = intent.getStringExtra("epub_path") ?: ""

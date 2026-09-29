@@ -19,7 +19,10 @@ class DiagnosticsActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_diagnostics)
-        applySystemBarInsets(findViewById<android.view.View>(R.id.root))
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+            .setNavigationOnClickListener { finish() }
+        applyTopInset(findViewById<android.view.View>(R.id.toolbar))
+        applyBottomInset(findViewById<android.view.View>(R.id.root))
 
         statusText = findViewById(R.id.textDiagnosticStatus)
         importText = findViewById(R.id.textImportDiagnostics)

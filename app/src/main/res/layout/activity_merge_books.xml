@@ -1,162 +1,181 @@
-<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
 
     <!--
-      Window insets are applied to the root in code (BaseActivity.applySystemBarInsets),
-      which adds them on top of any padding declared here, so the 16dp lives on a child
-      to keep the content clear of the screen edge.
+      Standard app bar. The toolbar takes the status-bar inset and the content takes the
+      navigation-bar inset, both applied in code through BaseActivity.
     -->
-    <LinearLayout
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="@drawable/ic_arrow_back_24"
+        app:navigationIconTint="?attr/colorOnSurfaceVariant"
+        app:title="@string/title_merge_books" />
 
-    <TextView
-        android:id="@+id/mergeHeading"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/merge_heading"
-        android:textAppearance="?attr/textAppearanceTitleMedium" />
-
-    <TextView
-        android:id="@+id/mergeSummary"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textAppearance="?attr/textAppearanceBodyMedium"
-        android:text="@string/merge_loading" />
-
-    <TextView
-        android:id="@+id/mergeWarnings"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:padding="8dp"
-        android:textAppearance="?attr/textAppearanceBodySmall"
-        android:visibility="gone" />
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/mergeSourceList"
+    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        android:id="@+id/root"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingBottom="8dp" />
+        android:orientation="vertical"    android:layout_weight="1">
 
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="@string/merge_title_hint">
+        <!--
+          Window insets are applied to the root in code (BaseActivity.applySystemBarInsets),
+          which adds them on top of any padding declared here, so the 16dp lives on a child
+          to keep the content clear of the screen edge.
+        -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="16dp">
 
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/mergeTitle"
+        <TextView
+            android:id="@+id/mergeHeading"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="text"
-            android:maxLines="1" />
-    </com.google.android.material.textfield.TextInputLayout>
+            android:text="@string/merge_heading"
+            android:textAppearance="?attr/textAppearanceTitleMedium" />
 
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:hint="@string/merge_author_hint">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/mergeAuthor"
+        <TextView
+            android:id="@+id/mergeSummary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="text"
-            android:maxLines="1" />
-    </com.google.android.material.textfield.TextInputLayout>
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:text="@string/merge_loading" />
 
-    <TextView
-        android:id="@+id/mergeOutputName"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textAppearance="?attr/textAppearanceBodySmall" />
-
-    <TextView
-        android:id="@+id/mergeTocLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/merge_toc_label"
-        android:textAppearance="?attr/textAppearanceLabelMedium" />
-
-    <RadioGroup
-        android:id="@+id/mergeTocStyle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
-        <RadioButton
-            android:id="@+id/mergeTocSections"
+        <TextView
+            android:id="@+id/mergeWarnings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:checked="true"
+            android:layout_marginTop="8dp"
+            android:padding="8dp"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/mergeSourceList"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="8dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingBottom="8dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/merge_title_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/mergeTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:maxLines="1" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/merge_author_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/mergeAuthor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:maxLines="1" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:id="@+id/mergeOutputName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <TextView
+            android:id="@+id/mergeTocLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/merge_toc_label"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <RadioGroup
+            android:id="@+id/mergeTocStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/mergeTocSections"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:minHeight="48dp"
+                android:text="@string/merge_toc_sections" />
+
+            <RadioButton
+                android:id="@+id/mergeTocFlat"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/merge_toc_flat" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/mergeTocHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <TextView
+            android:id="@+id/mergeLabelsLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/merge_labels_label"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/mergeShortenLabels"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:minHeight="48dp"
-            android:text="@string/merge_toc_sections" />
+            android:text="@string/merge_shorten_labels" />
 
-        <RadioButton
-            android:id="@+id/mergeTocFlat"
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/mergeRenumberChapters"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
-            android:text="@string/merge_toc_flat" />
-    </RadioGroup>
+            android:text="@string/merge_renumber_chapters" />
 
-    <TextView
-        android:id="@+id/mergeTocHint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textAppearance="?attr/textAppearanceBodySmall" />
+        <ProgressBar
+            android:id="@+id/mergeProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:indeterminate="true"
+            android:visibility="gone" />
 
-    <TextView
-        android:id="@+id/mergeLabelsLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/merge_labels_label"
-        android:textAppearance="?attr/textAppearanceLabelMedium" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/mergeButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:text="@string/merge_action" />
 
-    <com.google.android.material.checkbox.MaterialCheckBox
-        android:id="@+id/mergeShortenLabels"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:minHeight="48dp"
-        android:text="@string/merge_shorten_labels" />
-
-    <com.google.android.material.checkbox.MaterialCheckBox
-        android:id="@+id/mergeRenumberChapters"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:minHeight="48dp"
-        android:text="@string/merge_renumber_chapters" />
-
-    <ProgressBar
-        android:id="@+id/mergeProgress"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:indeterminate="true"
-        android:visibility="gone" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/mergeButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:minHeight="48dp"
-        android:text="@string/merge_action" />
+        </LinearLayout>
 
     </LinearLayout>
-
 </LinearLayout>

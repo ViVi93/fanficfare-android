@@ -93,19 +93,10 @@ open class BaseActivity : AppCompatActivity() {
         applyInsets(view, top = true, bottom = false, horizontal = false)
 
     /** Pads [view]'s bottom by the navigation-bar inset. Use on content that should keep its
-     *  last row reachable above the gesture bar. */
-    protected fun applyBottomInset(view: View) =
-        applyInsets(view, top = false, bottom = true, horizontal = false)
-
-    /** Pads [view]'s left/right by the system-bar insets (landscape, display cutouts). */
-    protected fun applyHorizontalInsets(view: View) =
-        applyInsets(view, top = false, bottom = false, horizontal = true)
-
-    /** Pads [view] on all sides by the system-bar insets, for a root whose content should stay
-     *  fully inside the safe area. Set [includeIme] on form screens so the keyboard cannot hide
-     *  the focused field (requires `android:windowSoftInputMode="adjustResize"`). */
-    protected fun applySystemBarInsets(view: View, includeIme: Boolean = false) =
-        applyInsets(view, top = true, bottom = true, horizontal = true, includeIme = includeIme)
+     *  last row reachable above the gesture bar. Set [includeIme] on form screens so the keyboard
+     *  cannot hide the focused field. */
+    protected fun applyBottomInset(view: View, includeIme: Boolean = false) =
+        applyInsets(view, top = false, bottom = true, horizontal = false, includeIme = includeIme)
 
     private fun applyInsets(
         view: View,

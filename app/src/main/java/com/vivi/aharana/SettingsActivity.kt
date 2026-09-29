@@ -20,7 +20,10 @@ class SettingsActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
-        applySystemBarInsets(findViewById<android.view.View>(R.id.rootScroll), includeIme = true)
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+            .setNavigationOnClickListener { finish() }
+        applyTopInset(findViewById<android.view.View>(R.id.toolbar))
+        applyBottomInset(findViewById<android.view.View>(R.id.rootScroll), includeIme = true)
 
         val output = findViewById<EditText>(R.id.inputOutputDir)
         val prefs = getSharedPreferences("fanficfare_prefs", MODE_PRIVATE)

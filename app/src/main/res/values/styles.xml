@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.FanficFare" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.Aharana" parent="Theme.Material3Expressive.DayNight.NoActionBar">
         <item name="colorPrimary">@color/fanficfare_primary</item>
         <item name="colorOnPrimary">@color/fanficfare_on_primary</item>
         <item name="colorPrimaryContainer">@color/fanficfare_primary_container</item>
@@ -32,7 +32,7 @@
       (via BaseActivity). The previous @android:style/Theme.Translucent.NoTitleBar is a
       platform theme and would crash AppCompat at launch.
     -->
-    <style name="Theme.FanficFare.Translucent" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.Aharana.Translucent" parent="Theme.Material3Expressive.DayNight.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>

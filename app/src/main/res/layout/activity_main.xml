@@ -16,7 +16,7 @@
             android:layout_height="?attr/actionBarSize"
             app:contentInsetStart="0dp"
             app:contentInsetLeft="0dp"
-            app:popupTheme="@style/Theme.FanficFare"
+            app:popupTheme="@style/Theme.Aharana"
             android:popupBackground="?attr/colorSurface">
 
             <include layout="@layout/status_ui" />

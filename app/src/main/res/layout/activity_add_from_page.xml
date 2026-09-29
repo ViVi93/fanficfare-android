@@ -16,7 +16,7 @@
             android:layout_height="?attr/actionBarSize"
             app:title="Add from page"
             app:titleTextColor="?android:attr/textColorPrimary"
-            app:popupTheme="@style/Theme.FanficFare"
+            app:popupTheme="@style/Theme.Aharana"
             android:popupBackground="?attr/colorSurface" />
 
         <LinearLayout

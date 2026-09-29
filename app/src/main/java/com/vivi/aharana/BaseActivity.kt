@@ -7,24 +7,84 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import com.google.android.material.color.ColorContrast
+import com.google.android.material.color.ColorContrastOptions
+import com.google.android.material.color.DynamicColors
+import com.google.android.material.color.DynamicColorsOptions
 
 /**
  * Shared base for every screen.
  *
- * Android 15 (API 35) enforces edge-to-edge for apps that target SDK 35 and ignores
- * `WindowCompat.setDecorFitsSystemWindows(window, true)`, so the old per-activity opt-out
- * is both deprecated and ineffective. We call [enableEdgeToEdge] exactly once here and let
- * each screen inset the views that actually need it via the helpers below, rather than
- * relying on `android:fitsSystemWindows` to guess.
+ * Two responsibilities:
  *
- * The helpers add the system insets *on top of* the padding already declared in XML (the base
- * padding is captured once, so repeated inset callbacks stay idempotent instead of accumulating).
+ * 1. **Edge-to-edge.** Android 15 (API 35) enforces edge-to-edge for apps that target SDK 35 and
+ *    ignores `WindowCompat.setDecorFitsSystemWindows(window, true)`, so the old per-activity opt-out
+ *    is both deprecated and ineffective. We call [enableEdgeToEdge] once here and let each screen
+ *    inset the views that need it via the helpers below.
+ *
+ * 2. **Colour mode.** Picks the AMOLED theme and applies the Material You or system-contrast
+ *    overlay. Both live here rather than in `Application` on purpose: Material Components applies
+ *    dynamic colour *before* activities are created, so an Application-level contrast overlay would
+ *    be silently overwritten. One place, one authority over the activity theme.
+ *
+ * The inset helpers add the system insets *on top of* the padding declared in XML (the base padding
+ * is captured once, so repeated inset callbacks stay idempotent instead of accumulating).
  */
 open class BaseActivity : AppCompatActivity() {
 
+    protected val appPrefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        applyBaseTheme()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // Runs before the subclass inflates its layout, because views capture the resolved
+        // theme colours at inflation time.
+        applyColourMode()
+    }
+
+    /**
+     * Override to opt out of the AMOLED theme — used by the translucent share receiver, which
+     * must keep its own translucent theme rather than becoming opaque.
+     */
+    protected open fun supportsAmoledTheme(): Boolean = true
+
+    private fun applyBaseTheme() {
+        if (!supportsAmoledTheme()) return
+        if (appPrefs.getString(KEY_THEME_MODE, THEME_SYSTEM) == THEME_AMOLED) {
+            setTheme(R.style.Theme_Aharana_Amoled)
+        }
+    }
+
+    private fun applyColourMode() {
+        val amoled = appPrefs.getString(KEY_THEME_MODE, THEME_SYSTEM) == THEME_AMOLED
+        val materialYou = appPrefs.getBoolean(KEY_DYNAMIC_COLOR, true) &&
+            DynamicColors.isDynamicColorAvailable()
+
+        if (materialYou) {
+            DynamicColors.applyToActivityIfAvailable(
+                this,
+                DynamicColorsOptions.Builder()
+                    .setThemeOverlay(
+                        if (amoled) R.style.ThemeOverlay_Aharana_DynamicColors_Amoled
+                        else R.style.ThemeOverlay_Aharana_DynamicColors
+                    )
+                    .build()
+            )
+            return
+        }
+
+        // Material You off: honour the user's system contrast setting from our own overlays.
+        // (With dynamic colour on, Android 14+ supplies contrast for free.)
+        if (ColorContrast.isContrastAvailable()) {
+            ColorContrast.applyToActivityIfAvailable(
+                this,
+                ColorContrastOptions.Builder()
+                    .setMediumContrastThemeOverlay(R.style.ThemeOverlay_Aharana_Contrast_Medium)
+                    .setHighContrastThemeOverlay(R.style.ThemeOverlay_Aharana_Contrast_High)
+                    .build()
+            )
+        }
     }
 
     /** Pads [view]'s top by the status-bar inset. Use on app bars so their background extends
@@ -76,5 +136,18 @@ open class BaseActivity : AppCompatActivity() {
             insets
         }
         ViewCompat.requestApplyInsets(view)
+    }
+
+    companion object {
+        /** Shared preferences file, also read by Settings and Main. */
+        const val PREFS = "fanficfare_prefs"
+        const val KEY_THEME_MODE = "ui_theme_mode"
+        const val KEY_DYNAMIC_COLOR = "dynamic_color_enabled"
+
+        /** `ui_theme_mode` values. */
+        const val THEME_SYSTEM = "system"
+        const val THEME_LIGHT = "light"
+        const val THEME_DARK = "dark"
+        const val THEME_AMOLED = "amoled"
     }
 }

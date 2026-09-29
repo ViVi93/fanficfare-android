@@ -52,4 +52,14 @@
     <color name="fanficfare_inverse_primary">#8DC37A</color>
 
     <color name="fanficfare_shadow">#000000</color>
+
+    <!--
+      AMOLED surface family. Declared once in values/ (not per mode) because AMOLED forces
+      the dark theme, so these values must not be overridden by values-night.
+    -->
+    <color name="amoled_surface">#000000</color>
+    <color name="amoled_container">#0A0A0A</color>
+    <color name="amoled_container_high">#121212</color>
+    <color name="amoled_container_highest">#1A1A1A</color>
+    <color name="amoled_surface_bright">#222222</color>
 </resources>

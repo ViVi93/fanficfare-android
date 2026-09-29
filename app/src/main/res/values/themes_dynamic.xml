@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      AMOLED and dynamic-colour theme layers.
+
+      Ordering note that drives this design: Material Components applies dynamic colour
+      before activities are created, so a separate "AMOLED" overlay applied afterwards
+      would simply lose to it. Instead the black surface family lives *inside* the AMOLED
+      variants here, so "AMOLED" and "Material You" are two independent flags that compose
+      rather than fight.
+
+      AMOLED keeps pure #000000 for the page-level surfaces (the point of the mode on OLED)
+      and steps up slightly for containers so elevated cards remain distinguishable from the
+      background. Pure black everywhere would flatten the hierarchy.
+    -->
+
+    <!-- Material You (wallpaper-derived accents), normal surfaces. -->
+    <style name="ThemeOverlay.Aharana.DynamicColors"
+        parent="ThemeOverlay.Material3Expressive.DynamicColors.DayNight" />
+
+    <!-- Material You with the AMOLED surface family. -->
+    <style name="ThemeOverlay.Aharana.DynamicColors.Amoled"
+        parent="ThemeOverlay.Material3Expressive.DynamicColors.DayNight">
+        <item name="colorSurface">@color/amoled_surface</item>
+        <item name="android:colorBackground">@color/amoled_surface</item>
+        <item name="colorSurfaceDim">@color/amoled_surface</item>
+        <item name="colorSurfaceContainerLowest">@color/amoled_surface</item>
+        <item name="colorSurfaceContainerLow">@color/amoled_surface</item>
+        <item name="colorSurfaceContainer">@color/amoled_container</item>
+        <item name="colorSurfaceContainerHigh">@color/amoled_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/amoled_container_highest</item>
+        <item name="colorSurfaceBright">@color/amoled_surface_bright</item>
+    </style>
+
+    <!--
+      Static AMOLED theme, used when Material You is switched off. Inherits the whole role
+      map from Theme.Aharana and only replaces the surface family, so the two AMOLED paths
+      cannot drift apart. Night mode is forced in code when this theme is selected, because
+      AMOLED combined with the light theme makes no sense.
+    -->
+    <style name="Theme.Aharana.Amoled" parent="Theme.Aharana">
+        <item name="colorSurface">@color/amoled_surface</item>
+        <item name="android:colorBackground">@color/amoled_surface</item>
+        <item name="colorSurfaceDim">@color/amoled_surface</item>
+        <item name="colorSurfaceContainerLowest">@color/amoled_surface</item>
+        <item name="colorSurfaceContainerLow">@color/amoled_surface</item>
+        <item name="colorSurfaceContainer">@color/amoled_container</item>
+        <item name="colorSurfaceContainerHigh">@color/amoled_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/amoled_container_highest</item>
+        <item name="colorSurfaceBright">@color/amoled_surface_bright</item>
+    </style>
+</resources>

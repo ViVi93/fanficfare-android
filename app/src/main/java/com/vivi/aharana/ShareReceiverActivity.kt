@@ -14,6 +14,9 @@ import kotlinx.coroutines.launch
 class ShareReceiverActivity : BaseActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /** Keeps its own translucent theme; the AMOLED theme would make it opaque. */
+    override fun supportsAmoledTheme(): Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val text = TextView(this)

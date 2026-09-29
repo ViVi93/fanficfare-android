@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark-mode contrast overlays. See values/themes_contrast.xml for the rationale. -->
+    <style name="ThemeOverlay.Aharana.Contrast.Medium" parent="">
+        <item name="colorOnSurfaceVariant">#E6E1E5</item>
+        <item name="colorOutline">#CAC4D0</item>
+        <item name="colorOutlineVariant">#938F99</item>
+    </style>
+
+    <style name="ThemeOverlay.Aharana.Contrast.High" parent="ThemeOverlay.Aharana.Contrast.Medium">
+        <item name="colorOnSurface">#FFFFFF</item>
+        <item name="colorOnSurfaceVariant">#FFFFFF</item>
+        <item name="colorOutline">#FFFFFF</item>
+        <item name="colorOutlineVariant">#CAC4D0</item>
+    </style>
+</resources>

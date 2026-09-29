@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Contrast overlays for the *branded* (non-Material-You) theme. Material Components ships no
+      ready-made contrast overlays, so these are ours; they raise the contrast of the
+      low-emphasis roles that carry most of the text and border contrast in a Material UI.
+
+      They deliberately do NOT touch the surface family, so high contrast composes with AMOLED
+      instead of fighting it.
+
+      No parent: an overlay should only change what it declares.
+    -->
+    <style name="ThemeOverlay.Aharana.Contrast.Medium" parent="">
+        <item name="colorOnSurfaceVariant">#2F312A</item>
+        <item name="colorOutline">#44483E</item>
+        <item name="colorOutlineVariant">#74776A</item>
+    </style>
+
+    <style name="ThemeOverlay.Aharana.Contrast.High" parent="ThemeOverlay.Aharana.Contrast.Medium">
+        <item name="colorOnSurface">#000000</item>
+        <item name="colorOnSurfaceVariant">#1B1B1B</item>
+        <item name="colorOutline">#1B1B1B</item>
+        <item name="colorOutlineVariant">#44483E</item>
+    </style>
+</resources>

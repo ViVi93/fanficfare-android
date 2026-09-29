@@ -10,7 +10,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class EditMetadataActivity : BaseActivity() {
 
@@ -203,7 +203,7 @@ class EditMetadataActivity : BaseActivity() {
                     val result = org.json.JSONObject(resultJson)
                     if (result.optBoolean("ok")) {
                         val opfXml = result.optString("opf", "")
-                        val dialog = AlertDialog.Builder(this)
+                        val dialog = MaterialAlertDialogBuilder(this)
                             .setTitle("OPF XML")
                             .setMessage(opfXml)
                             .setPositiveButton("Copy to clipboard") { _, _ ->

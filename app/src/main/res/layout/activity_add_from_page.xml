@@ -10,14 +10,18 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-        <androidx.appcompat.widget.Toolbar
+        <!--
+          No app:popupTheme / android:popupBackground here on purpose: pointing them at the full
+          app theme replaced the library's popupMenuStyle + popupMenuBackground with a static
+          theme, so the overflow menu ignored the runtime colour overlays (Material You /
+          AMOLED) and rendered off-theme. The theme supplies correct Material popup styling.
+        -->
+        <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:title="Add from page"
-            app:titleTextColor="?android:attr/textColorPrimary"
-            app:popupTheme="@style/Theme.Aharana"
-            android:popupBackground="?attr/colorSurface" />
+            app:titleTextColor="?android:attr/textColorPrimary" />
 
         <LinearLayout
             android:layout_width="match_parent"

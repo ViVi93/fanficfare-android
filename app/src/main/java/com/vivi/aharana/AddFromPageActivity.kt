@@ -8,7 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ProgressBar
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -295,7 +295,7 @@ class AddFromPageActivity : BaseActivity() {
             startLazyMetadata(dedupedItems)
 
             if (!seriesDesc.isNullOrBlank()) {
-                AlertDialog.Builder(this@AddFromPageActivity)
+                MaterialAlertDialogBuilder(this@AddFromPageActivity)
                     .setTitle(seriesName ?: "Series")
                     .setMessage(seriesDesc)
                     .setPositiveButton("OK", null)

@@ -8,7 +8,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
@@ -185,7 +185,7 @@ class SettingsActivity : BaseActivity() {
                 BaseActivity.THEME_AMOLED -> 3
                 else -> 0
             }
-            AlertDialog.Builder(this)
+            MaterialAlertDialogBuilder(this)
                 .setTitle("Theme")
                 .setSingleChoiceItems(titles, checked) { dialog, which ->
                     val mode = when (which) {

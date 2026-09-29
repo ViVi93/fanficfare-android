@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!--
+      A title-only item with no icon renders as bare text in the app bar. Give it the
+      Material download glyph and show it as a proper icon button; the title is kept for
+      accessibility and the long-press tooltip.
+    -->
     <item
         android:id="@+id/action_download"
         android:title="Download"
-        app:showAsAction="ifRoom" />
+        android:icon="@drawable/ic_download_24"
+        app:showAsAction="always" />
     <item
         android:id="@+id/action_add_from_page"
         android:title="Add from page"
@@ -41,7 +47,7 @@
         android:id="@+id/action_search"
         android:title="Search"
         app:showAsAction="never"
-        android:icon="@android:drawable/ic_menu_search" />
+        android:icon="@drawable/ic_search_24" />
     <item
         android:id="@+id/action_cancel_download"
         android:title="Cancel Download"

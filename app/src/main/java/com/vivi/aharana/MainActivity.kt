@@ -10,7 +10,7 @@ import android.view.MenuItem
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -257,7 +257,7 @@ class MainActivity : BaseActivity() {
         } catch (e: Throwable) {
             android.util.Log.e("MainActivity", "onCreate crash", e)
             runOnUiThread {
-                AlertDialog.Builder(this)
+                MaterialAlertDialogBuilder(this)
                     .setTitle("Startup Error")
                     .setMessage("${e.javaClass.simpleName}: ${e.message ?: "null"}")
                     .setPositiveButton("OK") { _, _ -> finish() }
@@ -433,7 +433,7 @@ class MainActivity : BaseActivity() {
         options.add("Details")
         options.add("Delete")
 
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(book.title.ifBlank { "Book" })
             .setItems(options.toTypedArray()) { _, which ->
                 val choice = options[which]
@@ -489,7 +489,7 @@ class MainActivity : BaseActivity() {
     }
 
     private fun deleteBook(book: BookItem) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("Delete")
             .setMessage("Delete ${book.title.ifBlank { "this book" }}?")
             .setPositiveButton("Delete") { _, _ ->
@@ -542,7 +542,7 @@ class MainActivity : BaseActivity() {
                 DiagnosticLog.append(this@MainActivity, "Main.Update", "enqueued_metadata url=$url")
             }
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setView(view)
             .setNegativeButton("Close", null)
             .show()
@@ -554,7 +554,7 @@ class MainActivity : BaseActivity() {
         options.add("Change Folder...")
         options.add("Clear Library Folder")
 
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("EPUB Library")
             .setItems(options.toTypedArray()) { _, which ->
                 when (options[which]) {
@@ -584,7 +584,7 @@ class MainActivity : BaseActivity() {
         val input = EditText(this)
         val libraryHint = libraryFolderPath ?: "/storage/emulated/0/Download"
         input.hint = libraryHint
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("Load EPUB Library")
             .setMessage("Enter a library folder path to scan.")
             .setView(input)
@@ -784,7 +784,7 @@ class MainActivity : BaseActivity() {
             "size" -> 4
             else -> 0
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("Sort By")
             .setSingleChoiceItems(options, checked) { _, which ->
                 val sort = when (which) {
@@ -805,7 +805,7 @@ class MainActivity : BaseActivity() {
         val input = EditText(this)
         input.hint = "Search title or author"
         input.setText(viewModel.searchQuery.value.orEmpty())
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("Search")
             .setView(input)
             .setPositiveButton("Search") { _, _ ->

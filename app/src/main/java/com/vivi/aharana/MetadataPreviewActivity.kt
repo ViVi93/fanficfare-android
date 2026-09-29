@@ -11,7 +11,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -560,7 +560,7 @@ class MetadataPreviewActivity : BaseActivity() {
         val onlineMeta = online.optJSONObject("metadata") ?: JSONObject()
         val fields = buildFieldsFromResult(onlineMeta)
 
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("Apply Metadata?")
             .setMessage("This will write the online metadata to the EPUB. A backup will be created. Continue?")
             .setPositiveButton("Apply") { _, _ ->
@@ -640,7 +640,7 @@ class MetadataPreviewActivity : BaseActivity() {
         val fields = buildFieldsFromResult(onlineMeta)
         val mime = cand.downloadedMime ?: "image/jpeg"
 
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("Apply Metadata + Cover?")
             .setMessage("This will write the online metadata and replace the cover in the EPUB using a single atomic write. A backup will be created. Continue?")
             .setPositiveButton("Apply") { _, _ ->
@@ -696,7 +696,7 @@ class MetadataPreviewActivity : BaseActivity() {
         }
         val mime = cand.downloadedMime ?: "image/jpeg"
 
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("Apply Cover?")
             .setMessage("This will replace the existing cover in the EPUB with the selected image. A backup will be created. Continue?")
             .setPositiveButton("Apply") { _, _ ->

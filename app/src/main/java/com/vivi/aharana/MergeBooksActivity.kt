@@ -76,6 +76,7 @@ class MergeBooksActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_merge_books)
+        applySystemBarInsets(findViewById<android.view.View>(R.id.root))
         supportActionBar?.title = getString(R.string.merge_title)
 
         collectSources()

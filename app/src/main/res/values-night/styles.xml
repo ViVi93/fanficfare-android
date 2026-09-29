@@ -25,8 +25,6 @@
         <item name="colorSurfaceVariant">@color/fanficfare_surface_variant</item>
         <item name="colorOnSurfaceVariant">@color/fanficfare_on_surface_variant</item>
 
-        <item name="android:statusBarColor">?attr/colorPrimaryContainer</item>
-        <item name="android:windowLightStatusBar">false</item>
         <item name="colorSurfaceContainerLowest">@color/fanficfare_surface_container_lowest_opaque</item>
         <item name="colorSurfaceContainerLow">@color/fanficfare_surface_container_low_opaque</item>
         <item name="colorSurfaceContainer">@color/fanficfare_surface_container_opaque</item>

@@ -17,6 +17,8 @@ class DownloadQueueActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_download_queue)
+        applyTopInset(findViewById<android.view.View>(R.id.appBar))
+        applyBottomInset(findViewById<android.view.View>(R.id.contentContainer))
 
         setSupportActionBar(findViewById(R.id.toolbar))
         supportActionBar?.setDisplayHomeAsUpEnabled(true)

@@ -24,8 +24,19 @@
         <item name="colorOnSurface">@color/fanficfare_on_surface</item>
         <item name="colorSurfaceVariant">@color/fanficfare_surface_variant</item>
         <item name="colorOnSurfaceVariant">@color/fanficfare_on_surface_variant</item>
+    </style>
 
-        <item name="android:statusBarColor">?attr/colorPrimaryContainer</item>
-        <item name="android:windowLightStatusBar">true</item>
+    <!--
+      Share receiver: a Material-themed translucent activity. It must inherit from an
+      AppCompat/Material theme because ShareReceiverActivity extends AppCompatActivity
+      (via BaseActivity). The previous @android:style/Theme.Translucent.NoTitleBar is a
+      platform theme and would crash AppCompat at launch.
+    -->
+    <style name="Theme.FanficFare.Translucent" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
     </style>
 </resources>

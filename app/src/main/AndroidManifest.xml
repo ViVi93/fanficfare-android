@@ -36,7 +36,7 @@
             android:exported="true"
             android:taskAffinity=""
             android:excludeFromRecents="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            android:theme="@style/Theme.FanficFare.Translucent">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -45,9 +45,11 @@
         </activity>
         <activity android:name=".BookDetailActivity" />
         <activity android:name=".MergeBooksActivity" />
-        <activity android:name=".EditMetadataActivity" />
+        <activity android:name=".EditMetadataActivity"
+            android:windowSoftInputMode="adjustResize" />
         <activity android:name=".MetadataPreviewActivity" />
-        <activity android:name=".SettingsActivity" />
+        <activity android:name=".SettingsActivity"
+            android:windowSoftInputMode="adjustResize" />
         <activity android:name=".DiagnosticsActivity" />
         <activity android:name=".DownloadQueueActivity" />
         <activity android:name=".AddFromPageActivity" />

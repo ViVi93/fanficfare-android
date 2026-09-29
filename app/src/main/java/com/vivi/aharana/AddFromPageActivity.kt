@@ -51,6 +51,8 @@ class AddFromPageActivity : BaseActivity() {
         DiagnosticLog.append(this, "AddFromPage", "onCreate intent=${intent?.action}")
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_add_from_page)
+        applyTopInset(findViewById<android.view.View>(R.id.appBar))
+        applyBottomInset(findViewById<android.view.View>(R.id.recyclerStories))
 
         val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)

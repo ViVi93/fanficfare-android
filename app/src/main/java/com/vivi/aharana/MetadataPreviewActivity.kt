@@ -72,6 +72,8 @@ class MetadataPreviewActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_metadata_preview)
+        applyTopInset(findViewById<android.view.View>(R.id.toolbar))
+        applyBottomInset(findViewById<android.view.View>(R.id.contentScroll))
 
         epubPath = intent.getStringExtra("epub_path") ?: ""
         bookTitle = intent.getStringExtra("title") ?: ""

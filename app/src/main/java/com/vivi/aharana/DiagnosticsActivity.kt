@@ -19,6 +19,7 @@ class DiagnosticsActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_diagnostics)
+        applySystemBarInsets(findViewById<android.view.View>(R.id.root))
 
         statusText = findViewById(R.id.textDiagnosticStatus)
         importText = findViewById(R.id.textImportDiagnostics)

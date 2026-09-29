@@ -39,6 +39,7 @@ class BookDetailActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_book_detail)
+        applySystemBarInsets(findViewById<android.view.View>(R.id.rootScroll))
         Log.d(TAG, "BOOK_DETAILS ENTER")
 
         bookTitle = intent.getStringExtra("title") ?: ""

@@ -46,6 +46,8 @@ class MainActivity : BaseActivity() {
             val t0 = System.currentTimeMillis()
             super.onCreate(savedInstanceState)
             setContentView(R.layout.activity_main)
+            applyTopInset(findViewById<android.view.View>(R.id.appBar))
+            applyBottomInset(findViewById<android.view.View>(R.id.contentContainer))
             supportActionBar?.hide()
             DiagnosticLog.append(this, "Main.Startup", "begin elapsed=${System.currentTimeMillis() - t0}")
             if (!Python.isStarted()) {

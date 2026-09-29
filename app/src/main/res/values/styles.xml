@@ -1,29 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      One theme file for both light and dark.
+
+      Every role points at a @color/ name that resolves per mode through
+      values/colors.xml and values-night/colors.xml, so the mapping cannot drift
+      between the two. The previous split declared the same attributes twice and the
+      light copy was missing the surface-container roles entirely, which made light
+      mode fall back to the baseline neutral palette.
+    -->
     <style name="Theme.Aharana" parent="Theme.Material3Expressive.DayNight.NoActionBar">
+        <!-- Primary -->
         <item name="colorPrimary">@color/fanficfare_primary</item>
         <item name="colorOnPrimary">@color/fanficfare_on_primary</item>
         <item name="colorPrimaryContainer">@color/fanficfare_primary_container</item>
         <item name="colorOnPrimaryContainer">@color/fanficfare_on_primary_container</item>
 
+        <!-- Secondary -->
         <item name="colorSecondary">@color/fanficfare_secondary</item>
+        <item name="colorOnSecondary">@color/fanficfare_on_secondary</item>
         <item name="colorSecondaryContainer">@color/fanficfare_secondary_container</item>
         <item name="colorOnSecondaryContainer">@color/fanficfare_on_secondary_container</item>
 
+        <!-- Tertiary -->
         <item name="colorTertiary">@color/fanficfare_tertiary</item>
+        <item name="colorOnTertiary">@color/fanficfare_on_tertiary</item>
         <item name="colorTertiaryContainer">@color/fanficfare_tertiary_container</item>
         <item name="colorOnTertiaryContainer">@color/fanficfare_on_tertiary_container</item>
 
+        <!-- Error -->
         <item name="colorError">@color/fanficfare_error</item>
-        <item name="colorErrorContainer">@color/fanficfare_error_container</item>
         <item name="colorOnError">@color/fanficfare_on_error</item>
+        <item name="colorErrorContainer">@color/fanficfare_error_container</item>
         <item name="colorOnErrorContainer">@color/fanficfare_on_error_container</item>
 
+        <!-- Background -->
         <item name="android:colorBackground">@color/fanficfare_background</item>
+        <item name="colorOnBackground">@color/fanficfare_on_background</item>
+
+        <!-- Surface -->
         <item name="colorSurface">@color/fanficfare_surface</item>
         <item name="colorOnSurface">@color/fanficfare_on_surface</item>
         <item name="colorSurfaceVariant">@color/fanficfare_surface_variant</item>
         <item name="colorOnSurfaceVariant">@color/fanficfare_on_surface_variant</item>
+        <item name="colorSurfaceDim">@color/fanficfare_surface_dim</item>
+        <item name="colorSurfaceBright">@color/fanficfare_surface_bright</item>
+
+        <!--
+          Tone-based surface containers. Material components use these as their default
+          container/background colour, so cards, menus, dialogs and sheets all follow
+          from this block.
+        -->
+        <item name="colorSurfaceContainerLowest">@color/fanficfare_surface_container_lowest_opaque</item>
+        <item name="colorSurfaceContainerLow">@color/fanficfare_surface_container_low_opaque</item>
+        <item name="colorSurfaceContainer">@color/fanficfare_surface_container_opaque</item>
+        <item name="colorSurfaceContainerHigh">@color/fanficfare_surface_container_high_opaque</item>
+        <item name="colorSurfaceContainerHighest">@color/fanficfare_surface_container_highest_opaque</item>
+
+        <!-- Outline -->
+        <item name="colorOutline">@color/fanficfare_outline</item>
+        <item name="colorOutlineVariant">@color/fanficfare_outline_variant</item>
+
+        <!-- Inverse (snackbars, tooltips) -->
+        <item name="colorSurfaceInverse">@color/fanficfare_inverse_surface</item>
+        <item name="colorOnSurfaceInverse">@color/fanficfare_inverse_on_surface</item>
+        <item name="colorPrimaryInverse">@color/fanficfare_inverse_primary</item>
     </style>
 
     <!--

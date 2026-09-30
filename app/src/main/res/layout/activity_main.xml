@@ -29,32 +29,39 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <!-- Selection counter: appears only in selection mode, hosted above the library
-         list so it never shares the row the download-job status uses (status_ui
-         inside the toolbar is the shared row). -->
-    <TextView
-        android:id="@+id/selectionCount"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingHorizontal="16dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="4dp"
-        android:textAppearance="?attr/textAppearanceLabelMedium"
-        android:textColor="?attr/colorPrimary"
-        android:visibility="gone"
-        app:layout_anchor="@id/contentContainer"
-        app:layout_anchorGravity="top|center_horizontal" />
-
-    <FrameLayout
+    <LinearLayout
         android:id="@+id/contentContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/bookList"
+        <!--
+          Selection counter: only present during selection mode. It sits ABOVE the
+          list in normal flow so it pushes the list down. Anchored to the
+          container it drew over the first row and was clipped by the app bar.
+          The download-job status row (status_ui, inside the toolbar) is a
+          different row and is left alone.
+        -->
+        <TextView
+            android:id="@+id/selectionCount"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="12dp"
+            android:textAppearance="?attr/textAppearanceLabelLarge"
+            android:textColor="?attr/colorPrimary"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/bookList"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
 
         <!-- Empty state view -->
         <LinearLayout
@@ -101,6 +108,8 @@
 
         </LinearLayout>
 
-    </FrameLayout>
+        </FrameLayout>
+
+    </LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

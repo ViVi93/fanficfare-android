@@ -173,7 +173,11 @@ class BookAdapter(
         notifyDataSetChanged()
     }
 
-    fun getSelectedBooks(): List<BookItem> = books.filter { selectedIds.contains(it.uriString) }
+    // Must read the CURRENT list (_books), not the constructor list: the adapter is
+    // built before the library loads, so `books` can be empty/stale and every
+    // selection lookup would come back empty ("0 selected", Merge/Update seeing
+    // nothing selected).
+    fun getSelectedBooks(): List<BookItem> = _books.filter { selectedIds.contains(it.uriString) }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BookViewHolder {
         val view = LayoutInflater.from(parent.context)

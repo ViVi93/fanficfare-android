@@ -9,8 +9,8 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.widget.EditText
-import android.widget.ImageButton
 import android.widget.TextView
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModelProvider
@@ -753,27 +753,37 @@ class MainActivity : BaseActivity() {
         }
     }
 
+    /**
+     * The order for a sort key, in the user's own terms. "Newest first" only
+     * means anything for the date sort, so every key names its own two orders.
+     */
+    private fun sortOrderLabel(sort: String, descending: Boolean): String = when (sort) {
+        "title", "author" -> if (descending) "Z to A" else "A to Z"
+        "chapters" -> if (descending) "Most chapters first" else "Fewest chapters first"
+        "size" -> if (descending) "Largest first" else "Smallest first"
+        else -> if (descending) "Newest first" else "Oldest first"
+    }
+
     private fun showSortDialog() {
         val options = arrayOf("Recent", "Title", "Author", "Chapters", "Size")
-        val currentSort = viewModel.getCurrentSort()
-        val checked = when (currentSort) {
-            "title" -> 1
-            "author" -> 2
-            "chapters" -> 3
-            "size" -> 4
-            else -> 0
-        }
+        val sortKeys = arrayOf("modified", "title", "author", "chapters", "size")
+        val checked = sortKeys.indexOf(viewModel.getCurrentSort()).coerceAtLeast(0)
 
         val dialogView = layoutInflater.inflate(R.layout.dialog_sort_direction, null)
-        val arrowButton = dialogView.findViewById<ImageButton>(R.id.sortDirectionArrow)
-        val arrowLabel = dialogView.findViewById<TextView>(R.id.sortDirectionLabel)
-        arrowButton.rotation = if (viewModel.isSortDirectionDescending()) 180f else 0f
-        arrowLabel.text = if (viewModel.isSortDirectionDescending()) "Newest first" else "Oldest first"
+        val toggle = dialogView.findViewById<MaterialButton>(R.id.sortDirectionToggle)
 
-        arrowButton.setOnClickListener {
+        fun refreshOrder() {
+            val descending = viewModel.isSortDirectionDescending()
+            toggle.text = sortOrderLabel(viewModel.getCurrentSort(), descending)
+            toggle.setIconResource(
+                if (descending) R.drawable.ic_sort_descending else R.drawable.ic_sort_ascending
+            )
+        }
+
+        refreshOrder()
+        toggle.setOnClickListener {
             viewModel.flipSortDirection()
-            arrowButton.rotation = if (viewModel.isSortDirectionDescending()) 180f else 0f
-            arrowLabel.text = if (viewModel.isSortDirectionDescending()) "Newest first" else "Oldest first"
+            refreshOrder()
             syncBooks(viewModel.getVisibleBooks())
         }
 
@@ -781,14 +791,9 @@ class MainActivity : BaseActivity() {
             .setTitle("Sort By")
             .setView(dialogView)
             .setSingleChoiceItems(options, checked) { _, which ->
-                val sort = when (which) {
-                    1 -> "title"
-                    2 -> "author"
-                    3 -> "chapters"
-                    4 -> "size"
-                    else -> "modified"
-                }
-                viewModel.setSort(sort)
+                viewModel.setSort(sortKeys[which])
+                // The order wording depends on the key, so relabel on every change.
+                refreshOrder()
                 syncBooks(viewModel.getBooksSnapshot())
             }
             .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }

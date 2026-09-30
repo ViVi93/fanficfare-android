@@ -106,6 +106,10 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     fun setSortDirection(descending: Boolean) {
         _sortDirection = descending
         _sortDirectionLive.value = descending
+        // Persist here as well as in setSort(): flipping the direction is its own
+        // change, and without this it only survived until the process died — the
+        // next launch restored whatever setSort() last wrote, or the default.
+        repository.setSavedSortDirection(descending)
         val current = repository.getBooks().toList()
         recomputeVisible(current)
     }
@@ -114,8 +118,6 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
         setSortDirection(!_sortDirection)
     }
 
-    private fun directionSuffix(): String = if (_sortDirection) "↓" else "↑"
-    fun getDisplaySort(): String = "${getCurrentSort()}${directionSuffix()}"
     fun isSortDirectionDescending(): Boolean = _sortDirection
 
     private fun sorted(books: List<BookItem>): List<BookItem> {

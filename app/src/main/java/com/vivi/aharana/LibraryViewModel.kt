@@ -31,12 +31,18 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     private val _visibleBooks = MutableLiveData<List<BookItem>>(emptyList())
     val visibleBooks: LiveData<List<BookItem>> = _visibleBooks
 
+    // Declared BEFORE init on purpose: Kotlin runs property initializers and
+    // init blocks in declaration order, so anything declared after init is
+    // still null when init runs. The init block below restores the saved sort
+    // direction, so this state must already exist by then.
+    private var _sortDirection = true
+    private val _sortDirectionLive = MutableLiveData<Boolean>(true)
+    val sortDirection: LiveData<Boolean> = _sortDirectionLive
+
     init {
         repository.getSavedSort()?.let { _currentSort.value = it }
-        repository.getSavedSortDirection()?.let { dir ->
-            _sortDirection = dir
-            _sortDirectionLive.value = dir
-        }
+        _sortDirection = repository.getSavedSortDirection()
+        _sortDirectionLive.value = _sortDirection
         android.util.Log.d("FFF-UI-OBS", "LibraryViewModel init observer")
         _uiJobState.addSource(repository.latestJobs) { jobs ->
             android.util.Log.d("FFF-UI-OBS", "latestJobs fired count=${jobs.size}")
@@ -91,10 +97,6 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
         repository.setBooks(sorted)
         recomputeVisible(sorted)
     }
-
-    private var _sortDirection = true
-    private val _sortDirectionLive = MutableLiveData<Boolean>(true)
-    val sortDirection: LiveData<Boolean> = _sortDirectionLive
 
     fun setSearchQuery(query: String?) {
         _searchQuery.value = query

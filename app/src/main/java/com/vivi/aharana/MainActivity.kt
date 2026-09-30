@@ -36,7 +36,6 @@ class MainActivity : BaseActivity() {
 
     private lateinit var viewModel: LibraryViewModel
     private var libraryFolderPath: String? = null
-    private var lastTerminalToastJobId: Long? = null
     private var selectionMenu: Menu? = null
     private var baseMenu: Menu? = null
 
@@ -153,20 +152,6 @@ class MainActivity : BaseActivity() {
                 }
                 if (state.finished && state.status != state.phase) {
                     statusText?.text = state.phase
-                }
-                if (state.finished && lastTerminalToastJobId != state.jobId) {
-                    lastTerminalToastJobId = state.jobId
-                    when (state.status) {
-                        "success" -> toast("${humanizeOperation(state.type)} complete")
-                        "failed" -> toast("${humanizeOperation(state.type)} failed")
-                        "cancelled" -> toast("${humanizeOperation(state.type)} cancelled")
-                    }
-                }
-                if (state.finished) {
-                    // Worker already inserted/updated the book; avoid reloading from disk
-                }
-                if (!state.finished) {
-                    lastTerminalToastJobId = null
                 }
             }
             val dao = (viewModel as? LibraryViewModel)?.let { 
@@ -474,7 +459,6 @@ class MainActivity : BaseActivity() {
             toast("No URL found for this book")
             return
         }
-        toast("Updating...")
         DiagnosticLog.append(this, "Main.Update", "starting")
         viewModel.enqueueUpdate(0, book.uriString)
         DiagnosticLog.append(this, "Main.Update", "enqueued path=${book.uriString}")
@@ -488,7 +472,6 @@ class MainActivity : BaseActivity() {
             toast("No URL found for this book")
             return
         }
-        toast("Force downloading...")
         DiagnosticLog.append(this, "Main.ForceDownload", "starting")
         viewModel.enqueueForceDownload(0, book.uriString)
         DiagnosticLog.append(this, "Main.ForceDownload", "enqueued path=${book.uriString}")
@@ -535,14 +518,12 @@ class MainActivity : BaseActivity() {
         view.findViewById<android.widget.Button>(R.id.buttonDownload).setOnClickListener {
             val url = input.text.toString().trim()
             if (url.isBlank()) return@setOnClickListener
-            toast("Downloading...")
             viewModel.enqueueDownload(url)
             DiagnosticLog.append(this, "Main.Download", "enqueued url=$url")
         }
         view.findViewById<android.widget.Button>(R.id.buttonUpdate).setOnClickListener {
             val url = input.text.toString().trim()
             if (url.isBlank()) return@setOnClickListener
-            toast("Checking metadata...")
             lifecycleScope.launch {
                 viewModel.enqueueMetadata(url)
                 DiagnosticLog.append(this@MainActivity, "Main.Update", "enqueued_metadata url=$url")
@@ -770,14 +751,6 @@ class MainActivity : BaseActivity() {
             "size" -> books.sortedByDescending { it.sizeBytes }
             else -> books.sortedByDescending { it.lastModified }
         }
-    }
-
-    private fun humanizeOperation(type: String): String = when (type) {
-        "download" -> "Download"
-        "update" -> "Update"
-        "force_download" -> "Force download"
-        "metadata" -> "Metadata"
-        else -> type.replaceFirstChar { it.uppercase() }
     }
 
     private fun showSortDialog() {

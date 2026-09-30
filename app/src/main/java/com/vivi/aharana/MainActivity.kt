@@ -16,10 +16,12 @@ import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.vivi.aharana.adapter.BookAdapter
 import com.vivi.aharana.model.BookItem
 import com.chaquo.python.Python
 import kotlinx.coroutines.launch
+import me.zhanghai.android.fastscroll.FastScrollerBuilder
 import org.json.JSONObject
 import java.io.File
 
@@ -112,6 +114,13 @@ class MainActivity : BaseActivity() {
             })
             findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).layoutManager = LinearLayoutManager(this)
             findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
+            FastScrollerBuilder(findViewById<RecyclerView>(R.id.bookList))
+                .setPopupTextProvider { _, position ->
+                    viewModel.getVisibleBooks().getOrNull(position)?.title
+                        ?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: ""
+                }
+                .useMd2Style()
+                .build()
 
             viewModel.visibleBooks.observe(this) { books ->
                 if (books.isNotEmpty()) {

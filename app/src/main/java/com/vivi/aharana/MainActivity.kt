@@ -9,6 +9,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.TextView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.core.app.ActivityCompat
@@ -109,6 +110,7 @@ class MainActivity : BaseActivity() {
                 if (!bookAdapter.isSelectionMode()) {
                     bookAdapter.enterSelectionMode(book)
                     updateSelectionUi()
+                    swapMenu(true)
                 }
             })
             findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).layoutManager = LinearLayoutManager(this)
@@ -320,21 +322,7 @@ class MainActivity : BaseActivity() {
     }
 
     private fun syncBooks(books: List<BookItem>) {
-        bookAdapter = BookAdapter(books, { book ->
-            selectedBook = book
-            if (bookAdapter.isSelectionMode()) {
-                bookAdapter.toggleSelection(book)
-                updateSelectionUi()
-            } else {
-                showBookOptionsDialog(book)
-            }
-        }, { book ->
-            if (!bookAdapter.isSelectionMode()) {
-                bookAdapter.enterSelectionMode(book)
-                updateSelectionUi()
-            }
-        })
-        findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
+        bookAdapter.updateBooks(books)
         updateEmptyState()
     }
 
@@ -351,14 +339,23 @@ class MainActivity : BaseActivity() {
             clearSelectionMode()
             return
         }
+        viewModel.setSelectionMode(true)
         statusContainer?.visibility = android.view.View.VISIBLE
         statusProgress?.visibility = android.view.View.GONE
         statusText?.text = if (count == 0) "Select books" else "$count selected"
+        val selectionCount = findViewById<android.widget.TextView>(R.id.selectionCount)
+        selectionCount.visibility = android.view.View.VISIBLE
+        selectionCount.text = getString(R.string.selection_count_format, count)
     }
 
     private fun clearSelectionMode() {
         bookAdapter.clearSelection()
-        statusContainer?.visibility = android.view.View.GONE
+        viewModel.clearSelectionState()
+        statusContainer?.visibility = android.view.View.VISIBLE
+        statusProgress?.visibility = android.view.View.GONE
+        statusText?.text = if (bookAdapter.getSelectedBooks().isEmpty()) "Ready" else "${bookAdapter.getSelectedBooks().size} selected"
+        val selectionCount = findViewById<android.widget.TextView>(R.id.selectionCount)
+        selectionCount.visibility = android.view.View.GONE
         swapMenu(false)
     }
 
@@ -422,6 +419,12 @@ class MainActivity : BaseActivity() {
             return
         }
         super.onBackPressed()
+    }
+
+    private fun onSelectionCountClicked() {
+        val selected = bookAdapter.getSelectedBooks()
+        if (selected.isEmpty()) return
+        clearSelectionMode()
     }
 
     private fun showBookOptionsDialog(book: BookItem) {
@@ -784,8 +787,23 @@ class MainActivity : BaseActivity() {
             "size" -> 4
             else -> 0
         }
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_sort_direction, null)
+        val arrowButton = dialogView.findViewById<ImageButton>(R.id.sortDirectionArrow)
+        val arrowLabel = dialogView.findViewById<TextView>(R.id.sortDirectionLabel)
+        arrowButton.rotation = if (viewModel.isSortDirectionDescending()) 180f else 0f
+        arrowLabel.text = if (viewModel.isSortDirectionDescending()) "Newest first" else "Oldest first"
+
+        arrowButton.setOnClickListener {
+            viewModel.flipSortDirection()
+            arrowButton.rotation = if (viewModel.isSortDirectionDescending()) 180f else 0f
+            arrowLabel.text = if (viewModel.isSortDirectionDescending()) "Newest first" else "Oldest first"
+            syncBooks(viewModel.getVisibleBooks())
+        }
+
         MaterialAlertDialogBuilder(this)
             .setTitle("Sort By")
+            .setView(dialogView)
             .setSingleChoiceItems(options, checked) { _, which ->
                 val sort = when (which) {
                     1 -> "title"

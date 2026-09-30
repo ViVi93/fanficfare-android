@@ -42,6 +42,7 @@ class BookRepository(private val context: Context) {
 
     companion object {
         private const val KEY_SORT = "sort"
+        private const val KEY_SORT_DIRECTION = "sort_direction"
     }
 
     private val _books = MutableLiveData<List<BookItem>>(emptyList())
@@ -330,6 +331,12 @@ class BookRepository(private val context: Context) {
 
     fun setSavedSort(sort: String) {
         prefs.edit().putString(KEY_SORT, sort).apply()
+    }
+
+    fun getSavedSortDirection(): Boolean = prefs.getBoolean(KEY_SORT_DIRECTION, true)
+
+    fun setSavedSortDirection(descending: Boolean) {
+        prefs.edit().putBoolean(KEY_SORT_DIRECTION, descending).apply()
     }
 
     suspend fun enqueueDownload(url: String): Long {

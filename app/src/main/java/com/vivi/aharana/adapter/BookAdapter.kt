@@ -25,6 +25,8 @@ class BookAdapter(
     var selectionMode = false
         private set
 
+    private val _books = books.toMutableList()
+
     inner class BookViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val textTitle: TextView = itemView.findViewById(R.id.textTitle)
         private val textAuthor: TextView = itemView.findViewById(R.id.textAuthor)
@@ -176,8 +178,15 @@ class BookAdapter(
     }
 
     override fun onBindViewHolder(holder: BookViewHolder, position: Int) {
-        holder.bind(books[position])
+        holder.bind(_books[position])
     }
 
-    override fun getItemCount(): Int = books.size
+    override fun getItemCount(): Int = _books.size
+
+    fun updateBooks(newBooks: List<BookItem>) {
+        _books.clear()
+        _books.addAll(newBooks)
+        selectedIds.clear()
+        notifyDataSetChanged()
+    }
 }

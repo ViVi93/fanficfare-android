@@ -29,11 +29,27 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
+    <!-- Selection counter: appears only in selection mode, hosted above the library
+         list so it never shares the row the download-job status uses (status_ui
+         inside the toolbar is the shared row). -->
+    <TextView
+        android:id="@+id/selectionCount"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="4dp"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:textColor="?attr/colorPrimary"
+        android:visibility="gone"
+        app:layout_anchor="@id/contentContainer"
+        app:layout_anchorGravity="top|center_horizontal" />
+
     <FrameLayout
         android:id="@+id/contentContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:layout_behavior="com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior">
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/bookList"

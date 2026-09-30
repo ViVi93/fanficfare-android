@@ -33,6 +33,10 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
 
     init {
         repository.getSavedSort()?.let { _currentSort.value = it }
+        repository.getSavedSortDirection()?.let { dir ->
+            _sortDirection = dir
+            _sortDirectionLive.value = dir
+        }
         android.util.Log.d("FFF-UI-OBS", "LibraryViewModel init observer")
         _uiJobState.addSource(repository.latestJobs) { jobs ->
             android.util.Log.d("FFF-UI-OBS", "latestJobs fired count=${jobs.size}")
@@ -70,15 +74,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
             }
         }
         repository.books.observeForever { books ->
-            val sort = _currentSort.value ?: "modified"
-            val sorted = when (sort) {
-                "title" -> books.sortedBy { it.title.lowercase() }
-                "author" -> books.sortedBy { it.author.lowercase() }
-                "chapters" -> books.sortedByDescending { it.chapters }
-                "size" -> books.sortedByDescending { it.sizeBytes }
-                else -> books.sortedByDescending { it.lastModified }
-            }
-            _visibleBooks.value = sorted
+            _visibleBooks.value = sorted(books)
         }
     }
 
@@ -90,21 +86,45 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     fun setSort(sort: String) {
         _currentSort.value = sort
         repository.setSavedSort(sort)
-        val current = repository.getBooks().toList()
-        val sorted = when (sort) {
-            "title" -> current.sortedBy { it.title.lowercase() }
-            "author" -> current.sortedBy { it.author.lowercase() }
-            "chapters" -> current.sortedByDescending { it.chapters }
-            "size" -> current.sortedByDescending { it.sizeBytes }
-            else -> current.sortedByDescending { it.lastModified }
-        }
+        repository.setSavedSortDirection(_sortDirection)
+        val sorted = sorted(repository.getBooks().toList())
         repository.setBooks(sorted)
         recomputeVisible(sorted)
     }
 
+    private var _sortDirection = true
+    private val _sortDirectionLive = MutableLiveData<Boolean>(true)
+    val sortDirection: LiveData<Boolean> = _sortDirectionLive
+
     fun setSearchQuery(query: String?) {
         _searchQuery.value = query
         recomputeVisible()
+    }
+
+    fun setSortDirection(descending: Boolean) {
+        _sortDirection = descending
+        _sortDirectionLive.value = descending
+        val current = repository.getBooks().toList()
+        recomputeVisible(current)
+    }
+
+    fun flipSortDirection() {
+        setSortDirection(!_sortDirection)
+    }
+
+    private fun directionSuffix(): String = if (_sortDirection) "↓" else "↑"
+    fun getDisplaySort(): String = "${getCurrentSort()}${directionSuffix()}"
+    fun isSortDirectionDescending(): Boolean = _sortDirection
+
+    private fun sorted(books: List<BookItem>): List<BookItem> {
+        val sort = _currentSort.value ?: "modified"
+        return when (sort) {
+            "title" -> if (_sortDirection) books.sortedByDescending { it.title.lowercase() } else books.sortedBy { it.title.lowercase() }
+            "author" -> if (_sortDirection) books.sortedByDescending { it.author.lowercase() } else books.sortedBy { it.author.lowercase() }
+            "chapters" -> if (_sortDirection) books.sortedByDescending { it.chapters } else books.sortedBy { it.chapters }
+            "size" -> if (_sortDirection) books.sortedByDescending { it.sizeBytes } else books.sortedBy { it.sizeBytes }
+            else -> if (_sortDirection) books.sortedByDescending { it.lastModified } else books.sortedBy { it.lastModified }
+        }
     }
 
     fun recomputeVisible(books: List<BookItem> = repository.getBooks().toList()) {
@@ -113,7 +133,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
             val query = q.trim().lowercase()
             books.filter { it.title.lowercase().contains(query) || it.author.lowercase().contains(query) }
         }
-        _visibleBooks.value = source
+        _visibleBooks.value = sorted(source)
     }
 
     fun loadLibrary(): Boolean {
@@ -175,6 +195,19 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
     fun clearLibrary() {
         repository.clear()
         recomputeVisible()
+    }
+
+    private val _selectionMode = MutableLiveData<Boolean?>(null)
+    val selectionMode: LiveData<Boolean?> = _selectionMode
+
+    fun setSelectionMode(mode: Boolean) {
+        _selectionMode.value = mode
+    }
+
+    fun isInSelectionMode(): Boolean = _selectionMode.value == true
+
+    fun clearSelectionState() {
+        _selectionMode.value = null
     }
 
     fun findByIdentity(book: BookItem): Int = repository.findByIdentity(book)

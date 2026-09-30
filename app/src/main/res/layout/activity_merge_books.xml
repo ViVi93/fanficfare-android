@@ -24,11 +24,11 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-        android:id="@+id/root"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:orientation="vertical"    android:layout_weight="1">
+        android:orientation="vertical"
+        android:layout_weight="1">
 
         <!--
           Window insets are applied to the root in code (BaseActivity.applySystemBarInsets),

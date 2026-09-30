@@ -45,6 +45,16 @@ jobs:
             echo "$SIGNING_KEY_STORE_BASE64" | base64 -d > signing.jks
             echo "Decoded signing.jks ($(stat -c%s signing.jks) bytes)."
           fi
+      - name: Read app version
+        id: version
+        run: |
+          VERSION_NAME=$(sed -n 's/.*def appVersionName = "\([^"]*\)".*/\1/p' app/build.gradle | head -1)
+          if [ -z "$VERSION_NAME" ]; then
+            echo "::error::Could not read appVersionName from app/build.gradle"
+            exit 1
+          fi
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "Building Aharana v$VERSION_NAME"
       - name: Build debug APK
         run: ./gradlew assembleDebug
       - name: Build release APK
@@ -77,15 +87,19 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aharana-apk
+          name: aharana-v${{ steps.version.outputs.name }}-apk
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
       - name: Create GitHub Release
         if: github.event_name == 'push'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
         run: |
-          TAG="build-${{ github.sha }}"
+          # Tag and title carry the build number (versionName from
+          # app/build.gradle) rather than the commit SHA, so a release reads as
+          # "Aharana v1.2" instead of a random-looking hash.
+          TAG="v${VERSION_NAME}"
           # Prefer signed release, then unsigned release, then debug. The debug
           # APK is last on purpose: it carries the '.debug' applicationId suffix
           # and so would not upgrade an existing install.
@@ -100,9 +114,19 @@ jobs:
             echo "::error::No APK found to publish."
             exit 1
           fi
-          echo "Publishing $APK_PATH"
-          gh release create "$TAG" "$APK_PATH" \
-            --title "Build ${{ github.sha }}" \
-            --notes "Automated APK build from commit \`${{ github.sha }}\` on ${{ github.ref_name }}." \
-            --target "${{ github.sha }}" \
-            --repo "${{ github.repository }}"
+
+          # Name the download after the build number, not app-release.apk.
+          ASSET="aharana-v${VERSION_NAME}.apk"
+          cp "$APK_PATH" "$ASSET"
+          echo "Publishing $APK_PATH as $ASSET"
+
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG already exists - replacing its APK."
+            gh release upload "$TAG" "$ASSET" --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "$TAG" "$ASSET" \
+              --title "Aharana v${VERSION_NAME}" \
+              --notes "Automated APK build for **v${VERSION_NAME}**, from commit \`${{ github.sha }}\` on ${{ github.ref_name }}." \
+              --target "${{ github.sha }}" \
+              --repo "${{ github.repository }}"
+          fi

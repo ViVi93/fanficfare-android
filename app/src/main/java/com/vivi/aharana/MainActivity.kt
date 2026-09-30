@@ -100,18 +100,15 @@ class MainActivity : BaseActivity() {
 
             bookAdapter = BookAdapter(viewModel.getBooksSnapshot(), { book ->
                 selectedBook = book
-                if (bookAdapter.isSelectionMode()) {
-                    bookAdapter.toggleSelection(book)
-                    updateSelectionUi()
-                } else {
-                    showBookOptionsDialog(book)
-                }
+                // In selection mode the adapter intercepts the tap itself.
+                showBookOptionsDialog(book)
             }, { book ->
                 if (!bookAdapter.isSelectionMode()) {
                     bookAdapter.enterSelectionMode(book)
-                    updateSelectionUi()
                     swapMenu(true)
                 }
+            }, {
+                updateSelectionUi()
             })
             findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).layoutManager = LinearLayoutManager(this)
             findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.bookList).adapter = bookAdapter
@@ -324,25 +321,26 @@ class MainActivity : BaseActivity() {
     private fun syncBooks(books: List<BookItem>) {
         bookAdapter.updateBooks(books)
         updateEmptyState()
+        // A background update can prune a selected book; keep the count honest.
+        if (bookAdapter.isSelectionMode()) updateSelectionUi()
     }
 
     private fun enterSelectionMode() {
         // Enter with nothing selected: the user chooses what to act on.
+        // The adapter fires onSelectionChanged -> updateSelectionUi().
         bookAdapter.enterSelectionMode()
-        updateSelectionUi()
         swapMenu(true)
     }
 
     private fun updateSelectionUi() {
-        val count = bookAdapter.getSelectedBooks().size
         if (!bookAdapter.isSelectionMode()) {
             clearSelectionMode()
             return
         }
+        val count = bookAdapter.getSelectedBooks().size
         viewModel.setSelectionMode(true)
-        statusContainer?.visibility = android.view.View.VISIBLE
-        statusProgress?.visibility = android.view.View.GONE
-        statusText?.text = if (count == 0) "Select books" else "$count selected"
+        // Dedicated row: never write the selection count into the job-status
+        // views, or the download observer and this fight over the same line.
         val selectionCount = findViewById<android.widget.TextView>(R.id.selectionCount)
         selectionCount.visibility = android.view.View.VISIBLE
         selectionCount.text = getString(R.string.selection_count_format, count)
@@ -351,11 +349,7 @@ class MainActivity : BaseActivity() {
     private fun clearSelectionMode() {
         bookAdapter.clearSelection()
         viewModel.clearSelectionState()
-        statusContainer?.visibility = android.view.View.VISIBLE
-        statusProgress?.visibility = android.view.View.GONE
-        statusText?.text = if (bookAdapter.getSelectedBooks().isEmpty()) "Ready" else "${bookAdapter.getSelectedBooks().size} selected"
-        val selectionCount = findViewById<android.widget.TextView>(R.id.selectionCount)
-        selectionCount.visibility = android.view.View.GONE
+        findViewById<android.widget.TextView>(R.id.selectionCount).visibility = android.view.View.GONE
         swapMenu(false)
     }
 

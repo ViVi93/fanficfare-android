@@ -18,7 +18,8 @@ import com.vivi.aharana.util.CoverColorUtils
 class BookAdapter(
     private val books: List<BookItem>,
     private val onBookClicked: (BookItem) -> Unit,
-    private val onBookLongClicked: (BookItem) -> Unit
+    private val onBookLongClicked: (BookItem) -> Unit,
+    private val onSelectionChanged: () -> Unit = {}
 ) : RecyclerView.Adapter<BookAdapter.BookViewHolder>() {
 
     private val selectedIds = mutableSetOf<String>()
@@ -142,6 +143,7 @@ class BookAdapter(
         selectedIds.clear()
         selectedIds.add(book.uriString)
         notifyDataSetChanged()
+        onSelectionChanged()
     }
 
     /** Enter selection mode with nothing selected, so the user picks the books. */
@@ -149,6 +151,7 @@ class BookAdapter(
         selectionMode = true
         selectedIds.clear()
         notifyDataSetChanged()
+        onSelectionChanged()
     }
 
     fun toggleSelection(book: BookItem) {
@@ -161,6 +164,7 @@ class BookAdapter(
             selectionMode = false
         }
         notifyDataSetChanged()
+        onSelectionChanged()
     }
 
     fun clearSelection() {
@@ -184,9 +188,13 @@ class BookAdapter(
     override fun getItemCount(): Int = _books.size
 
     fun updateBooks(newBooks: List<BookItem>) {
+        // Keep the selection for books that are still present; drop ids that are
+        // gone (deleted or filtered out). Clearing unconditionally here is what
+        // used to make a background book update silently drop the selection.
+        val present = newBooks.mapTo(mutableSetOf()) { it.uriString }
+        selectedIds.retainAll(present)
         _books.clear()
         _books.addAll(newBooks)
-        selectedIds.clear()
         notifyDataSetChanged()
     }
 }

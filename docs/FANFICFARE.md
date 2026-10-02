@@ -18,7 +18,15 @@ The following files contain changes required for Chaquopy/Android compatibility.
 - `browsercache/__init__.py`: guarded `SqldbCache` import so a missing `apsw` does not break package import
 - `browsercache/browsercache_sqldb.py`: `apsw` imported under `try`/`except ImportError`, raising a clear error only if the class is actually used. APSW has no Chaquopy Android wheel.
 - `dateutils.py`: relative-date parsing keeps its `logger.debug` call (upstream commented it out in v4.62.0); useful when diagnosing bad chapter dates from the app.
-- `adapters/adapter_royalroadcom.py`: the `books:rating:value` lookup in both `extractChapterUrlsAndMetadataRedesign()` and `extractChapterUrlsAndMetadataLegacy()` is guarded against a missing tag. Upstream v4.62.0 indexes `['content']` straight off the `find()` result, so any page without that meta tag (unrated stories, or redesign pages still rolling out) raises `TypeError` and aborts the whole download. Worth reporting upstream.
+- `adapters/adapter_royalroadcom.py`: the `books:rating:value` lookup is guarded against a missing tag in BOTH `extractChapterUrlsAndMetadataRedesign()` and `extractChapterUrlsAndMetadataLegacy()`. Upstream v4.62.0 indexes `['content']` straight off the `find()` result (`stars=soup.find(...)['content']`), so any page without that meta tag raises `TypeError` and aborts the whole download. Our form holds the tag in `stars_tag` and only calls `setMetadata` when it is not None.
+
+  **Do not drop this guard on the next upstream migration.** It is a deliberate, permanent divergence from upstream and is NOT a bug we introduced. Verify it with:
+
+  ```bash
+  grep -c stars_tag app/src/main/python/fanficfare/adapters/adapter_royalroadcom.py
+  ```
+
+  Expected: `6` (two sites x three occurrences: assignment, `is not None` test, and the `setMetadata` call). A count of `0` means the file was overwritten from upstream and Royal Road downloads will crash on unrated stories. Deliberately kept local rather than reported upstream.
 
 ### Corrections from the v4.62.0 audit
 

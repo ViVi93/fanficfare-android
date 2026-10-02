@@ -40,6 +40,7 @@ PROVENANCE_FILE = os.path.join(REPO_ROOT, "docs", "FANFICFARE.md")
 ANDROID_SPECIFIC_FILES = [
     os.path.join("adapters", "__init__.py"),
     os.path.join("adapters", "base_adapter.py"),
+    os.path.join("adapters", "adapter_royalroadcom.py"),
     os.path.join("browsercache", "__init__.py"),
     os.path.join("browsercache", "browsercache_sqldb.py"),
     os.path.join("dateutils.py"),

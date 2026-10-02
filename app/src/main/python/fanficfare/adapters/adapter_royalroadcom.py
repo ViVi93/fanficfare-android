@@ -277,8 +277,14 @@ class RoyalRoadAdapter(BaseSiteAdapter):
 
         # 'rating' in FFF speak means G, PG, Teen, Restricted, etc.
         # 'stars' is used instead for RR's 1-5 stars rating.
-        stars=soup.find(attrs=dict(property="books:rating:value"))['content']
-        self.story.setMetadata('stars',stars)
+        ##
+        ## Android patch: upstream indexes ['content'] straight off the find()
+        ## result, which raises TypeError when a page has no rating meta tag
+        ## (unrated stories, or a redesign page still rolling out).  That
+        ## aborts the whole download, so skip the field instead.
+        stars_tag = soup.find(attrs=dict(property="books:rating:value"))
+        if stars_tag is not None:
+            self.story.setMetadata('stars',stars_tag['content'])
         # logger.debug("stars:(%s)"%self.story.getMetadata('stars'))
 
         warning = soup.select_one('div#chapterHeroData').find('span',string='Warning |')
@@ -377,8 +383,14 @@ class RoyalRoadAdapter(BaseSiteAdapter):
 
         # 'rating' in FFF speak means G, PG, Teen, Restricted, etc.
         # 'stars' is used instead for RR's 1-5 stars rating.
-        stars=soup.find(attrs=dict(property="books:rating:value"))['content']
-        self.story.setMetadata('stars',stars)
+        ##
+        ## Android patch: upstream indexes ['content'] straight off the find()
+        ## result, which raises TypeError when a page has no rating meta tag
+        ## (unrated stories, or a redesign page still rolling out).  That
+        ## aborts the whole download, so skip the field instead.
+        stars_tag = soup.find(attrs=dict(property="books:rating:value"))
+        if stars_tag is not None:
+            self.story.setMetadata('stars',stars_tag['content'])
         # logger.debug("stars:(%s)"%self.story.getMetadata('stars'))
 
         warning = soup.find('strong',string='Warning')

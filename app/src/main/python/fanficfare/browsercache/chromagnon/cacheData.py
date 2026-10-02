@@ -31,15 +31,12 @@ Stores the data fetched in the cache.
 Parse the HTTP header if asked.
 """
 
-from __future__ import absolute_import
 import re
 import shutil
 import struct
 import os
 
 from . import cacheAddress
-import builtins
-from builtins import range
 
 from ..share_open import share_open
 

@@ -256,22 +256,27 @@ class BaseOTWAdapter(BaseSiteAdapter):
         a = soup.find('a', href=re.compile(r"/works/\d+$"))
         self.story.setMetadata('title',stripHTML(a))
 
-        if self.getConfig("always_login") and LOGOUT_STR in data: # check actually is logged.
-            # deliberately using always_login instead of checking for
-            # actual login so we don't have a case where these show up
-            # for a user only when they get user-restricted stories.
+        if self.getConfig("always_login") and LOGOUT_STR in meta:
+            # deliberately using always_login AND checking for actual
+            # login so we don't have a case where these show up for a
+            # user only when they get user-restricted stories.
 
             # is bookmarked if has update /bookmarks/ form --
             # create bookmark form uses different url
             self.story.setMetadata('bookmarked',
                                    None != metasoup.find('form',action=re.compile(r'^/bookmarks/')))
-            if metasoup.find('input',id='bookmark_tag_string').has_attr('value'):
+            bm_tag = metasoup.find('input',id='bookmark_tag_string')
+            if bm_tag and bm_tag.has_attr('value'):
                 self.story.extendList('bookmarktags',
-                                      metasoup.find('input',id='bookmark_tag_string')['value'].split(', '))
-            self.story.setMetadata('bookmarkprivate',
-                                   metasoup.find('input',id='bookmark_private').has_attr('checked'))
-            self.story.setMetadata('bookmarkrec',
-                                   metasoup.find('input',id='bookmark_rec').has_attr('checked'))
+                                      bm_tag['value'].split(', '))
+            bm_priv = metasoup.find('input',id='bookmark_private')
+            if bm_priv:
+                self.story.setMetadata('bookmarkprivate',
+                                       bm_priv.has_attr('checked'))
+            bm_rec = metasoup.find('input',id='bookmark_rec')
+            if bm_rec:
+                self.story.setMetadata('bookmarkrec',
+                                       bm_rec.has_attr('checked'))
 
             # detect subscription by unsub button
             # logger.debug(metasoup.find('input',value="Unsubscribe"))
@@ -571,7 +576,7 @@ class BaseOTWAdapter(BaseSiteAdapter):
         if 'chaptersummary' not in exclude_notes:
             chapsumm = chapter_dl_soup.find('div', {'id' : "summary"})
             if chapsumm != None:
-                chapsumm = chapsumm.find('blockquote')
+                chapsumm = chapsumm.select_one('.userstuff')
                 append_tag(head_notes_div,'b',self.getConfig("notelabel_chaptersummary","Summary for the Chapter:"))
                 head_notes_div.append(chapsumm)
 
@@ -579,7 +584,7 @@ class BaseOTWAdapter(BaseSiteAdapter):
         if 'chapterheadnotes' not in exclude_notes:
             chapnotes = chapter_dl_soup.find('div', {'id' : "notes"})
             if chapnotes != None:
-                chapnotes = chapnotes.find('blockquote')
+                chapnotes = chapnotes.select_one('.userstuff')
                 if chapnotes != None:
                     append_tag(head_notes_div,'b',self.getConfig("notelabel_chapterheadnotes","Notes for the Chapter:"))
                     head_notes_div.append(chapnotes)

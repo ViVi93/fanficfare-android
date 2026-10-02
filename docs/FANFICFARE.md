@@ -2,22 +2,34 @@
 
 | Field | Value |
 |-------|-------|
-| embedded version | 4.60.0 |
-| upstream tag | v4.60.0 |
-| upstream commit | 86832ac463d00ac6f1dfc10c94c47c0127c2a67c |
-| import/update date | 2026-08-24 |
-| upstream release date | 2026-08-01 |
+| embedded version | 4.62.0 |
+| upstream tag | v4.62.0 |
+| upstream commit | c804f5d8daaa4bcc1178907b745ac549b84cd425 |
+| import/update date | 2026-10-02 |
+| upstream release date | 2026-10-01 |
 | upstream repository | https://github.com/JimmXinu/FanFicFare |
 
 ## Android-specific modifications
 
 The following files contain changes required for Chaquopy/Android compatibility. They are preserved across upstream updates by `tools/update_fanficfare.py`.
 
-- `adapters/__init__.py`: removed test-only adapters (`adapter_test1`-`adapter_test4`)
-- `adapters/base_adapter.py`: chapter-fetch retry on transient network errors (`ChunkedEncodingError`, `ProtocolError`, `IncompleteRead`)
-- `adapters/adapter_literotica.py`: safe `is_adult` config inspection debug logging
-- `fetchers/fetcher_requests.py`: guarded `requests_file.FileAdapter` import for Chaquopy environments where the package may be missing
-- `browsercache/base_browsercache.py`: brotlidecpy fallback chain for Calibre/Android compatibility
+- `adapters/__init__.py`: removed test-only adapters (`adapter_test1`-`adapter_test4`) to reduce APK size
+- `adapters/base_adapter.py`: `getChapterTextNum()` retries once on transient network errors (`ChunkedEncodingError`, `ProtocolError`, `IncompleteRead`). Mobile connections drop mid-transfer far more often than desktop, and without this one flaky chapter aborts the whole download.
+- `browsercache/__init__.py`: guarded `SqldbCache` import so a missing `apsw` does not break package import
+- `browsercache/browsercache_sqldb.py`: `apsw` imported under `try`/`except ImportError`, raising a clear error only if the class is actually used. APSW has no Chaquopy Android wheel.
+- `dateutils.py`: relative-date parsing keeps its `logger.debug` call (upstream commented it out in v4.62.0); useful when diagnosing bad chapter dates from the app.
+
+### Corrections from the v4.62.0 audit
+
+The patch list previously documented three changes that are **not** present in the tree and never were:
+
+- `adapters/adapter_literotica.py`: the claimed `is_adult` debug patch does not exist; the file is otherwise stock upstream.
+- `fetchers/fetcher_requests.py`: the claimed guarded `requests_file.FileAdapter` import does not exist. `requests-file` is a declared Chaquopy dependency, so the stock unguarded upstream import is correct.
+- `browsercache/base_browsercache.py`: the brotlidecpy fallback chain is upstream's own, byte-identical to v4.62.0. Not an Android modification.
+
+The genuine `apsw` guard was also missing from this list despite commit `81e26ed` existing solely to fix an apsw regression.
+
+The `base_adapter.py` chapter retry was also genuinely absent: it existed in `7bceae7` and was stripped in `0f263e2` as collateral damage while removing temporary download instrumentation. It has been re-ported against the v4.62.0 refactor of `add_chapter()`/`ignore_chapter_url_list`.
 
 ## Phase 1 integration points
 
@@ -39,12 +51,14 @@ Chaquopy pip block covers required packages:
 - cloudscraper
 - requests
 - requests-file
+- urllib3
+- Brotli
 
 Optional/bundled fallbacks preserved upstream:
 
 - brotli / brotlidecpy fallback chain in `browsercache/base_browsercache.py`
 
-No new dependencies were introduced by the v4.60.0 update.
+No new dependencies were introduced by the v4.62.0 update.
 
 ## Update procedure
 
@@ -54,7 +68,10 @@ No new dependencies were introduced by the v4.60.0 update.
    python tools/update_fanficfare.py --tag vX.Y.Z --commit <upstream-commit-sha>
    ```
 3. Review the pre-commit comparison report. If any files are classified as `unknown` or `potential conflict`, resolve manually before proceeding.
-4. Verify Android-specific patches are still present in the 5 modified files.
+4. Verify the Android-specific patches listed above are still present. Note that
+   `base_adapter.py`, `browsercache/__init__.py` and `browsercache/browsercache_sqldb.py`
+   all change upstream between releases, so patches there must be re-ported by hand
+   rather than assumed preserved.
 5. Verify Phase 1 integration files (`fanficfare_config.py`, `fanficfare_bridge.py`) are untouched.
 6. Run tests:
    ```bash
@@ -77,7 +94,7 @@ No new dependencies were introduced by the v4.60.0 update.
 9. Commit:
    ```bash
    git add app/src/main/python/fanficfare/ tools/update_fanficfare.py docs/FANFICFARE.md
-   git commit -m "Phase 2: update embedded FanFicFare to vX.Y.Z"
+   git commit -m "chore(upstream): update embedded FanFicFare to vX.Y.Z"
    ```
 10. Push:
     ```bash

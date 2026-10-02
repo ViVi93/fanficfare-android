@@ -28,6 +28,13 @@ from functools import partial
 import traceback
 import copy
 
+## Android patch: transient network errors surface as these three exception
+## types on Chaquopy when a chapter fetch dies mid-transfer (mobile networks
+## drop connections far more often than desktop).  getChapterTextNum()
+## retries once so a single flaky request does not abort a whole download.
+from requests.exceptions import ChunkedEncodingError
+from urllib3.exceptions import ProtocolError, IncompleteRead
+
 from bs4 import BeautifulSoup, Tag
 
 
@@ -489,7 +496,14 @@ try to download.</p>
 
     def getChapterTextNum(self, url, index):
         "For adapters that also want to know the chapter index number."
-        return self.getChapterText(url)
+        ## Android patch: retry once on transient network errors.  Mobile
+        ## connections drop mid-transfer routinely; without this a single
+        ## flaky chapter aborts the entire download.
+        try:
+            return self.getChapterText(url)
+        except (ChunkedEncodingError, ProtocolError, IncompleteRead):
+            logger.warning("Transient network error fetching %s, retrying once"%url)
+            return self.getChapterText(url)
 
     def getChapterText(self, url):
         "Needs to be overriden in each adapter class."

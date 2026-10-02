@@ -17,7 +17,6 @@
 
 import sys
 import re
-import codecs
 
 import configparser
 from configparser import DEFAULTSECT, ParsingError
@@ -197,6 +196,7 @@ def get_valid_set_options():
 
                'use_ssl_unverified_context':(None,None,boollist),
                'use_ssl_default_seclevelone':(None,None,boollist),
+               'retry_http_525_failures':(None,None,boollist),
                'use_cloudscraper':(None,None,boollist),
                'use_basic_cache':(None,None,boollist),
                'use_nsapa_proxy':(None,None,boollist),
@@ -269,6 +269,8 @@ def get_valid_set_options():
 
                'calibre_series_meta':(None,['epub'],boollist),
                'force_update_epub_always':(None,['epub'],boollist),
+               'update_check_recent_chapters':(None,None,None),
+               'update_preserve_deleted_chapters':(None,['epub'],boollist),
                'page_progression_direction_rtl':(None,['epub'],boollist),
 
                'windows_eol':(None,['txt'],boollist),
@@ -417,6 +419,7 @@ def get_valid_keywords():
                  'make_linkhtml_entries',
                  'max_fg_sleep',
                  'max_fg_sleep_at_downloads',
+                 'max_request_retries',
                  'max_zalgo',
                  'min_fg_sleep',
                  'no_image_processing_regexp',
@@ -428,6 +431,7 @@ def get_valid_keywords():
                  'output_filename_safepattern',
                  'password',
                  'post_process_cmd',
+                 'preserved_chapter_mark',
                  'rating_titles',
                  'reader_posts_per_page',
                  'remove_tags',
@@ -781,7 +785,7 @@ class Configuration(ConfigParser):
         read_ok = []
         for filename in filenames:
             try:
-                fp = codecs.open(filename,encoding='utf-8')
+                fp = open(filename,encoding='utf-8')
             except IOError:
                 continue
             self._read(fp, filename)

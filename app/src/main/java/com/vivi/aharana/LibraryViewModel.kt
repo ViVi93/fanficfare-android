@@ -218,6 +218,7 @@ class LibraryViewModel(private val repository: BookRepository) : ViewModel() {
 
     private fun humanizeJobStatus(status: String): String = when (status) {
         "queued" -> "Queued"
+        "waiting" -> "Waiting"
         "running" -> "Running"
         "success" -> "Complete"
         "failed" -> "Failed"

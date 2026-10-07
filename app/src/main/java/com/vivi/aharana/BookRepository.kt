@@ -77,7 +77,9 @@ class BookRepository(private val context: Context) {
     private suspend fun reconcileStaleRunningJobs() = withContext(Dispatchers.IO) {
         try {
             val workManager = WorkManager.getInstance(context)
-            val stale = downloadJobDao.getByStatus("running") + downloadJobDao.getByStatus("queued")
+            val stale = downloadJobDao.getByStatus("running") +
+                downloadJobDao.getByStatus("queued") +
+                downloadJobDao.getByStatus(FanFicFareWorker.STATUS_WAITING)
             for (job in stale) {
                 val workId = job.workId?.ifBlank { null } ?: continue
                 try {
@@ -363,6 +365,7 @@ class BookRepository(private val context: Context) {
                     .build()
             )
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .addTag(FanFicFareWorker.TAG_DOWNLOAD)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             requestWorkId,
@@ -398,6 +401,7 @@ class BookRepository(private val context: Context) {
                     .build()
             )
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .addTag(FanFicFareWorker.TAG_UPDATE)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             FanFicFareWorker.UNIQUE_WORK_NAME,
@@ -433,6 +437,7 @@ class BookRepository(private val context: Context) {
                     .build()
             )
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .addTag(FanFicFareWorker.TAG_FORCE_DOWNLOAD)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             FanFicFareWorker.UNIQUE_WORK_NAME,
@@ -544,6 +549,12 @@ class BookRepository(private val context: Context) {
     fun cancelCurrentDownload() {
         DiagnosticLog.append(context, "Main.Cancel", "cancel_start")
         try {
+            // Downloads/updates/force-downloads each carry their own random unique
+            // work name, so cancelling by name only ever hit update/force-download.
+            // Cancel by tag so a queued or waiting download actually stops too.
+            WorkManager.getInstance(context).cancelAllWorkByTag(FanFicFareWorker.TAG_DOWNLOAD)
+            WorkManager.getInstance(context).cancelAllWorkByTag(FanFicFareWorker.TAG_UPDATE)
+            WorkManager.getInstance(context).cancelAllWorkByTag(FanFicFareWorker.TAG_FORCE_DOWNLOAD)
             WorkManager.getInstance(context).cancelUniqueWork(FanFicFareWorker.UNIQUE_WORK_NAME)
             DiagnosticLog.append(context, "Main.Cancel", "workmanager_cancelled")
         } catch (e: Exception) {
@@ -553,7 +564,9 @@ class BookRepository(private val context: Context) {
         scope.launch(Dispatchers.IO) {
             try {
                 val dao = database.downloadJobDao()
-                val stale = dao.getByStatus("running") + dao.getByStatus("queued")
+                val stale = dao.getByStatus("running") +
+                    dao.getByStatus("queued") +
+                    dao.getByStatus(FanFicFareWorker.STATUS_WAITING)
                 val cancelled = stale
                     .filter { setOf("download", "update", "force_download").contains(it.type) }
                     .map { it.copy(status = "cancelled", finishedAt = System.currentTimeMillis()) }
@@ -596,6 +609,6 @@ class BookRepository(private val context: Context) {
 
     fun hasRunningJob(): Boolean {
         val jobs = _latestJobs.value ?: return false
-        return jobs.any { it.status == "running" || it.status == "queued" }
+        return jobs.any { it.status == "running" || it.status == "queued" || it.status == FanFicFareWorker.STATUS_WAITING }
     }
 }

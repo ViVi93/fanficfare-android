@@ -21,6 +21,7 @@
     <string name="job_type_force_download">Force download</string>
     <string name="job_type_metadata">Metadata</string>
     <string name="status_queued">Queued</string>
+    <string name="status_waiting">Waiting</string>
     <string name="status_running">Running</string>
     <string name="status_failed">Failed</string>
     <string name="status_cancelled">Cancelled</string>

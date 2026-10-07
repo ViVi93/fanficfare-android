@@ -76,6 +76,11 @@ class DownloadJobAdapter(
                     R.color.fanficfare_tertiary,
                     true
                 )
+                "waiting" -> Triple(
+                    context.getString(R.string.status_waiting),
+                    R.color.fanficfare_tertiary,
+                    true
+                )
                 "running" -> Triple(
                     context.getString(R.string.status_running),
                     R.color.fanficfare_secondary,

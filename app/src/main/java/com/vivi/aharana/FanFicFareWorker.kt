@@ -17,6 +17,7 @@ import com.vivi.aharana.data.local.DownloadJobDao
 import com.vivi.aharana.data.local.DownloadJobEntity
 import com.vivi.aharana.data.local.toEntity
 import com.vivi.aharana.model.BookItem
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.io.File
 
@@ -41,6 +42,20 @@ class FanFicFareWorker(
         const val PROGRESS_STATUS = "status"
         const val PROGRESS_PHASE = "phase"
         const val PROGRESS_INDETERMINATE = "indeterminate"
+
+        /** Job is enqueued but has not acquired the engine gate yet. */
+        const val STATUS_WAITING = "waiting"
+
+        /** WorkManager tags used to cancel queued/running engine jobs by type. */
+        const val TAG_DOWNLOAD = "fanficfare_download"
+        const val TAG_UPDATE = "fanficfare_update"
+        const val TAG_FORCE_DOWNLOAD = "fanficfare_force_download"
+
+        /** HTTP statuses worth re-running a whole story fetch for. */
+        val RETRYABLE_HTTP_STATUS = setOf(429, 500, 502, 503, 504)
+
+        /** Delay before each extra whole-story attempt after a retryable status. */
+        val SERVER_RETRY_DELAYS_MS = longArrayOf(10_000L, 30_000L)
     }
 
     init {
@@ -64,8 +79,10 @@ class FanFicFareWorker(
 
     private fun humanize(status: String): String = when (status) {
         "queued" -> "Queued"
+        "waiting" -> "Waiting for other downloads"
         "preparing" -> "Preparing"
         "downloading" -> "Downloading"
+        "retrying" -> "Server busy - retrying"
         "processing" -> "Processing"
         "copying" -> "Copying"
         "completed" -> "Complete"
@@ -171,18 +188,17 @@ class FanFicFareWorker(
         var job: DownloadJobEntity
         var jobId: Long
         if (existingJob != null) {
-            job = existingJob.copy(
-                status = "running",
-                createdAt = existingJob.createdAt
-            )
+            // Do NOT flip to "running" here: the engine gate below may keep this job
+            // waiting behind another download, and the queue UI must say so.
+            job = existingJob.copy(status = STATUS_WAITING)
             jobDao.update(job)
             jobId = existingJob.id
-            logWorker("doWork", "updated_existing_job id=$jobId")
+            logWorker("doWork", "awaiting_gate id=$jobId")
         } else {
             job = DownloadJobEntity(
                 bookId = bookId,
                 type = type,
-                status = "running",
+                status = STATUS_WAITING,
                 inputUrl = url.ifBlank { null },
                 inputPath = inputPath.ifBlank { null },
                 createdAt = System.currentTimeMillis()
@@ -204,40 +220,77 @@ class FanFicFareWorker(
                 return Result.failure()
             }
 
-            setPhase("preparing")
-            logWorker("doWork", "phase=preparing")
+            setPhase("waiting")
+            logWorker("doWork", "phase=waiting type=$type")
 
-            when (type) {
-                TYPE_DOWNLOAD -> {
-                    logWorker("doWork", "calling_handleDownload")
-                    handleDownload(url, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleDownload_result=$it") }
-                }
-                TYPE_UPDATE -> {
-                    logWorker("doWork", "calling_handleUpdate")
-                    handleUpdate(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleUpdate_result=$it") }
-                }
-                TYPE_FORCE_DOWNLOAD -> {
-                    logWorker("doWork", "calling_handleForceDownload")
-                    handleForceDownload(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleForceDownload_result=$it") }
-                }
-                TYPE_METADATA -> {
-                    logWorker("doWork", "calling_handleMetadata")
-                    handleMetadata(url, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleMetadata_result=$it") }
-                }
-                else -> {
+            // Only one FanFicFare engine call runs at a time. Sharing several URLs
+            // used to run them in parallel, which tripped the host's rate limiter
+            // (503 for every job in the burst).
+            FanFicFareGate.run {
+                if (isStopped) {
                     jobDao.update(
                         job.copy(
                             id = jobId,
-                            status = "failed",
-                            error = "Unknown type: $type",
+                            status = "cancelled",
                             finishedAt = System.currentTimeMillis()
                         )
                     )
-                    logWorker("doWork", "unknown_type")
-                    setPhase("failed")
-                    Result.failure()
+                    logWorker("doWork", "stopped_while_waiting")
+                    return@run Result.failure()
+                }
+
+                job = job.copy(status = "running")
+                jobDao.update(job)
+                logWorker("doWork", "gate_acquired id=$jobId")
+
+                setPhase("preparing")
+                logWorker("doWork", "phase=preparing")
+
+                when (type) {
+                    TYPE_DOWNLOAD -> {
+                        logWorker("doWork", "calling_handleDownload")
+                        handleDownload(url, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleDownload_result=$it") }
+                    }
+                    TYPE_UPDATE -> {
+                        logWorker("doWork", "calling_handleUpdate")
+                        handleUpdate(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleUpdate_result=$it") }
+                    }
+                    TYPE_FORCE_DOWNLOAD -> {
+                        logWorker("doWork", "calling_handleForceDownload")
+                        handleForceDownload(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleForceDownload_result=$it") }
+                    }
+                    TYPE_METADATA -> {
+                        logWorker("doWork", "calling_handleMetadata")
+                        handleMetadata(url, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleMetadata_result=$it") }
+                    }
+                    else -> {
+                        jobDao.update(
+                            job.copy(
+                                id = jobId,
+                                status = "failed",
+                                error = "Unknown type: $type",
+                                finishedAt = System.currentTimeMillis()
+                            )
+                        )
+                        logWorker("doWork", "unknown_type")
+                        setPhase("failed")
+                        Result.failure()
+                    }
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Cancelled while waiting for, or using, the engine. Record it and let
+            // the cancellation propagate instead of reporting a failure.
+            jobDao.update(
+                job.copy(
+                    id = jobId,
+                    status = "cancelled",
+                    finishedAt = System.currentTimeMillis()
+                )
+            )
+            setPhase("cancelled")
+            logWorker("doWork", "cancelled")
+            throw e
         } catch (e: Exception) {
             logWorker("doWork", "exception=${e.javaClass.simpleName}: ${e.message ?: "null"}")
             jobDao.update(
@@ -336,6 +389,49 @@ class FanFicFareWorker(
         }
     }
 
+    /**
+     * Runs a FanFicFare bridge call, re-running the whole operation when the site
+     * answered with a retryable status (429/5xx).
+     *
+     * Safe to re-run: the engine only produces output once the writer completes, and
+     * the bridge writes the EPUB through a temp file that is renamed on success.
+     * Retrying here means a burst that tripped a site's rate limiter recovers inside
+     * the job instead of leaving a failed row for the user to retry by hand.
+     *
+     * Runs while holding the engine gate, so the waits also keep other jobs out of
+     * the site's face.
+     */
+    private suspend fun callBridgeWithRetry(
+        label: String,
+        call: () -> String
+    ): String {
+        var attempt = 0
+        while (true) {
+            val raw = call()
+            val status = retryableHttpStatus(raw)
+            if (status == null || attempt >= SERVER_RETRY_DELAYS_MS.size) return raw
+            val delayMs = SERVER_RETRY_DELAYS_MS[attempt]
+            attempt++
+            logWorker(label, "server_busy status=$status retry=$attempt delayMs=$delayMs")
+            setPhase("retrying")
+            delay(delayMs)
+            setPhase("downloading")
+        }
+    }
+
+    /** Returns the HTTP status when the bridge reported a retryable failure, else null. */
+    private fun retryableHttpStatus(raw: String): Int? = try {
+        val json = JSONObject(raw)
+        if (json.optBoolean("ok")) {
+            null
+        } else {
+            val status = json.optInt("http_status", -1)
+            if (RETRYABLE_HTTP_STATUS.contains(status)) status else null
+        }
+    } catch (e: Exception) {
+        null
+    }
+
     private suspend fun handleDownload(
         url: String,
         bookDao: BookDao,
@@ -368,7 +464,7 @@ class FanFicFareWorker(
         val bridge = PythonBridge(applicationContext)
         val outputDir = applicationContext.filesDir.absolutePath
         logWorker("handleDownload", "bridge_call url=$url outputDir=$outputDir")
-        val raw = bridge.fanficfareDownload(url, outputDir)
+        val raw = callBridgeWithRetry("handleDownload") { bridge.fanficfareDownload(url, outputDir) }
         logWorker("handleDownload", "bridge_raw_len=${raw.length}")
         if (isStopped) {
             jobDao.update(
@@ -556,7 +652,7 @@ class FanFicFareWorker(
             return Result.failure()
         }
         setPhase("downloading")
-        val raw = bridge.updateEpubFromPath(localFile.absolutePath, outputDir)
+        val raw = callBridgeWithRetry("handleUpdate") { bridge.updateEpubFromPath(localFile.absolutePath, outputDir) }
         if (isStopped) {
             jobDao.update(
                 job.copy(
@@ -701,7 +797,7 @@ class FanFicFareWorker(
             return Result.failure()
         }
         setPhase("downloading")
-        val raw = bridge.forceDownloadFromEpub(localFile.absolutePath, outputDir)
+        val raw = callBridgeWithRetry("handleForceDownload") { bridge.forceDownloadFromEpub(localFile.absolutePath, outputDir) }
         if (isStopped) {
             jobDao.update(
                 job.copy(
@@ -828,7 +924,7 @@ class FanFicFareWorker(
         }
         val bridge = PythonBridge(applicationContext)
         setPhase("fetching_metadata")
-        val raw = bridge.fanficfareMetadata(url)
+        val raw = callBridgeWithRetry("handleMetadata") { bridge.fanficfareMetadata(url) }
         val result = JSONObject(raw)
         val status = if (result.optBoolean("ok")) "success" else "failed"
         val errorMessage = result.optString("error", "")

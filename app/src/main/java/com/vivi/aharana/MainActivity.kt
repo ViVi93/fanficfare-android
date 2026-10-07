@@ -88,6 +88,7 @@ class MainActivity : BaseActivity() {
                 }
                 val text = when (latest.status) {
                     "queued" -> "Queued"
+                    "waiting" -> "Waiting..."
                     "running" -> "Running..."
                     "success" -> "✓ Complete"
                     "failed" -> "✗ Failed"
@@ -168,6 +169,7 @@ class MainActivity : BaseActivity() {
                 }
                 val text = when (latest.status) {
                     "queued" -> "Queued"
+                    "waiting" -> "Waiting..."
                     "running" -> "Running..."
                     "success" -> "✓ Complete"
                     "failed" -> "✗ Failed"

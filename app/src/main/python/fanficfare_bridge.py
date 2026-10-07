@@ -52,6 +52,47 @@ def _download_debug_read():
         return ""
 
 
+def _exception_http_status(exc):
+    """Return the HTTP status behind a fetch failure, or None.
+
+    ``fanficfare.exceptions.HTTPErrorFFF`` carries ``status_code``;
+    ``requests.exceptions.HTTPError`` carries it on the response.  The Kotlin
+    worker uses this to decide whether re-running the whole story fetch is worth
+    it (transient 5xx / 429 from a rate limiter) instead of surfacing a failure.
+    """
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status
+    response = getattr(exc, "response", None)
+    if response is not None:
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int):
+            return status
+    return None
+
+
+def _write_story_to_output(writer, outpath, **kwargs):
+    """Run ``writer.writeStory`` into ``outpath`` atomically.
+
+    The writer streams into whatever file object it is given, so a failure part
+    way through used to leave a truncated EPUB behind in the output directory.
+    Write to a sibling temp file and rename on success; remove it on failure.
+    """
+    tmpfd, tmppath = tempfile.mkstemp(
+        dir=os.path.dirname(outpath) or ".", prefix=".fff-", suffix=".epub.part"
+    )
+    try:
+        with os.fdopen(tmpfd, "wb") as out:
+            writer.writeStory(outstream=out, **kwargs)
+        os.replace(tmppath, outpath)
+    except Exception:
+        try:
+            os.remove(tmppath)
+        except Exception:
+            pass
+        raise
+
+
 def _import_fanficfare():
     global _FANFICFARE_AVAILABLE, _FANFICFARE_ERROR, _FANFICFARE_TRACEBACK
     if _FANFICFARE_AVAILABLE is not None:
@@ -242,7 +283,7 @@ def get_metadata(url):
             "chapters": adapter.story.getChapterCount(),
         })
     except Exception as e:
-        return json.dumps({"ok": False, "error": str(e), "exception_type": type(e).__name__, "detail": traceback.format_exc()})
+        return json.dumps({"ok": False, "error": str(e), "exception_type": type(e).__name__, "http_status": _exception_http_status(e), "detail": traceback.format_exc()})
 
 
 def download_story(url, outDir):
@@ -273,8 +314,7 @@ def download_story(url, outDir):
         outpath = os.path.join(outDir, os.path.basename(filename))
         _download_debug_write("download_story fanficfare_call_start")
         t0 = time.time()
-        with open(outpath, "wb") as out:
-            writer.writeStory(outstream=out)
+        _write_story_to_output(writer, outpath)
         _download_debug_write("download_story fanficfare_call_returned elapsed={:.3f}s".format(time.time() - t0))
         stat = os.stat(outpath)
         meta = _extract_epub_metadata(outpath)
@@ -296,6 +336,7 @@ def download_story(url, outDir):
             "ok": False,
             "error": str(e),
             "exception_type": type(e).__name__,
+            "http_status": _exception_http_status(e),
             "detail": traceback.format_exc(),
         })
 def _extract_epub_metadata(epubPath):
@@ -602,8 +643,7 @@ def update_epub_from_path(epubPath, outDir):
             writer = writers.getWriter("epub", configuration, adapter)
             filename = writer.getOutputFileName()
             outpath = os.path.join(outDir, os.path.basename(filename))
-            with open(outpath, "wb") as out:
-                writer.writeStory(outstream=out, metaonly=False)
+            _write_story_to_output(writer, outpath, metaonly=False)
             stat = os.stat(outpath)
             meta = _extract_epub_metadata(outpath)
             return json.dumps({
@@ -618,7 +658,7 @@ def update_epub_from_path(epubPath, outDir):
                 "size": stat.st_size,
             })
     except Exception as e:
-        return json.dumps({"ok": False, "error": str(e)})
+        return json.dumps({"ok": False, "error": str(e), "exception_type": type(e).__name__, "http_status": _exception_http_status(e)})
 
 
 def force_download_from_epub(epubPath, outDir):
@@ -650,8 +690,7 @@ def force_download_from_epub(epubPath, outDir):
                 out_mtime_before = int(st.st_mtime * 1000)
         except Exception:
             pass
-        with open(outpath, "wb") as out:
-            writer.writeStory(outstream=out, metaonly=False)
+        _write_story_to_output(writer, outpath, metaonly=False)
         stat = os.stat(outpath)
         meta = _extract_epub_metadata(outpath)
         out_exists_after = os.path.exists(outpath)
@@ -678,7 +717,7 @@ def force_download_from_epub(epubPath, outDir):
             },
         })
     except Exception as e:
-        return json.dumps({"ok": False, "error": str(e)})
+        return json.dumps({"ok": False, "error": str(e), "exception_type": type(e).__name__, "http_status": _exception_http_status(e)})
 
 
 def save_library_index(indexPath, booksJson):

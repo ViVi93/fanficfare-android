@@ -166,7 +166,7 @@ class AddFromPageActivity : BaseActivity() {
                 try {
                     val now = System.currentTimeMillis()
                     repository.getAllDownloadJobs()
-                        .filter { it.type == "metadata" && setOf("running", "queued").contains(it.status) }
+                        .filter { it.type == "metadata" && setOf("running", "queued", FanFicFareWorker.STATUS_WAITING).contains(it.status) }
                         .forEach { job ->
                             repository.updateDownloadJobStatus(job.id, "cancelled", now)
                         }

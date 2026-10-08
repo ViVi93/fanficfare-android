@@ -43,6 +43,12 @@ class BookRepository(private val context: Context) {
     companion object {
         private const val KEY_SORT = "sort"
         private const val KEY_SORT_DIRECTION = "sort_direction"
+
+        /**
+         * A queue row younger than this is never treated as an orphan by
+         * reconciliation - it may simply be between insert and WorkManager enqueue.
+         */
+        private const val RECONCILE_GRACE_MS = 2 * 60 * 1000L
     }
 
     private val _books = MutableLiveData<List<BookItem>>(emptyList())
@@ -95,6 +101,10 @@ class BookRepository(private val context: Context) {
             for (job in stale) {
                 val workName = job.workId?.ifBlank { null }
                 if (workName == null) {
+                    // A row is only without a work name between insert and enqueue,
+                    // so never judge a fresh one: doing that marked a just-shared
+                    // download as failed while its worker was still starting up.
+                    if (System.currentTimeMillis() - job.createdAt < RECONCILE_GRACE_MS) continue
                     markInterrupted(job, "interrupted_no_work_name")
                     continue
                 }
@@ -376,15 +386,21 @@ class BookRepository(private val context: Context) {
     }
 
     suspend fun enqueueDownload(url: String): Long {
+        // The work name is generated first and written on the row at insert time:
+        // the worker looks the row up by it the instant it starts, and the
+        // reconciler treats a queued row with no work name as an orphan. Inserting
+        // without it left a window where a fresh share was marked failed by
+        // reconciliation and then duplicated by the worker (device log 2026-10-08).
+        val requestWorkId = java.util.UUID.randomUUID().toString()
         val job = DownloadJobEntity(
             bookId = 0,
             type = "download",
             status = "queued",
             inputUrl = url,
+            workId = requestWorkId,
             createdAt = System.currentTimeMillis()
         )
         val jobId = downloadJobDao.insert(job)
-        val requestWorkId = java.util.UUID.randomUUID().toString()
         val work = OneTimeWorkRequestBuilder<FanFicFareWorker>()
             .setInputData(
                 workDataOf(
@@ -406,20 +422,25 @@ class BookRepository(private val context: Context) {
             ExistingWorkPolicy.KEEP,
             work
         )
-        downloadJobDao.update(job.copy(id = jobId, workId = requestWorkId))
         return jobId
     }
 
     suspend fun enqueueUpdate(bookId: Long, inputPath: String): Long {
+        // The work name is generated first and written on the row at insert time:
+        // the worker looks the row up by it the instant it starts, and the
+        // reconciler treats a queued row with no work name as an orphan. Inserting
+        // without it left a window where a fresh share was marked failed by
+        // reconciliation and then duplicated by the worker (device log 2026-10-08).
+        val requestWorkId = java.util.UUID.randomUUID().toString()
         val job = DownloadJobEntity(
             bookId = bookId,
             type = "update",
             status = "queued",
             inputPath = inputPath,
+            workId = requestWorkId,
             createdAt = System.currentTimeMillis()
         )
         val jobId = downloadJobDao.insert(job)
-        val requestWorkId = java.util.UUID.randomUUID().toString()
         val work = OneTimeWorkRequestBuilder<FanFicFareWorker>()
             .setInputData(
                 workDataOf(
@@ -442,20 +463,25 @@ class BookRepository(private val context: Context) {
             ExistingWorkPolicy.KEEP,
             work
         )
-        downloadJobDao.update(job.copy(id = jobId, workId = requestWorkId))
         return jobId
     }
 
     suspend fun enqueueForceDownload(bookId: Long, inputPath: String): Long {
+        // The work name is generated first and written on the row at insert time:
+        // the worker looks the row up by it the instant it starts, and the
+        // reconciler treats a queued row with no work name as an orphan. Inserting
+        // without it left a window where a fresh share was marked failed by
+        // reconciliation and then duplicated by the worker (device log 2026-10-08).
+        val requestWorkId = java.util.UUID.randomUUID().toString()
         val job = DownloadJobEntity(
             bookId = bookId,
             type = "force_download",
             status = "queued",
             inputPath = inputPath,
+            workId = requestWorkId,
             createdAt = System.currentTimeMillis()
         )
         val jobId = downloadJobDao.insert(job)
-        val requestWorkId = java.util.UUID.randomUUID().toString()
         val work = OneTimeWorkRequestBuilder<FanFicFareWorker>()
             .setInputData(
                 workDataOf(
@@ -478,20 +504,25 @@ class BookRepository(private val context: Context) {
             ExistingWorkPolicy.KEEP,
             work
         )
-        downloadJobDao.update(job.copy(id = jobId, workId = requestWorkId))
         return jobId
     }
 
     suspend fun enqueueMetadata(url: String): Long {
+        // The work name is generated first and written on the row at insert time:
+        // the worker looks the row up by it the instant it starts, and the
+        // reconciler treats a queued row with no work name as an orphan. Inserting
+        // without it left a window where a fresh share was marked failed by
+        // reconciliation and then duplicated by the worker (device log 2026-10-08).
+        val requestWorkId = java.util.UUID.randomUUID().toString()
         val job = DownloadJobEntity(
             bookId = 0,
             type = "metadata",
             status = "queued",
             inputUrl = url,
+            workId = requestWorkId,
             createdAt = System.currentTimeMillis()
         )
         val jobId = downloadJobDao.insert(job)
-        val requestWorkId = java.util.UUID.randomUUID().toString()
         val work = OneTimeWorkRequestBuilder<FanFicFareWorker>()
             .setInputData(
                 workDataOf(
@@ -509,7 +540,6 @@ class BookRepository(private val context: Context) {
             .addTag("fanficfare_metadata")
             .build()
         WorkManager.getInstance(context).enqueue(work)
-        downloadJobDao.update(job.copy(id = jobId, workId = requestWorkId))
         return jobId
     }
 
@@ -533,12 +563,16 @@ class BookRepository(private val context: Context) {
         if (urls.isEmpty()) return@withContext emptyList()
 
         val now = System.currentTimeMillis()
-        val entities = urls.map { url ->
+        // Work names are assigned here, before the rows are inserted, for the same
+        // reason as the single-row enqueues above.
+        val workIds = urls.map { java.util.UUID.randomUUID().toString() }
+        val entities = urls.mapIndexed { index, url ->
             DownloadJobEntity(
                 bookId = 0,
                 type = "metadata",
                 status = "queued",
                 inputUrl = url,
+                workId = workIds[index],
                 createdAt = now
             )
         }
@@ -552,7 +586,7 @@ class BookRepository(private val context: Context) {
             if (index > 0 && index % batchSize == 0) {
                 kotlinx.coroutines.delay(200)
             }
-            val requestWorkId = java.util.UUID.randomUUID().toString()
+            val requestWorkId = workIds[index]
             val work = OneTimeWorkRequestBuilder<FanFicFareWorker>()
                 .setInputData(
                     workDataOf(
@@ -569,11 +603,7 @@ class BookRepository(private val context: Context) {
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .addTag("fanficfare_metadata")
                 .build()
-            val jobId = jobIds[index]
             WorkManager.getInstance(context).enqueue(work)
-            downloadJobDao.update(
-                entities[index].copy(id = jobId, workId = requestWorkId)
-            )
         }
         jobIds.toList()
     }

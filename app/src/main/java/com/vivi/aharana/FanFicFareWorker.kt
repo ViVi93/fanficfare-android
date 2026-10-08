@@ -711,8 +711,29 @@ class FanFicFareWorker(
                 finishedAt = System.currentTimeMillis()
             )
         )
+        // The story is now in the library, so any older row for the same URL is
+        // obsolete: without this, a failed/queued row from an earlier attempt (or
+        // from the enqueue race fixed in v1.10) stays in the queue asking to be
+        // retried or removed for a book that is already downloaded.
+        supersedeOlderJobsForSameStory(jobDao, url, job.id)
         setPhase("completed", indeterminate = false)
         return Result.success()
+    }
+
+    /**
+     * Retire older job rows for the same story URL once one of them has succeeded.
+     * They are marked cancelled, which removes them from the download queue.
+     */
+    private suspend fun supersedeOlderJobsForSameStory(jobDao: DownloadJobDao, url: String, keepJobId: Long) {
+        try {
+            val now = System.currentTimeMillis()
+            for (stale in jobDao.findSuperseded(url, keepJobId)) {
+                jobDao.update(stale.copy(status = "cancelled", finishedAt = now))
+                logWorker("doWork", "superseded_stale_job id=${stale.id} was=${stale.status}")
+            }
+        } catch (e: Exception) {
+            logWorker("doWork", "supersede_failed=${e.message}")
+        }
     }
 
     private suspend fun handleUpdate(

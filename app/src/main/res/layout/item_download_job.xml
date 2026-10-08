@@ -36,7 +36,7 @@
             android:maxLines="1"
             android:ellipsize="end"
             app:layout_constraintBottom_toTopOf="@+id/textMeta"
-            app:layout_constraintEnd_toStartOf="@+id/buttonRetry"
+            app:layout_constraintEnd_toStartOf="@+id/buttonCancel"
             app:layout_constraintStart_toEndOf="@id/iconStatus"
             app:layout_constraintTop_toTopOf="parent" />
 
@@ -49,7 +49,7 @@
             android:textSize="@dimen/m3_body_small"
             android:textColor="?attr/colorOnSurfaceVariant"
             app:layout_constraintBottom_toTopOf="@+id/textError"
-            app:layout_constraintEnd_toStartOf="@+id/buttonRetry"
+            app:layout_constraintEnd_toStartOf="@+id/buttonCancel"
             app:layout_constraintStart_toEndOf="@id/iconStatus"
             app:layout_constraintTop_toBottomOf="@id/textTitle"
             android:layout_marginTop="2dp" />
@@ -92,9 +92,21 @@
             android:maxLines="3"
             android:ellipsize="end"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toStartOf="@+id/buttonRetry"
+            app:layout_constraintEnd_toStartOf="@+id/buttonCancel"
             app:layout_constraintStart_toStartOf="@+id/textMeta"
             app:layout_constraintTop_toBottomOf="@id/textMeta" />
+
+        <!-- Cancel button (in-flight jobs only) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonCancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/cancel"
+            style="@style/Widget.Material3Expressive.Button.TextButton"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/buttonRetry"
+            app:layout_constraintTop_toTopOf="parent" />
 
         <!-- Retry button -->
         <com.google.android.material.button.MaterialButton

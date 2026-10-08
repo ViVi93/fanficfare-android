@@ -36,6 +36,11 @@ class DownloadQueueActivity : BaseActivity() {
                 // and the retried job appears as a new entry
                 repo.cancelJob(job)
             },
+            onCancel = { job ->
+                DiagnosticLog.append(this, "Queue.Cancel", "button jobId=${job.id} type=${job.type}")
+                BookRepository(this).cancelJob(job)
+                showMessage(R.string.queue_cancelled_toast)
+            },
             onRemove = { job ->
                 DiagnosticLog.append(this, "Queue.Remove", "jobId=${job.id}")
                 val db = AppDatabase.getInstance(this)

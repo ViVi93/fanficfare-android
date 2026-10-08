@@ -17,7 +17,9 @@ import com.vivi.aharana.data.local.DownloadJobDao
 import com.vivi.aharana.data.local.DownloadJobEntity
 import com.vivi.aharana.data.local.toEntity
 import com.vivi.aharana.model.BookItem
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 
@@ -56,6 +58,9 @@ class FanFicFareWorker(
 
         /** Delay before each extra whole-story attempt after a retryable status. */
         val SERVER_RETRY_DELAYS_MS = longArrayOf(10_000L, 30_000L)
+
+        /** Interval between "engine still busy" heartbeats while the gate is held. */
+        const val HEARTBEAT_MS = 15_000L
     }
 
     init {
@@ -247,35 +252,42 @@ class FanFicFareWorker(
                 setPhase("preparing")
                 logWorker("doWork", "phase=preparing")
 
-                when (type) {
-                    TYPE_DOWNLOAD -> {
-                        logWorker("doWork", "calling_handleDownload")
-                        handleDownload(url, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleDownload_result=$it") }
-                    }
-                    TYPE_UPDATE -> {
-                        logWorker("doWork", "calling_handleUpdate")
-                        handleUpdate(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleUpdate_result=$it") }
-                    }
-                    TYPE_FORCE_DOWNLOAD -> {
-                        logWorker("doWork", "calling_handleForceDownload")
-                        handleForceDownload(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleForceDownload_result=$it") }
-                    }
-                    TYPE_METADATA -> {
-                        logWorker("doWork", "calling_handleMetadata")
-                        handleMetadata(url, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleMetadata_result=$it") }
-                    }
-                    else -> {
-                        jobDao.update(
-                            job.copy(
-                                id = jobId,
-                                status = "failed",
-                                error = "Unknown type: $type",
-                                finishedAt = System.currentTimeMillis()
+                // Heartbeat: the gate is one-call-at-a-time, so a call that never
+                // returns stalls the whole queue. This does not kill anything (the
+                // app deliberately has no generic timeouts) - it makes the stall
+                // visible in Diagnostics and in the foreground notification instead
+                // of looking like an idle queue.
+                withEngineHeartbeat(type) {
+                    when (type) {
+                        TYPE_DOWNLOAD -> {
+                            logWorker("doWork", "calling_handleDownload")
+                            handleDownload(url, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleDownload_result=$it") }
+                        }
+                        TYPE_UPDATE -> {
+                            logWorker("doWork", "calling_handleUpdate")
+                            handleUpdate(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleUpdate_result=$it") }
+                        }
+                        TYPE_FORCE_DOWNLOAD -> {
+                            logWorker("doWork", "calling_handleForceDownload")
+                            handleForceDownload(bookId, inputPath, bookDao, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleForceDownload_result=$it") }
+                        }
+                        TYPE_METADATA -> {
+                            logWorker("doWork", "calling_handleMetadata")
+                            handleMetadata(url, jobDao, job.copy(id = jobId)).also { logWorker("doWork", "handleMetadata_result=$it") }
+                        }
+                        else -> {
+                            jobDao.update(
+                                job.copy(
+                                    id = jobId,
+                                    status = "failed",
+                                    error = "Unknown type: $type",
+                                    finishedAt = System.currentTimeMillis()
+                                )
                             )
-                        )
-                        logWorker("doWork", "unknown_type")
-                        setPhase("failed")
-                        Result.failure()
+                            logWorker("doWork", "unknown_type")
+                            setPhase("failed")
+                            Result.failure()
+                        }
                     }
                 }
             }
@@ -387,6 +399,53 @@ class FanFicFareWorker(
                 Result.success()
             }
             else -> Result.failure()
+        }
+    }
+
+    /**
+     * Runs [block] while logging an "engine still busy" heartbeat every
+     * [HEARTBEAT_MS] and refreshing the foreground notification with the elapsed
+     * time.
+     *
+     * The engine gate admits one call at a time, so a call that never returns
+     * freezes every job queued behind it with nothing in the log to show for it
+     * (the app has no generic timeouts by design). This makes the wait visible -
+     * Diagnostics gets `gate_heartbeat type=download elapsed=45s` and the
+     * notification reads "Running download · 45s" - so a stall cannot be mistaken
+     * for an idle queue. It never kills the work.
+     */
+    private suspend fun <T> withEngineHeartbeat(type: String, block: suspend () -> T): T = coroutineScope {
+        val startedAt = System.currentTimeMillis()
+        val beat = launch {
+            while (true) {
+                delay(HEARTBEAT_MS)
+                val seconds = (System.currentTimeMillis() - startedAt) / 1000
+                logWorker("heartbeat", "gate_heartbeat type=$type elapsed=${seconds}s")
+                updateForegroundNotification("Running $type · ${seconds}s")
+            }
+        }
+        try {
+            block()
+        } finally {
+            beat.cancel()
+        }
+    }
+
+    /** Re-posts the foreground notification with [text]; never throws. */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun updateForegroundNotification(text: String) {
+        try {
+            val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+                .setContentTitle("FanFicFare")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .build()
+            androidx.core.app.NotificationManagerCompat.from(applicationContext)
+                .notify(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            android.util.Log.w("FFF-Heartbeat", "notification update failed: ${e.message}")
         }
     }
 

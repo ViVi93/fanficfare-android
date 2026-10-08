@@ -14,6 +14,7 @@ import com.vivi.aharana.data.local.DownloadJobEntity
 
 class DownloadJobAdapter(
     private val onRetry: (DownloadJobEntity) -> Unit,
+    private val onCancel: (DownloadJobEntity) -> Unit,
     private val onRemove: (DownloadJobEntity) -> Unit
 ) : ListAdapter<DownloadJobEntity, DownloadJobAdapter.JobViewHolder>(DiffCallback) {
 
@@ -24,7 +25,7 @@ class DownloadJobAdapter(
     }
 
     override fun onBindViewHolder(holder: JobViewHolder, position: Int) {
-        holder.bind(getItem(position), onRetry, onRemove)
+        holder.bind(getItem(position), onRetry, onCancel, onRemove)
     }
 
     class JobViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -35,11 +36,13 @@ class DownloadJobAdapter(
         private val textError: TextView = itemView.findViewById(R.id.textError)
         private val iconStatus: ImageView = itemView.findViewById(R.id.iconStatus)
         private val buttonRetry: Button = itemView.findViewById(R.id.buttonRetry)
+        private val buttonCancel: Button = itemView.findViewById(R.id.buttonCancel)
         private val buttonRemove: Button = itemView.findViewById(R.id.buttonRemove)
 
         fun bind(
             job: DownloadJobEntity,
             onRetry: (DownloadJobEntity) -> Unit,
+            onCancel: (DownloadJobEntity) -> Unit,
             onRemove: (DownloadJobEntity) -> Unit
         ) {
             val context = itemView.context
@@ -134,13 +137,23 @@ class DownloadJobAdapter(
                 textError.visibility = View.GONE
             }
 
-            // Retry button — show for failed, queued, cancelled
-            val showRetry = job.status == "failed" ||
-                job.status == "queued" || job.status == "cancelled"
+            // In-flight jobs (queued/waiting/running) get Cancel; failed ones get
+            // Retry. Remove only appears once a job is no longer in flight: for a
+            // live job it merely deletes the Room row while the WorkManager job
+            // keeps running and re-inserts a row when it starts, which is exactly
+            // the confusing "it came back" behaviour we are removing here.
+            val inFlight = job.status == "queued" ||
+                job.status == "waiting" ||
+                job.status == "running"
+
+            buttonCancel.visibility = if (inFlight) View.VISIBLE else View.GONE
+            buttonCancel.setOnClickListener { onCancel(job) }
+
+            val showRetry = job.status == "failed" || job.status == "cancelled"
             buttonRetry.visibility = if (showRetry) View.VISIBLE else View.GONE
             buttonRetry.setOnClickListener { onRetry(job) }
 
-            // Remove button — always available
+            buttonRemove.visibility = if (inFlight) View.GONE else View.VISIBLE
             buttonRemove.setOnClickListener { onRemove(job) }
         }
     }

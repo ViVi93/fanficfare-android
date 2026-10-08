@@ -589,6 +589,22 @@ class BookRepository(private val context: Context) {
 
     fun cancelJob(job: DownloadJobEntity) {
         DiagnosticLog.append(context, "Queue.Cancel", "jobId=${job.id} type=${job.type}")
+        // Cancel the actual WorkManager work, not just the Room row. Jobs are
+        // enqueued with requestWorkId as their unique work name, and that value is
+        // what DownloadJobEntity.workId stores. Without this the worker kept
+        // running (and re-inserted its row when it started), so "Remove"/"Retry"
+        // never really stopped anything.
+        val workName = job.workId?.ifBlank { null }
+        if (workName != null) {
+            try {
+                WorkManager.getInstance(context).cancelUniqueWork(workName)
+                DiagnosticLog.append(context, "Queue.Cancel", "workmanager_cancelled name=$workName")
+            } catch (e: Exception) {
+                DiagnosticLog.appendException(context, "Queue.Cancel", "workmanager_cancel_failed", e)
+            }
+        } else {
+            DiagnosticLog.append(context, "Queue.Cancel", "no_workid jobId=${job.id}")
+        }
         scope.launch(Dispatchers.IO) {
             try {
                 val current = downloadJobDao.getById(job.id)

@@ -83,6 +83,22 @@ def _chapter_images_enabled(configuration, default=True):
     return default
 
 
+def _apply_image_setting(configuration):
+    """Apply the chapter-image preference to a built configuration.
+
+    Android patch shared by download/update/force: images are wanted content and
+    are embedded by default ('true' - which is also what makes the cover load).
+    ``download_chapter_images:false`` in personal.ini (any section) falls back to
+    cover-only, which is much faster on image-heavy or dead-image-host stories.
+    """
+    configuration.set(
+        "overrides",
+        "include_images",
+        "true" if _chapter_images_enabled(configuration) else "coveronly",
+    )
+    return configuration
+
+
 def _exception_http_status(exc):
     """Return the HTTP status behind a fetch failure, or None.
 
@@ -303,7 +319,7 @@ def get_metadata(url):
     if not _import_fanficfare():
         return json.dumps({"ok": False, "error": "FanFicFare not available", "detail": _FANFICFARE_ERROR or ""})
     try:
-        configuration = build_configuration(url, "epub", overrides={"include_images": "coveronly"})
+        configuration = _apply_image_setting(build_configuration(url, "epub"))
         from fanficfare import adapters
         adapter = adapters.getAdapter(configuration, url)
         adapter.getStoryMetadataOnly()
@@ -326,18 +342,10 @@ def download_story(url, outDir):
         from fanficfare import adapters, writers
         _download_debug_write("download_story configuration_start")
         t0 = time.time()
-        ## Android patch: chapter images are wanted content, but they are also the
-        ## dominant cost of a download - each is its own request, and older stories
-        ## reference dead image hosts whose every URL used to burn the full retry
-        ## ladder (measured 22s per dead image, now ~0s - see make_image_retries()).
-        ## Images are embedded by default; set download_chapter_images:false in
-        ## personal.ini (any section) for cover-only downloads.
-        configuration = build_configuration(url, "epub")
-        configuration.set(
-            "overrides",
-            "include_images",
-            "true" if _chapter_images_enabled(configuration) else "coveronly",
-        )
+        ## Android patch: images are embedded by default (see
+        ## _apply_image_setting) - <img> URLs from dead hosts now fail fast
+        ## rather than costing the full retry ladder each (fetcher_requests).
+        configuration = _apply_image_setting(build_configuration(url, "epub"))
         _download_debug_write("download_story configuration_ready elapsed={:.3f}s".format(time.time() - t0))
         try:
             cfg = configuration.get("defaults", "is_adult")
@@ -660,7 +668,7 @@ def update_epub_from_path(epubPath, outDir):
         source, chaptercount = get_update_data(epubPath)[0:2]
         if not source:
             return json.dumps({"ok": False, "error": "No story URL found in epub"})
-        configuration = build_configuration(source, "epub", overrides={"include_images": "coveronly"})
+        configuration = _apply_image_setting(build_configuration(source, "epub"))
         adapter = adapters.getAdapter(configuration, source)
         url, ch_begin, ch_end = adapters.get_url_chapter_range(source)
         adapter.setChaptersRange(ch_begin, ch_end)
@@ -713,7 +721,7 @@ def force_download_from_epub(epubPath, outDir):
         source = get_update_data(epubPath)[0]
         if not source:
             return json.dumps({"ok": False, "error": "No story URL found in epub"})
-        configuration = build_configuration(source, "epub", overrides={"include_images": "coveronly"})
+        configuration = _apply_image_setting(build_configuration(source, "epub"))
         adapter = adapters.getAdapter(configuration, source)
         url, ch_begin, ch_end = adapters.get_url_chapter_range(source)
         adapter.setChaptersRange(ch_begin, ch_end)

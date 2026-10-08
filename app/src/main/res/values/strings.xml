@@ -13,6 +13,7 @@
     <string name="empty_queue_title">Queue is empty</string>
     <string name="empty_queue_subtitle">Books that are downloading, failed, or queued will appear here. Failed books can be retried.</string>
     <string name="retry">Retry</string>
+    <string name="cancel">Cancel</string>
     <string name="remove">Remove</string>
     <string name="retry_failed_toast">Retrying download…</string>
     <string name="job_unknown_title">Unknown story</string>
@@ -27,6 +28,7 @@
     <string name="status_cancelled">Cancelled</string>
     <string name="status_complete">Complete</string>
     <string name="queue_removed_toast">Removed from queue</string>
+    <string name="queue_cancelled_toast">Download cancelled</string>
 
     <!-- Merge books -->
     <string name="merge_title">Merge books</string>

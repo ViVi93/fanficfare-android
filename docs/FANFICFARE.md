@@ -47,7 +47,7 @@ The `base_adapter.py` chapter retry was also genuinely absent: it existed in `7b
 These files are part of the Android application configuration layer and are NOT part of the upstream FanFicFare engine. They are preserved separately.
 
 - `fanficfare_config.py`: `set_config_dir()`, `build_configuration()`, `get_config_status()`
-- `fanficfare_bridge.py`: all FanFicFare operations use centralized configuration. Downloads embed chapter images (and the cover) by default; `download_chapter_images:false` in personal.ini (any section) drops to cover-only, matching the update/force paths. `_chapter_images_enabled()` reads either `download_chapter_images` or `include_images`.
+- `fanficfare_bridge.py`: all FanFicFare operations use centralized configuration. Download, update and force-download all embed chapter images (and the cover) by default; `download_chapter_images:false` in personal.ini (any section) drops to cover-only. `_apply_image_setting()` applies that to every built configuration, `_chapter_images_enabled()` reads either `download_chapter_images` or `include_images`.
 - Android internal storage: `filesDir/fanficfare/personal.ini`
 - Diagnostics: version, configuration validity, credentials present
 

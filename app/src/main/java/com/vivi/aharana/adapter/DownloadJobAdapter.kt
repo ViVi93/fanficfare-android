@@ -47,12 +47,11 @@ class DownloadJobAdapter(
         ) {
             val context = itemView.context
 
-            // Title
+            // Title — the story, not just the host. Every StoriesOnline row used to
+            // read "storiesonline.net" and every Literotica row "literotica.com", so
+            // the queue gave no clue which download was which.
             textTitle.text = when {
-                job.inputUrl?.isNotBlank() == true -> {
-                    val host = android.net.Uri.parse(job.inputUrl)?.host
-                    host ?: job.inputUrl
-                }
+                job.inputUrl?.isNotBlank() == true -> storyLabel(job.inputUrl)
                 job.inputPath?.isNotBlank() == true -> {
                     java.io.File(job.inputPath).nameWithoutExtension
                 }
@@ -70,7 +69,12 @@ class DownloadJobAdapter(
             val createdStr = android.text.format.DateFormat.format(
                 "MMM d, HH:mm", job.createdAt
             ).toString()
-            textMeta.text = "$typeLabel · $createdStr"
+            val host = job.inputUrl?.let { android.net.Uri.parse(it).host } ?: ""
+            textMeta.text = if (host.isNotBlank()) {
+                "$typeLabel · $host · $createdStr"
+            } else {
+                "$typeLabel · $createdStr"
+            }
 
             // Status badge
             val (statusText, statusColorRes, iconVisible) = when (job.status) {
@@ -159,6 +163,33 @@ class DownloadJobAdapter(
     }
 
     companion object {
+        /** Path segments that are site scaffolding, not a story name. */
+        private val FILLER_SEGMENTS = setOf("series", "se", "s", "n", "story", "stories", "work", "works", "fiction")
+
+        /**
+         * Human-readable label for a job URL.
+         *
+         * Prefers the story slug in the path (`/n/62187/the-bridge-club-illustrated`
+         * -> "The Bridge Club Illustrated"). When the URL carries no slug
+         * (`/s/31154`, `/series/se/495651145`) it falls back to host plus the last
+         * path segments, which at least identifies the story by id.
+         */
+        private fun storyLabel(url: String): String {
+            val uri = android.net.Uri.parse(url)
+            val host = uri.host ?: return url
+            val segments = (uri.path ?: "").split('/').filter { it.isNotBlank() }
+            val slug = segments.lastOrNull { seg ->
+                seg.length > 2 && seg.any { it.isLetter() } && !FILLER_SEGMENTS.contains(seg.lowercase())
+            }
+            if (slug != null) {
+                return slug.split('-', '_')
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+            }
+            val tail = segments.takeLast(2).joinToString("/")
+            return if (tail.isBlank()) host else "$host/$tail"
+        }
+
         private val DiffCallback = object : DiffUtil.ItemCallback<DownloadJobEntity>() {
             override fun areItemsTheSame(old: DownloadJobEntity, new: DownloadJobEntity): Boolean =
                 old.id == new.id

@@ -74,6 +74,18 @@ class BookRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Bring Room back in line with WorkManager for rows that still claim to be in
+     * flight.
+     *
+     * These rows are enqueued with `requestWorkId` as the *unique work name*, not as
+     * a WorkManager work id, so WorkManager has to be queried by name
+     * (`getWorkInfosForUniqueWork`). The previous version called
+     * `getWorkInfoById(UUID.fromString(workId))`, which never matched anything -
+     * so a row left at "queued"/"waiting"/"running" by an interrupted run was never
+     * reconciled and stayed in the download queue for good (the "4 jobs in queue
+     * with nothing downloaded" report).
+     */
     private suspend fun reconcileStaleRunningJobs() = withContext(Dispatchers.IO) {
         try {
             val workManager = WorkManager.getInstance(context)
@@ -81,42 +93,64 @@ class BookRepository(private val context: Context) {
                 downloadJobDao.getByStatus("queued") +
                 downloadJobDao.getByStatus(FanFicFareWorker.STATUS_WAITING)
             for (job in stale) {
-                val workId = job.workId?.ifBlank { null } ?: continue
+                val workName = job.workId?.ifBlank { null }
+                if (workName == null) {
+                    markInterrupted(job, "interrupted_no_work_name")
+                    continue
+                }
                 try {
-                    val future = workManager.getWorkInfoById(java.util.UUID.fromString(workId))
-                    val info = future.get()
-                    when (info?.state) {
+                    val infos = workManager.getWorkInfosForUniqueWork(workName).get()
+                    val live = infos?.lastOrNull()
+                    if (live == null) {
+                        // The work itself is gone (cancelled, pruned, or lost with a
+                        // force-stop): the row can never complete on its own.
+                        markInterrupted(job, "interrupted_work_gone")
+                        continue
+                    }
+                    when (live.state) {
                         androidx.work.WorkInfo.State.SUCCEEDED -> {
-                            val outputPath = job.outputPath?.ifBlank { null }
-                            val file = outputPath?.let { java.io.File(it) }
-                            val valid = file != null && file.exists() && file.isFile && file.length() > 0
-                            if (valid) {
+                            if (outputIsUsable(job)) {
                                 downloadJobDao.update(job.copy(status = "success", finishedAt = System.currentTimeMillis()))
                             } else {
                                 downloadJobDao.update(job.copy(status = "failed", error = "stale_recovery_missing_output", finishedAt = System.currentTimeMillis()))
                             }
                         }
-                        androidx.work.WorkInfo.State.FAILED -> {
+                        androidx.work.WorkInfo.State.FAILED ->
                             downloadJobDao.update(job.copy(status = "failed", error = "workmanager_failed", finishedAt = System.currentTimeMillis()))
-                        }
-                        androidx.work.WorkInfo.State.CANCELLED -> {
+                        androidx.work.WorkInfo.State.CANCELLED ->
                             downloadJobDao.update(job.copy(status = "cancelled", finishedAt = System.currentTimeMillis()))
-                        }
+                        // ENQUEUED / BLOCKED / RUNNING: still genuinely in flight
                         else -> {}
                     }
                 } catch (e: Exception) {
-                    val outputPath = job.outputPath?.ifBlank { null }
-                    val file = outputPath?.let { java.io.File(it) }
-                    val valid = file != null && file.exists() && file.isFile && file.length() > 0
-                    if (valid) {
-                        downloadJobDao.update(job.copy(status = "success", finishedAt = System.currentTimeMillis()))
-                    } else {
-                        downloadJobDao.update(job.copy(status = "failed", error = "stale_recovery_work_missing", finishedAt = System.currentTimeMillis()))
-                    }
+                    markInterrupted(job, "stale_recovery_failed")
                 }
             }
         } catch (e: Exception) {
             // ignore reconciliation failures
+        }
+    }
+
+    private fun outputIsUsable(job: DownloadJobEntity): Boolean {
+        val outputPath = job.outputPath?.ifBlank { null } ?: return false
+        val file = java.io.File(outputPath)
+        return file.exists() && file.isFile && file.length() > 0
+    }
+
+    /**
+     * Terminal state for a row whose work no longer exists: success if a usable
+     * EPUB is already on disk, otherwise failed with a reason the user can act on
+     * (Retry) instead of an indefinite "waiting" row.
+     */
+    private suspend fun markInterrupted(job: DownloadJobEntity, reason: String) {
+        if (job.status == "success" || job.status == "cancelled") return
+        val now = System.currentTimeMillis()
+        if (outputIsUsable(job)) {
+            downloadJobDao.update(job.copy(status = "success", finishedAt = now))
+            DiagnosticLog.append(context, "Queue.Reconcile", "jobId=${job.id} success_output_present")
+        } else {
+            downloadJobDao.update(job.copy(status = "failed", error = reason, finishedAt = now))
+            DiagnosticLog.append(context, "Queue.Reconcile", "jobId=${job.id} failed reason=$reason")
         }
     }
 

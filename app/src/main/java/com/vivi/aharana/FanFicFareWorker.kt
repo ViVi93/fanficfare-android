@@ -107,6 +107,42 @@ class FanFicFareWorker(
         }
     }
 
+    /**
+     * Terminal state for a job whose worker was stopped before it did any work.
+     *
+     * Returning Result.failure() on its own left the Room row at "queued"/"waiting"
+     * forever: WorkManager considers the work finished, so nothing will ever run it
+     * again, while the row still claims to be in flight - which is how downloads
+     * piled up in the queue with no Retry button and nothing to identify them.
+     * Cancelled rows are left alone; anything else becomes failed (retryable), or
+     * success when a usable EPUB is already on disk.
+     */
+    private suspend fun markInterruptedJob(workId: String) {
+        if (workId.isBlank()) return
+        try {
+            val dao = AppDatabase.getInstance(applicationContext).downloadJobDao()
+            val job = dao.findByWorkId(workId) ?: return
+            if (job.status == "success" || job.status == "cancelled") return
+            val output = job.outputPath?.ifBlank { null }
+            val file = output?.let { File(it) }
+            if (file != null && file.exists() && file.isFile && file.length() > 0) {
+                dao.update(job.copy(status = "success", finishedAt = System.currentTimeMillis()))
+                logWorker("doWork", "stopped_marked_success id=${job.id}")
+            } else {
+                dao.update(
+                    job.copy(
+                        status = "failed",
+                        error = "interrupted_worker_stopped",
+                        finishedAt = System.currentTimeMillis()
+                    )
+                )
+                logWorker("doWork", "stopped_marked_failed id=${job.id}")
+            }
+        } catch (e: Exception) {
+            logWorker("doWork", "stopped_mark_failed=${e.message}")
+        }
+    }
+
     private suspend fun upsertBook(
         bookDao: BookDao,
         candidate: BookEntity,
@@ -153,6 +189,7 @@ class FanFicFareWorker(
 
         if (isStopped) {
             logWorker("doWork", "stopped_early")
+            markInterruptedJob(workId)
             return Result.failure()
         }
 
@@ -160,6 +197,7 @@ class FanFicFareWorker(
 
         if (isStopped) {
             logWorker("doWork", "stopped_early")
+            markInterruptedJob(workId)
             return Result.failure()
         }
 

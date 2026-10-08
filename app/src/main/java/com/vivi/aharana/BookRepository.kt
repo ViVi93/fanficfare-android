@@ -95,6 +95,7 @@ class BookRepository(private val context: Context) {
     private suspend fun reconcileStaleRunningJobs() = withContext(Dispatchers.IO) {
         try {
             val workManager = WorkManager.getInstance(context)
+            cleanFailedRowsForLibraryBooks()
             val stale = downloadJobDao.getByStatus("running") +
                 downloadJobDao.getByStatus("queued") +
                 downloadJobDao.getByStatus(FanFicFareWorker.STATUS_WAITING)
@@ -139,6 +140,53 @@ class BookRepository(private val context: Context) {
         } catch (e: Exception) {
             // ignore reconciliation failures
         }
+    }
+
+    /**
+     * Drop failed rows for stories that are already in the library.
+     *
+     * A failed row whose story downloaded later (or in an earlier attempt) is pure
+     * noise: the book is on the shelf and the row only offers Retry/Remove for work
+     * that is already done. This is what leaves a downloaded book sitting in the
+     * queue as an error. Only download rows whose stored file still exists are
+     * cleared, so a genuinely failed download with no book behind it keeps its row.
+     */
+    private suspend fun cleanFailedRowsForLibraryBooks() {
+        try {
+            val failed = downloadJobDao.getByStatus("failed")
+                .filter { it.type == "download" && !it.inputUrl.isNullOrBlank() }
+            if (failed.isEmpty()) return
+            // Match on a normalised URL: the library stores whatever the EPUB's
+            // <dc:source> says, which can differ from the shared URL by scheme,
+            // "www.", query string or trailing slash.
+            val library = HashMap<String, BookEntity>()
+            for (book in bookDao.getAll()) {
+                val url = book.url?.ifBlank { null } ?: continue
+                library[normalizeStoryUrl(url)] = book
+            }
+            var cleared = 0
+            for (job in failed) {
+                val book = library[normalizeStoryUrl(job.inputUrl!!)] ?: continue
+                val path = book.filePath?.ifBlank { null } ?: continue
+                val file = java.io.File(path)
+                if (!file.exists() || !file.isFile || file.length() <= 0L) continue
+                downloadJobDao.update(job.copy(status = "cancelled", finishedAt = System.currentTimeMillis()))
+                cleared++
+            }
+            if (cleared > 0) {
+                DiagnosticLog.append(context, "Queue.Reconcile", "cleared_failed_rows count=$cleared")
+            }
+        } catch (e: Exception) {
+            DiagnosticLog.appendException(context, "Queue.Reconcile", "clear_failed_rows_failed", e)
+        }
+    }
+
+    private fun normalizeStoryUrl(url: String): String {
+        var value = url.trim().lowercase()
+        value = value.substringBefore('?').substringBefore('#')
+        value = value.removePrefix("https://").removePrefix("http://")
+        value = value.removePrefix("www.")
+        return value.trimEnd('/')
     }
 
     private fun outputIsUsable(job: DownloadJobEntity): Boolean {

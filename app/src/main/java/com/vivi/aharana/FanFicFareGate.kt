@@ -41,4 +41,13 @@ object FanFicFareGate {
             lastFinishedAt = System.currentTimeMillis()
         }
     }
+
+    /**
+     * Blocking variant of [run] for callers that are not coroutines: the activity
+     * `Thread { }` paths (Book Detail update / force-download and the library
+     * refresh-all loop). Those used to call the engine directly, so they still ran
+     * alongside - and burst the same host as - whatever the WorkManager queue was
+     * doing. They now take the same single-file gate.
+     */
+    fun <T> runBlocking(block: () -> T): T = kotlinx.coroutines.runBlocking { run { block() } }
 }

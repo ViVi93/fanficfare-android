@@ -196,7 +196,9 @@ class BookDetailActivity : BaseActivity() {
                 DiagnosticLog.append(this, "Detail.Update", "bridge_start")
                 val raw = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
                     DiagnosticLog.append(this, "Detail.Update", "bridge_input=${localPath.absolutePath}")
-                    bridge.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
+                    FanFicFareGate.runBlocking {
+                        bridge.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
+                    }
                 }
                 DiagnosticLog.append(this, "Detail.Update", "bridge_returned=${raw != null}")
                 raw
@@ -282,7 +284,9 @@ class BookDetailActivity : BaseActivity() {
                 DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_start elapsed=${System.currentTimeMillis() - t0}")
                 resultJson = StorageBridge.withLocalEpub(this, bookPath) { localPath ->
                     DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_input=${localPath.absolutePath} elapsed=${System.currentTimeMillis() - t0}")
-                    bridge.forceDownloadFromEpub(localPath.absolutePath, filesDir.absolutePath)
+                    FanFicFareGate.runBlocking {
+                        bridge.forceDownloadFromEpub(localPath.absolutePath, filesDir.absolutePath)
+                    }
                 }
                 DiagnosticLog.append(this, "Detail.ForceDownload", "bridge_returned=${resultJson != null} elapsed=${System.currentTimeMillis() - t0}")
             } catch (e: Exception) {

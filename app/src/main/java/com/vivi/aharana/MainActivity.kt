@@ -837,7 +837,12 @@ class MainActivity : BaseActivity() {
             var failCount = 0
             for (book in updatable) {
                 val resultJson = StorageBridge.withLocalEpub(this, book.uriString) { localPath ->
-                    pythonBridge?.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
+                    // Refresh-all walks the whole library back-to-back. Run every
+                    // update through the same engine gate as the download queue so a
+                    // refresh cannot burst the site (or collide with a queued job).
+                    FanFicFareGate.runBlocking {
+                        pythonBridge?.updateEpubFromPath(localPath.absolutePath, filesDir.absolutePath)
+                    }
                 }
                 if (resultJson == null) {
                     failCount++

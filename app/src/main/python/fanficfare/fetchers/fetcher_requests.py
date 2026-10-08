@@ -61,12 +61,30 @@ class RequestsFetcher(Fetcher):
         status_forcelist={413, 429, 500, 502, 503, 504}
         if self.getConfig('retry_http_525_failures'):
             status_forcelist.add(525)
-        return Retry(total=total,
-                     other=0, # rather fail SSL errors/etc quick
-                     backoff_factor=2,# factor 2=4,8,16sec
-                     allowed_methods={'GET','POST'},
-                     status_forcelist=status_forcelist,
-                     raise_on_status=False) # to match w/o retries behavior
+        ## Android patch: bound how long ONE request may stall a download.
+        ## urllib3 defaults are backoff_max=120s and retry_after_max=21600s (six
+        ## hours), and it sleeps inside the ladder where the app cannot
+        ## interrupt it. A dead image host or a rate limiter answering
+        ## "Retry-After: 21600" could therefore park a whole story fetch - and,
+        ## with the app's engine gate, the entire download queue - for hours.
+        ## Cap the ladder and let the app-level retry decide instead.
+        try:
+            return Retry(total=total,
+                         other=0, # rather fail SSL errors/etc quick
+                         backoff_factor=2,# factor 2=4,8,16sec
+                         allowed_methods={'GET','POST'},
+                         status_forcelist=status_forcelist,
+                         raise_on_status=False, # to match w/o retries behavior
+                         backoff_max=10,
+                         retry_after_max=60)
+        except TypeError: # urllib3 without retry_after_max
+            return Retry(total=total,
+                         other=0,
+                         backoff_factor=2,
+                         allowed_methods={'GET','POST'},
+                         status_forcelist=status_forcelist,
+                         raise_on_status=False,
+                         backoff_max=10)
 
     def make_sesssion(self):
         return requests.Session()

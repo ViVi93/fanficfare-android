@@ -225,8 +225,9 @@ class FanFicFareWorker(
 
             // Only one FanFicFare engine call runs at a time. Sharing several URLs
             // used to run them in parallel, which tripped the host's rate limiter
-            // (503 for every job in the burst).
-            FanFicFareGate.run {
+            // (503 for every job in the burst). Metadata lookups are background
+            // work and must not queue in front of anything the user asked for.
+            FanFicFareGate.run(visible = type != TYPE_METADATA) {
                 if (isStopped) {
                     jobDao.update(
                         job.copy(

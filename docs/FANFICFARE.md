@@ -14,7 +14,8 @@
 The following files contain changes required for Chaquopy/Android compatibility. They are preserved across upstream updates by `tools/update_fanficfare.py`.
 
 - `adapters/__init__.py`: removed test-only adapters (`adapter_test1`-`adapter_test4`) to reduce APK size
-- `adapters/base_adapter.py`: `getChapterTextNum()` retries once on transient network errors (`ChunkedEncodingError`, `ProtocolError`, `IncompleteRead`). Mobile connections drop mid-transfer far more often than desktop, and without this one flaky chapter aborts the whole download.
+- `adapters/base_adapter.py`: `getChapterTextNum()` retries once on transient network errors (`ChunkedEncodingError`, `ProtocolError`, `IncompleteRead`). Mobile connections drop mid-transfer far more often than desktop, and without this one flaky chapter aborts the whole download. It also retries once on `HTTPErrorFFF` with 429/500/502/503/504 after a 5s pause, so a rate-limited site mid-story no longer aborts a download that the app would then re-fetch from chapter one.
+- `fetchers/fetcher_requests.py`: `make_retries()` passes `backoff_max=10` and `retry_after_max=60`. Upstream leaves urllib3's defaults (120s and 21600s), and urllib3 sleeps *inside* the retry ladder where the app cannot interrupt it - so a dead image host, or a rate limiter answering `Retry-After: 21600`, could park a story fetch (and, with the engine gate, the whole download queue) for up to six hours. `retry_after_max` is passed under `try`/`except TypeError` for older urllib3.
 - `browsercache/__init__.py`: guarded `SqldbCache` import so a missing `apsw` does not break package import
 - `browsercache/browsercache_sqldb.py`: `apsw` imported under `try`/`except ImportError`, raising a clear error only if the class is actually used. APSW has no Chaquopy Android wheel.
 - `dateutils.py`: relative-date parsing keeps its `logger.debug` call (upstream commented it out in v4.62.0); useful when diagnosing bad chapter dates from the app.
@@ -45,7 +46,7 @@ The `base_adapter.py` chapter retry was also genuinely absent: it existed in `7b
 These files are part of the Android application configuration layer and are NOT part of the upstream FanFicFare engine. They are preserved separately.
 
 - `fanficfare_config.py`: `set_config_dir()`, `build_configuration()`, `get_config_status()`
-- `fanficfare_bridge.py`: all FanFicFare operations use centralized configuration
+- `fanficfare_bridge.py`: all FanFicFare operations use centralized configuration. Downloads embed **cover only** unless `download_chapter_images:true` is set in personal.ini (any section): chapter images are the dominant cost of a download - each is a separate request, and dead image hosts in older stories used to burn a full retry ladder each. Measured on a 73-chapter story: coveronly 38.5s vs >60s for 18 chapters with images.
 - Android internal storage: `filesDir/fanficfare/personal.ini`
 - Diagnostics: version, configuration validity, credentials present
 

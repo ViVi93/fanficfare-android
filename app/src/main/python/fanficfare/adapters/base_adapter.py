@@ -17,6 +17,7 @@
 
 import re
 import os
+import time
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -504,6 +505,17 @@ try to download.</p>
         except (ChunkedEncodingError, ProtocolError, IncompleteRead):
             logger.warning("Transient network error fetching %s, retrying once"%url)
             return self.getChapterText(url)
+        except HTTPErrorFFF as e:
+            ## Android patch: a rate-limited site answering 429/5xx mid-story
+            ## used to abort the whole download, after which the app re-fetched
+            ## every chapter from scratch. Wait a moment and retry just this
+            ## chapter instead. (The fetcher's own retry ladder is capped by the
+            ## same patch in fetcher_requests.make_retries.)
+            if e.status_code in (429, 500, 502, 503, 504):
+                logger.warning("Server busy (%s) fetching %s, retrying once"%(e.status_code,url))
+                time.sleep(5)
+                return self.getChapterText(url)
+            raise
 
     def getChapterText(self, url):
         "Needs to be overriden in each adapter class."

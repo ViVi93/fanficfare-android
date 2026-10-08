@@ -52,6 +52,29 @@ def _download_debug_read():
         return ""
 
 
+def _chapter_images_enabled(configuration):
+    """True when personal.ini opts back in to in-chapter images.
+
+    Android patch companion to the ``include_images`` handling in
+    ``download_story()``: downloads embed only the cover by default because
+    chapter images dominate download time.  Set ``download_chapter_images:true``
+    (any section) in personal.ini to embed them all again.
+    """
+    truthy = ("true", "yes", "1", "on")
+    try:
+        sections = configuration.sections()
+    except Exception:
+        return False
+    for section in sections:
+        try:
+            value = configuration.get(section, "download_chapter_images", fallback="")
+        except Exception:
+            continue
+        if str(value).strip().lower() in truthy:
+            return True
+    return False
+
+
 def _exception_http_status(exc):
     """Return the HTTP status behind a fetch failure, or None.
 
@@ -295,7 +318,21 @@ def download_story(url, outDir):
         from fanficfare import adapters, writers
         _download_debug_write("download_story configuration_start")
         t0 = time.time()
-        configuration = build_configuration(url, "epub", overrides={"include_images": "true"})
+        ## Android patch: chapter images are the single biggest cost of a
+        ## download. Every image is its own request (plus the site's
+        ## slow_down_sleep_time), and older stories reference dead image hosts
+        ## (postimg.org and friends) whose every URL burns a full retry ladder.
+        ## Measured on a 73-chapter story: coveronly finished in 38.5s, while
+        ## include_images=true had not reached chapter 19 after 60s.
+        ## Covers still embed - update/force have always used coveronly.
+        ## Set download_chapter_images:true in personal.ini to embed every
+        ## in-chapter image again.
+        configuration = build_configuration(url, "epub")
+        configuration.set(
+            "overrides",
+            "include_images",
+            "true" if _chapter_images_enabled(configuration) else "coveronly",
+        )
         _download_debug_write("download_story configuration_ready elapsed={:.3f}s".format(time.time() - t0))
         try:
             cfg = configuration.get("defaults", "is_adult")

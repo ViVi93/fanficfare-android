@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 from .. import exceptions
 
 from urllib3.util.retry import Retry
+from urllib.parse import urlparse
 import requests
 from requests.exceptions import HTTPError as RequestsHTTPError
 from requests.adapters import HTTPAdapter
@@ -39,12 +40,34 @@ class RequestsFetcher(Fetcher):
         super(RequestsFetcher,self).__init__(getConfig_fn,getConfigList_fn)
         self.requests_session = None
         self.retries = self.make_retries()
+        ## Android patch: images get their own session (fail fast) and a per-run
+        ## memo of hosts that already failed - see request() below.
+        self.image_session = None
+        self.image_retries = self.make_image_retries()
+        self.dead_image_hosts = set()
 
     def set_cookiejar(self,cookiejar):
         super(RequestsFetcher,self).set_cookiejar(cookiejar)
         ## in case where cookiejar is set second
         if  self.requests_session:
             self.requests_session.cookies = self.cookiejar
+        if  self.image_session:
+            self.image_session.cookies = self.cookiejar
+
+    def make_image_retries(self):
+        ## Android patch: images are optional content; upstream has no
+        ## image-specific policy, so a dead image host costs the full request
+        ## retry ladder - measured ~24-30s of urllib3 sleeps PER image
+        ## reference, and old stories are full of them (postimg.org etc).
+        ## FFF only logs "Failed to load or convert image ... skipping" at the
+        ## end, so the download just looks frozen. One quick retry only.
+        return Retry(total=1,
+                     other=0,
+                     backoff_factor=1,
+                     backoff_max=2,
+                     allowed_methods={'GET'},
+                     status_forcelist={429, 500, 502, 503, 504},
+                     raise_on_status=False)
 
     def make_retries(self):
         try:
@@ -89,7 +112,9 @@ class RequestsFetcher(Fetcher):
     def make_sesssion(self):
         return requests.Session()
 
-    def do_mounts(self,session):
+    def do_mounts(self,session,retries=None):
+        if retries is None:
+            retries = self.retries
         if self.getConfig('use_ssl_default_seclevelone',False):
             import ssl
             class TLSAdapter(HTTPAdapter):
@@ -98,10 +123,10 @@ class RequestsFetcher(Fetcher):
                     ctx.set_ciphers('DEFAULT@SECLEVEL=1')
                     kwargs['ssl_context'] = ctx
                     return super(TLSAdapter, self).init_poolmanager(*args, **kwargs)
-            session.mount('https://', TLSAdapter(max_retries=self.retries))
+            session.mount('https://', TLSAdapter(max_retries=retries))
         else:
-            session.mount('https://', HTTPAdapter(max_retries=self.retries))
-        session.mount('http://', HTTPAdapter(max_retries=self.retries))
+            session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.mount('http://', HTTPAdapter(max_retries=retries))
         session.mount('file://', FileAdapter())
         # logger.debug("Session Proxies Before:%s"%session.proxies)
         ## try to get OS proxy settings via Calibre
@@ -133,6 +158,17 @@ class RequestsFetcher(Fetcher):
                 self.requests_session.cookies = self.cookiejar
         return self.requests_session
 
+    def get_image_session(self):
+        ## Android patch: image fetches use the short retry ladder (and a
+        ## shorter timeout in request()) so one dead image host cannot hold up
+        ## a whole story download.
+        if not self.image_session:
+            self.image_session = self.make_sesssion()
+            self.do_mounts(self.image_session, retries=self.image_retries)
+            if self.cookiejar is not None:
+                self.image_session.cookies = self.cookiejar
+        return self.image_session
+
     def use_verify(self):
         return not self.getConfig('use_ssl_unverified_context',False)
 
@@ -140,6 +176,15 @@ class RequestsFetcher(Fetcher):
         '''Returns a FetcherResponse regardless of mechanism'''
         if method not in ('GET','POST'):
             raise NotImplementedError()
+        ## Android patch: image requests (base_fetcher sets Accept: image/* for
+        ## them) use the short-ladder session, a shorter timeout, and a per-run
+        ## memo of hosts that already failed hard. A story full of images from a
+        ## dead host used to spend ~24-30s per image inside urllib3's sleeps.
+        is_image = bool(headers) and headers.get('Accept') == 'image/*'
+        host = urlparse(url).netloc if is_image else ''
+        if is_image and host and host in self.dead_image_hosts:
+            raise requests.exceptions.ConnectionError(
+                "image host %s already failed in this session"%host)
         try:
             logger.debug(make_log('RequestsFetcher',method,url,hit='REQ',bar='-'))
             ## resp = requests Response object
@@ -148,12 +193,18 @@ class RequestsFetcher(Fetcher):
                 timeout = float(self.getConfig("connect_timeout",timeout))
             except Exception as e:
                 logger.error("connect_timeout setting failed: %s -- Using default value(%s)"%(e,timeout))
-            resp = self.get_requests_session().request(method, url,
-                                                       headers=headers,
-                                                       data=parameters,
-                                                       json=json,
-                                                       verify=self.use_verify(),
-                                                       timeout=timeout)
+            if is_image:
+                try:
+                    timeout = float(self.getConfig("image_connect_timeout",15.0))
+                except Exception:
+                    timeout = 15.0
+            resp = (self.get_image_session() if is_image else self.get_requests_session()).request(
+                method, url,
+                headers=headers,
+                data=parameters,
+                json=json,
+                verify=self.use_verify(),
+                timeout=timeout)
             logger.debug("response code:%s"%resp.status_code)
             resp.raise_for_status() # raises RequestsHTTPError if error code.
             # consider 'cached' if from file.
@@ -181,7 +232,18 @@ class RequestsFetcher(Fetcher):
                 e.args[0],# error_msg
                 e.response.content # data
                 )
+        except Exception as e:
+            ## Android patch: a host that failed hard (DNS/connect) is recorded so
+            ## the rest of this run's images from it are skipped instantly instead
+            ## of each paying the retry ladder. FFF treats image failures as
+            ## non-fatal and marks them 'failedtoload' in the EPUB.
+            if is_image and host:
+                self.dead_image_hosts.add(host)
+                logger.debug("image host %s marked failed for this run: %s"%(host,e))
+            raise
 
     def __del__(self):
         if self.requests_session is not None:
             self.requests_session.close()
+        if self.image_session is not None:
+            self.image_session.close()

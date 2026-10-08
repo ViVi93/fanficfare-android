@@ -52,27 +52,35 @@ def _download_debug_read():
         return ""
 
 
-def _chapter_images_enabled(configuration):
-    """True when personal.ini opts back in to in-chapter images.
+def _chapter_images_enabled(configuration, default=True):
+    """Whether this download should embed chapter images.
 
     Android patch companion to the ``include_images`` handling in
-    ``download_story()``: downloads embed only the cover by default because
-    chapter images dominate download time.  Set ``download_chapter_images:true``
-    (any section) in personal.ini to embed them all again.
+    ``download_story()``.  Chapter images are wanted content, but they are also
+    the dominant cost of a download, so a site can be opted out with
+    ``download_chapter_images:false`` (any section) in personal.ini - that gets
+    the cover only, matching the update/force paths.
+
+    Unknown keys return ``default``; an explicit config value wins in either
+    direction.
     """
     truthy = ("true", "yes", "1", "on")
+    falsy = ("false", "no", "0", "off")
     try:
         sections = configuration.sections()
     except Exception:
-        return False
+        return default
     for section in sections:
-        try:
-            value = configuration.get(section, "download_chapter_images", fallback="")
-        except Exception:
-            continue
-        if str(value).strip().lower() in truthy:
-            return True
-    return False
+        for key in ("download_chapter_images", "include_images"):
+            try:
+                value = str(configuration.get(section, key, fallback="")).strip().lower()
+            except Exception:
+                continue
+            if value in truthy:
+                return True
+            if value in falsy:
+                return False
+    return default
 
 
 def _exception_http_status(exc):
@@ -318,15 +326,12 @@ def download_story(url, outDir):
         from fanficfare import adapters, writers
         _download_debug_write("download_story configuration_start")
         t0 = time.time()
-        ## Android patch: chapter images are the single biggest cost of a
-        ## download. Every image is its own request (plus the site's
-        ## slow_down_sleep_time), and older stories reference dead image hosts
-        ## (postimg.org and friends) whose every URL burns a full retry ladder.
-        ## Measured on a 73-chapter story: coveronly finished in 38.5s, while
-        ## include_images=true had not reached chapter 19 after 60s.
-        ## Covers still embed - update/force have always used coveronly.
-        ## Set download_chapter_images:true in personal.ini to embed every
-        ## in-chapter image again.
+        ## Android patch: chapter images are wanted content, but they are also the
+        ## dominant cost of a download - each is its own request, and older stories
+        ## reference dead image hosts whose every URL used to burn the full retry
+        ## ladder (measured 22s per dead image, now ~0s - see make_image_retries()).
+        ## Images are embedded by default; set download_chapter_images:false in
+        ## personal.ini (any section) for cover-only downloads.
         configuration = build_configuration(url, "epub")
         configuration.set(
             "overrides",

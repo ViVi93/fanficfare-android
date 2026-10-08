@@ -30,11 +30,17 @@ class DownloadQueueActivity : BaseActivity() {
             onRetry = { job ->
                 DiagnosticLog.append(this, "Queue.Retry", "jobId=${job.id} type=${job.type}")
                 val repo = BookRepository(this)
-                repo.retryJob(job)
-                showMessage(R.string.retry_failed_toast)
-                // Mark the old job as cancelled so it disappears from the queue
-                // and the retried job appears as a new entry
-                repo.cancelJob(job)
+                CoroutineScope(Dispatchers.Main).launch {
+                    // Retry resolves to an update when the story is already in the
+                    // library, so the toast has to say which one it did.
+                    val action = repo.retryJob(job)
+                    showMessage(
+                        if (action == "update") R.string.retry_update_toast else R.string.retry_failed_toast
+                    )
+                    // Mark the old job as cancelled so it disappears from the queue
+                    // and the retried job appears as a new entry
+                    repo.cancelJob(job)
+                }
             },
             onCancel = { job ->
                 DiagnosticLog.append(this, "Queue.Cancel", "button jobId=${job.id} type=${job.type}")

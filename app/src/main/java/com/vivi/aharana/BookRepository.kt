@@ -690,13 +690,67 @@ class BookRepository(private val context: Context) {
         }
     }
 
-    fun retryJob(job: DownloadJobEntity) {
-        when (job.type) {
-            "download" -> { job.inputUrl?.let { scope.launch { enqueueDownload(it) } } }
-            "update" -> { job.inputPath?.let { scope.launch { enqueueUpdate(job.bookId, it) } } }
-            "force_download" -> { job.inputPath?.let { scope.launch { enqueueForceDownload(job.bookId, it) } } }
-            "metadata" -> { job.inputUrl?.let { scope.launch { enqueueMetadata(it) } } }
+    /**
+     * Re-runs a queue row and reports what it did ("download", "update",
+     * "force", "metadata", "none").
+     *
+     * A download row whose story is already in the library is retried as an
+     * *update* rather than a full download: re-downloading every chapter for a book
+     * you already have is the expensive no-op users hit by tapping Retry, while an
+     * update fetches only chapters that are actually new (and does nothing when the
+     * local copy is already current). Force download stays an explicit action on the
+     * book's detail screen.
+     */
+    suspend fun retryJob(job: DownloadJobEntity): String {
+        DiagnosticLog.append(context, "Queue.Retry", "jobId=${job.id} type=${job.type}")
+        return when (job.type) {
+            "download" -> {
+                val url = job.inputUrl?.ifBlank { null } ?: return "none"
+                val book = libraryBookForUrl(url)
+                if (book != null) {
+                    DiagnosticLog.append(
+                        context,
+                        "Queue.Retry",
+                        "download_row_retried_as_update jobId=${job.id} bookId=${book.id}"
+                    )
+                    enqueueUpdate(book.id, book.filePath)
+                    "update"
+                } else {
+                    enqueueDownload(url)
+                    "download"
+                }
+            }
+            "update" -> {
+                job.inputPath?.let { enqueueUpdate(job.bookId, it) }
+                "update"
+            }
+            "force_download" -> {
+                job.inputPath?.let { enqueueForceDownload(job.bookId, it) }
+                "force"
+            }
+            "metadata" -> {
+                job.inputUrl?.let { enqueueMetadata(it) }
+                "metadata"
+            }
+            else -> "none"
         }
+    }
+
+    /**
+     * Library row for a story URL, only when its file is really on disk. The
+     * library stores the URL from the EPUB's <dc:source>, so the comparison is on
+     * the normalised form (see [normalizeStoryUrl]).
+     */
+    private suspend fun libraryBookForUrl(url: String): BookEntity? {
+        val target = normalizeStoryUrl(url)
+        for (book in bookDao.getAll()) {
+            val bookUrl = book.url?.ifBlank { null } ?: continue
+            if (normalizeStoryUrl(bookUrl) != target) continue
+            val path = book.filePath.ifBlank { null } ?: continue
+            val file = java.io.File(path)
+            if (file.exists() && file.isFile && file.length() > 0L) return book
+        }
+        return null
     }
 
     fun cancelJob(job: DownloadJobEntity) {
